@@ -837,8 +837,10 @@
             <div class="nav-visualizer">
                 <canvas id="nav-waveform" width="80" height="28"></canvas>
             </div>
-            <!-- Visitor Map Link -->
+            <!-- Nav Links -->
             <a href="map.html" class="feedback-btn" style="text-decoration: none;" id="map-link">Visitor Map</a>
+            <a href="browser.html" class="feedback-btn" style="text-decoration: none;">Browser</a>
+            <a href="room.html" class="feedback-btn" style="text-decoration: none;">3D Room</a>
             <!-- Discord Status Widget -->
             <a href="https://discord.gg/BFs2Dgcg4y" target="_blank" class="discord-widget" id="discord-widget">
                 <div class="discord-dot" id="discord-dot"></div>
@@ -2465,7 +2467,9 @@
                         else {
                             document.body.style.transform = '';
                             display.classList.remove('active');
-                            if (bombCount >= 2) {
+                            if (bombCount >= 3) {
+                                playBIOSBoot();
+                            } else if (bombCount >= 2) {
                                 playBombRefusal();
                             } else {
                                 playBombAftermath();
@@ -3122,6 +3126,134 @@
             ac.fillStyle = '#000';
             ac.fillRect(0, 0, W, H);
             setTimeout(() => requestAnimationFrame(drawRefusalFrame), 300);
+        }
+
+        // ==============================================
+        // FAKE BIOS BOOT SEQUENCE (3rd bomb press)
+        // ==============================================
+        function playBIOSBoot() {
+            const bios = document.createElement('div');
+            bios.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#000;font-family:"Courier New",monospace;color:#aaa;font-size:14px;padding:20px;overflow:hidden;white-space:pre;line-height:1.6;';
+            document.body.appendChild(bios);
+
+            const beep = () => {
+                try {
+                    const actx = new (window.AudioContext || window.webkitAudioContext)();
+                    const osc = actx.createOscillator();
+                    const gain = actx.createGain();
+                    osc.connect(gain); gain.connect(actx.destination);
+                    osc.frequency.value = 800; gain.gain.value = 0.15;
+                    osc.start(); osc.stop(actx.currentTime + 0.15);
+                } catch(e){}
+            };
+
+            const lines = [];
+            let cursor = 0;
+
+            function addLine(text, color, delay) {
+                lines.push({ text, color: color || '#aaa', delay: delay || 80 });
+            }
+
+            // POST sequence
+            addLine('', '', 200);
+            addLine('LoganBIOS (C) 2024 Logan Industries Ltd.', '#fff', 100);
+            addLine('BIOS Date: 04/06/2026  Ver: 6.90.420', '#aaa', 80);
+            addLine('CPU: Intel Core i9-14900K @ 6.20 GHz', '#aaa', 60);
+            addLine('', '', 50);
+            addLine('Press DEL to enter BIOS Setup, F12 for Boot Menu', '#555', 100);
+            addLine('', '', 300);
+            addLine('Detecting Primary Master... Samsung 990 PRO 2TB', '#aaa', 400);
+            addLine('Detecting Primary Slave... NONE', '#aaa', 200);
+            addLine('Detecting Secondary Master... ASUS BW-16D1HT', '#aaa', 300);
+            addLine('Detecting Secondary Slave... Logan\'s Secret Files (DO NOT OPEN)', '#ff6666', 200);
+            addLine('', '', 100);
+            addLine('Memory Test:', '#fff', 100);
+
+            // Memory count
+            const memSteps = [128, 512, 1024, 2048, 4096, 8192, 16384, 32768, 65536, 69420];
+            memSteps.forEach((m, i) => {
+                addLine(`  ${m}K OK`, '#0f0', i < 8 ? 60 : 200);
+            });
+            addLine('  Memory Test PASSED - 69420K Verified', '#0f0', 150);
+            addLine('', '', 100);
+
+            // Device init
+            addLine('Initializing USB Controllers... Done', '#aaa', 200);
+            addLine('  USB Device(s): 3 Keyboards, 2 Mice, 1 Suspicious Device', '#aaa', 100);
+            addLine('Initializing GPU... NVIDIA RTX 5090 - "Overkill Edition"', '#aaa', 300);
+            addLine('  VRAM: 32GB GDDR7 (mostly used for Chrome tabs)', '#888', 100);
+            addLine('', '', 100);
+            addLine('Checking RAID Array... RAID-69 (Nice)', '#aaa', 200);
+            addLine('  Drive 0: [OK]  Drive 1: [OK]  Drive 2: [VIBES]', '#aaa', 100);
+            addLine('', '', 200);
+
+            // Errors and warnings
+            addLine('WARNING: T-key detected on keyboard', '#ff6666', 300);
+            addLine('  THREAT LEVEL: CATASTROPHIC', '#ff3333', 200);
+            addLine('  Recommendation: Remove T-key immediately', '#ff6666', 150);
+            addLine('  Times this system has been bombed: ' + bombCount, '#ff3333', 200);
+            addLine('', '', 100);
+            addLine('WARNING: Stick figure employee morale critically low', '#ffaa00', 200);
+            addLine('  Status: Considering resignation', '#ffaa00', 100);
+            addLine('  Reason: "I am not paid enough for this"', '#ffaa00', 150);
+            addLine('', '', 200);
+
+            // Boot
+            addLine('Scanning for boot devices...', '#fff', 400);
+            addLine('  Boot Device 0: LoganOS v4.20 [logansandivar.com]', '#aaa', 200);
+            addLine('  Boot Device 1: Windows 95 (why is this here)', '#888', 100);
+            addLine('  Boot Device 2: TempleOS (in memory of Terry)', '#888', 100);
+            addLine('', '', 200);
+            addLine('Loading LoganOS...', '#7aa2ff', 300);
+            addLine('', '', 100);
+            addLine('  ██████████████████████████████ 100%', '#7aa2ff', 800);
+            addLine('', '', 200);
+            addLine('Mounting file systems...', '#aaa', 200);
+            addLine('  /dev/vibes      mounted on /home/logan/vibes', '#aaa', 100);
+            addLine('  /dev/portfolio  mounted on /var/www/logansandivar.com', '#aaa', 100);
+            addLine('  /dev/regrets    mounted on /home/logan/.hidden', '#888', 100);
+            addLine('', '', 200);
+            addLine('Starting services...', '#aaa', 300);
+            addLine('  [OK] particle-engine.service', '#0f0', 80);
+            addLine('  [OK] starfield-renderer.service', '#0f0', 80);
+            addLine('  [OK] beat-detection.service', '#0f0', 80);
+            addLine('  [OK] visitor-counter.service', '#0f0', 80);
+            addLine('  [OK] stick-figure-therapy.service', '#ffaa00', 80);
+            addLine('  [FAILED] t-key-disabler.service - Permission denied', '#ff3333', 200);
+            addLine('  [OK] chaos-engine.service', '#0f0', 80);
+            addLine('', '', 300);
+            addLine('All systems operational. Booting into logansandivar.com...', '#7aa2ff', 500);
+            addLine('', '', 200);
+            addLine('Welcome back. Please don\'t press T again.', '#ff6666', 1000);
+
+            // Render lines one by one
+            let totalDelay = 0;
+            beep();
+
+            lines.forEach((line, idx) => {
+                totalDelay += line.delay;
+                setTimeout(() => {
+                    const el = document.createElement('div');
+                    el.textContent = line.text || '\u00A0';
+                    el.style.color = line.color;
+                    bios.appendChild(el);
+                    bios.scrollTop = bios.scrollHeight;
+
+                    // Beep on memory test pass and final
+                    if (line.text.includes('PASSED') || line.text.includes('Welcome back')) beep();
+                }, totalDelay);
+            });
+
+            // After all lines, fade out and restore
+            setTimeout(() => {
+                bios.style.transition = 'opacity 1.5s';
+                bios.style.opacity = '0';
+                setTimeout(() => {
+                    bios.remove();
+                    bombActive = false;
+                    audio.play().catch(() => {});
+                }, 1500);
+            }, totalDelay + 2000);
         }
 
         // ==============================================
