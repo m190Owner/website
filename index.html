@@ -377,6 +377,25 @@
             font-size: 0.6rem;
             animation: pulse-dot 2s ease infinite;
         }
+
+        /* Audio Waveform Visualizer */
+        .nav-visualizer {
+            display: flex;
+            align-items: center;
+            height: 28px;
+            gap: 2px;
+        }
+
+        .nav-visualizer canvas {
+            height: 28px;
+            width: 80px;
+        }
+
+        /* Decrypt text effect */
+        .decrypt-char {
+            display: inline-block;
+            min-width: 0.3em;
+        }
     </style>
 </head>
 <body>
@@ -398,6 +417,10 @@
     <nav>
         <strong>Logan Sandivar | ServerLagger</strong>
         <div style="display: flex; align-items: center; gap: 15px;">
+            <!-- Audio Waveform -->
+            <div class="nav-visualizer">
+                <canvas id="nav-waveform" width="80" height="28"></canvas>
+            </div>
             <!-- Discord Status Widget -->
             <a href="https://discord.gg/BFs2Dgcg4y" target="_blank" class="discord-widget" id="discord-widget">
                 <div class="discord-dot" id="discord-dot"></div>
@@ -540,6 +563,8 @@
                 loader.classList.add('loader-fade-out');
                 document.body.classList.add('loaded');
                 setTimeout(() => loader.style.display = 'none', 900);
+                // Start decrypt effect after loader fades
+                setTimeout(decryptName, 600);
             }, 1200);
             setTimeout(sendVisitorInfo, 2000);
         });
@@ -954,6 +979,90 @@
 
             requestAnimationFrame(draw);
         }
+
+        // ==============================================
+        // DECRYPT NAME EFFECT
+        // ==============================================
+        const finalName = "Logan Sandivar";
+        const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789@#$%&*!?<>{}[]";
+
+        function decryptName() {
+            const h1 = document.querySelector('.glitch');
+            const len = finalName.length;
+            let iterations = 0;
+            const maxIterations = len * 3;
+
+            const interval = setInterval(() => {
+                let result = '';
+                for (let i = 0; i < len; i++) {
+                    if (finalName[i] === ' ') {
+                        result += ' ';
+                    } else if (i < iterations / 3) {
+                        result += finalName[i];
+                    } else {
+                        result += chars[Math.floor(Math.random() * chars.length)];
+                    }
+                }
+                h1.textContent = result;
+                h1.setAttribute('data-text', result);
+
+                iterations++;
+                if (iterations > maxIterations) {
+                    clearInterval(interval);
+                    h1.textContent = finalName;
+                    h1.setAttribute('data-text', finalName);
+                }
+            }, 40);
+        }
+
+        // ==============================================
+        // AUDIO WAVEFORM VISUALIZER (NAV)
+        // ==============================================
+        const waveCanvas = document.getElementById('nav-waveform');
+        const waveCtx = waveCanvas.getContext('2d');
+        const barCount = 20;
+
+        function drawWaveform() {
+            waveCtx.clearRect(0, 0, waveCanvas.width, waveCanvas.height);
+            const barW = waveCanvas.width / barCount;
+            const h = waveCanvas.height;
+
+            if (analyser && dataArray) {
+                analyser.getByteFrequencyData(dataArray);
+                for (let i = 0; i < barCount; i++) {
+                    const idx = Math.floor(i * (dataArray.length / barCount));
+                    const val = dataArray[idx] / 255;
+                    const barH = Math.max(2, val * h);
+                    const hue = 220 + val * 40;
+
+                    waveCtx.fillStyle = `hsla(${hue}, 80%, 70%, ${0.5 + val * 0.5})`;
+                    waveCtx.shadowColor = `hsla(${hue}, 100%, 70%, 0.6)`;
+                    waveCtx.shadowBlur = 4;
+
+                    const x = i * barW;
+                    const y = (h - barH) / 2;
+                    waveCtx.beginPath();
+                    waveCtx.roundRect(x + 1, y, barW - 2, barH, 1);
+                    waveCtx.fill();
+                }
+            } else {
+                // Idle animation when no music
+                const t = Date.now() / 1000;
+                for (let i = 0; i < barCount; i++) {
+                    const val = 0.15 + Math.sin(t * 2 + i * 0.5) * 0.1;
+                    const barH = Math.max(2, val * h);
+                    waveCtx.fillStyle = `hsla(220, 60%, 60%, 0.3)`;
+                    const x = i * barW;
+                    const y = (h - barH) / 2;
+                    waveCtx.beginPath();
+                    waveCtx.roundRect(x + 1, y, barW - 2, barH, 1);
+                    waveCtx.fill();
+                }
+            }
+
+            requestAnimationFrame(drawWaveform);
+        }
+        drawWaveform();
 
         // ==============================================
         // 3D TILT EFFECT ON LINKS & DISCORD WIDGET
