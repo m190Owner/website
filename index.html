@@ -2301,9 +2301,12 @@
         // TIME BOMB (T) + AFTERMATH SEQUENCE
         // ==============================================
         let bombActive = false;
+        let bombCount = 0; // tracks how many times bomb has been used
+
         function startTimeBomb() {
             if (bombActive) return;
             bombActive = true;
+            bombCount++;
             const display = document.getElementById('bomb-display');
             const numEl = document.getElementById('bomb-number');
             display.classList.add('active');
@@ -2323,6 +2326,8 @@
                     clearInterval(tick);
                     numEl.textContent = '\u{1F4A5}';
                     numEl.style.fontSize = '16rem';
+                    // Stop the music
+                    audio.pause();
                     addShockwave(w / 2, h / 2, { glow: '#ff4400' }, 200, 3);
                     addShockwave(w / 2, h / 2, { glow: '#ff8800' }, 150, 2);
                     let sf = 0;
@@ -2334,7 +2339,11 @@
                         else {
                             document.body.style.transform = '';
                             display.classList.remove('active');
-                            playBombAftermath();
+                            if (bombCount >= 2) {
+                                playBombRefusal();
+                            } else {
+                                playBombAftermath();
+                            }
                         }
                     }
                     bombShake();
@@ -2710,6 +2719,7 @@
                     if (endFade >= 1) {
                         ac_el.remove();
                         bombActive = false;
+                        audio.play().catch(() => {});
                         return;
                     }
                 }
@@ -2723,6 +2733,266 @@
             setTimeout(() => {
                 requestAnimationFrame(animateAftermath);
             }, 300);
+        }
+
+        // ==============================================
+        // BOMB REFUSAL (2nd+ time)
+        // ==============================================
+        function playBombRefusal() {
+            const ac_el = document.createElement('canvas');
+            ac_el.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:default;';
+            ac_el.width = window.innerWidth;
+            ac_el.height = window.innerHeight;
+            document.body.appendChild(ac_el);
+            const ac = ac_el.getContext('2d');
+            const W = ac_el.width, H = ac_el.height;
+            const centerX = W / 2;
+            const floorY = H * 0.68;
+            const targetX = centerX;
+            let stickX = -60;
+            let frame = 0;
+            let walkCycle = 0;
+            let currentSpeech = '';
+            let speechStart = 0;
+            let waitingForSorry = false;
+            let sorryReceived = false;
+            let sorryFrame = 0;
+            let typedText = '';
+            let inputActive = false;
+
+            const angryLines = [
+                'You did NOT just do that again.',
+                'I TOLD you not to press T.',
+                'What part of "don\'t touch anything" was unclear?',
+                'No. Absolutely not. I\'m not doing this again.',
+                'You want the site back? Say sorry.',
+                'Type "sorry" right now.',
+                'I\'m waiting...',
+            ];
+
+            const sorryLines = [
+                'Oh NOW you\'re sorry.',
+                '...fine.',
+                'But I swear, one more time and I quit.',
+                'Rebuilding... AGAIN...',
+                'There. Don\'t even LOOK at the T key.',
+            ];
+
+            let lineIndex = 0;
+            let lineTimer = 0;
+
+            // Create a text input for "sorry"
+            const sorryInput = document.createElement('input');
+            sorryInput.type = 'text';
+            sorryInput.placeholder = 'Type here...';
+            sorryInput.autocomplete = 'off';
+            sorryInput.style.cssText = 'position:fixed;bottom:40%;left:50%;transform:translateX(-50%);z-index:100000;background:rgba(255,255,255,0.95);border:2px solid #ff4444;border-radius:12px;padding:12px 24px;font-size:1.2rem;font-family:Segoe UI,sans-serif;color:#333;outline:none;width:280px;text-align:center;display:none;cursor:text;';
+
+            sorryInput.addEventListener('input', () => {
+                typedText = sorryInput.value.toLowerCase().trim();
+                if (typedText === 'sorry') {
+                    sorryReceived = true;
+                    sorryFrame = frame;
+                    sorryInput.style.border = '2px solid #28c840';
+                    sorryInput.disabled = true;
+                    sorryInput.value = 'sorry';
+                    lineIndex = 0;
+                    lineTimer = frame;
+                }
+            });
+
+            sorryInput.addEventListener('keydown', (e) => { e.stopPropagation(); });
+
+            document.body.appendChild(sorryInput);
+
+            function drawRefusalFrame() {
+                frame++;
+                ac.clearRect(0, 0, W, H);
+
+                // Dark 404 background
+                ac.fillStyle = '#0b0b0f';
+                ac.fillRect(0, 0, W, H);
+                ac.fillStyle = '#ff3333';
+                ac.font = 'bold 100px Segoe UI';
+                ac.textAlign = 'center';
+                ac.fillText('404', centerX, H * 0.22);
+                ac.fillStyle = '#ff6666';
+                ac.font = '22px Segoe UI';
+                ac.fillText('Oh no. Not again.', centerX, H * 0.22 + 40);
+                ac.fillStyle = '#666';
+                ac.font = '14px Segoe UI';
+                ac.fillText(`Times bombed: ${bombCount}`, centerX, H * 0.22 + 70);
+
+                // Walk in (faster this time — he's angry)
+                if (frame > 60 && stickX < targetX) {
+                    stickX += 3;
+                    walkCycle += 0.2;
+                }
+
+                // Draw stick figure (always angry, dark theme)
+                if (frame > 60) {
+                    const drawX = Math.min(stickX, targetX);
+                    const headY = floorY - 58;
+                    const shoulderY = floorY - 38;
+                    const hipY = floorY - 5;
+
+                    ac.strokeStyle = '#ccc';
+                    ac.fillStyle = '#ccc';
+                    ac.lineWidth = 3;
+                    ac.lineCap = 'round';
+
+                    // Head
+                    ac.beginPath(); ac.arc(drawX, headY, 14, 0, Math.PI * 2); ac.stroke();
+                    // Angry eyes
+                    ac.beginPath(); ac.arc(drawX - 5, headY - 3, 2, 0, Math.PI * 2); ac.fill();
+                    ac.beginPath(); ac.arc(drawX + 5, headY - 3, 2, 0, Math.PI * 2); ac.fill();
+                    // VERY angry eyebrows
+                    ac.lineWidth = 2.5;
+                    ac.beginPath(); ac.moveTo(drawX - 10, headY - 11); ac.lineTo(drawX - 1, headY - 6); ac.stroke();
+                    ac.beginPath(); ac.moveTo(drawX + 10, headY - 11); ac.lineTo(drawX + 1, headY - 6); ac.stroke();
+                    // Angry mouth (open)
+                    ac.beginPath(); ac.ellipse(drawX, headY + 10, 5, 3, 0, 0, Math.PI * 2); ac.stroke();
+                    ac.lineWidth = 3;
+                    // Body
+                    ac.beginPath(); ac.moveTo(drawX, headY + 14); ac.lineTo(drawX, hipY); ac.stroke();
+
+                    if (stickX < targetX) {
+                        // Walking
+                        const ls = Math.sin(walkCycle) * 18;
+                        const as = Math.sin(walkCycle) * 15;
+                        ac.beginPath(); ac.moveTo(drawX, shoulderY); ac.lineTo(drawX - 12 + as, shoulderY + 22); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, shoulderY); ac.lineTo(drawX + 12 - as, shoulderY + 22); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, hipY); ac.lineTo(drawX + ls, floorY + 20); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, hipY); ac.lineTo(drawX - ls, floorY + 20); ac.stroke();
+                    } else if (!sorryReceived) {
+                        // Standing with crossed arms
+                        ac.beginPath(); ac.moveTo(drawX - 15, shoulderY + 5); ac.lineTo(drawX + 15, shoulderY + 15); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX + 15, shoulderY + 5); ac.lineTo(drawX - 15, shoulderY + 15); ac.stroke();
+                        // Tapping foot
+                        const tap = Math.sin(frame * 0.15) * 3;
+                        ac.beginPath(); ac.moveTo(drawX, hipY); ac.lineTo(drawX + 12, floorY + 20); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, hipY); ac.lineTo(drawX - 10, floorY + 18 + tap); ac.stroke();
+                    } else {
+                        // Reluctantly working
+                        const armBob = Math.sin(frame * 0.2) * 4;
+                        ac.beginPath(); ac.moveTo(drawX, shoulderY); ac.lineTo(drawX - 20, shoulderY + 20 + armBob); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, shoulderY); ac.lineTo(drawX + 20, shoulderY + 20 - armBob); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, hipY); ac.lineTo(drawX + 12, floorY + 20); ac.stroke();
+                        ac.beginPath(); ac.moveTo(drawX, hipY); ac.lineTo(drawX - 10, floorY + 20); ac.stroke();
+                    }
+                }
+
+                // Speech logic (before sorry)
+                if (!sorryReceived && stickX >= targetX) {
+                    if (!waitingForSorry) {
+                        // Cycle through angry lines
+                        if (frame - lineTimer > 180 || lineTimer === 0) {
+                            lineTimer = frame;
+                            if (lineIndex < angryLines.length) {
+                                currentSpeech = angryLines[lineIndex];
+                                speechStart = frame;
+                                lineIndex++;
+                                // Show input when he says "type sorry"
+                                if (lineIndex >= 6 && !inputActive) {
+                                    inputActive = true;
+                                    sorryInput.style.display = 'block';
+                                    setTimeout(() => sorryInput.focus(), 100);
+                                }
+                                if (lineIndex >= angryLines.length) {
+                                    waitingForSorry = true;
+                                }
+                            }
+                        }
+                    } else {
+                        // Waiting state — periodically remind
+                        if ((frame - lineTimer) % 300 === 0) {
+                            const reminders = [
+                                'Still waiting.',
+                                '...',
+                                'The keyboard is right there.',
+                                'S-O-R-R-Y. Five letters.',
+                                'I have all day. Actually I don\'t. Type it.',
+                                'You know what you did.',
+                                '*taps foot aggressively*',
+                                'Any day now.',
+                            ];
+                            currentSpeech = reminders[Math.floor(Math.random() * reminders.length)];
+                            speechStart = frame;
+                        }
+                    }
+                }
+
+                // Speech logic (after sorry)
+                if (sorryReceived) {
+                    const sinceSorry = frame - sorryFrame;
+                    if (sinceSorry > 60 && lineIndex < sorryLines.length) {
+                        if ((sinceSorry - 60) % 180 === 0) {
+                            currentSpeech = sorryLines[lineIndex];
+                            speechStart = frame;
+                            lineIndex++;
+                        }
+                    }
+
+                    // Start revealing site
+                    if (sinceSorry > 300) {
+                        const revealProgress = Math.min(1, (sinceSorry - 300) / 400);
+                        ac.save();
+                        ac.globalCompositeOperation = 'destination-out';
+                        ac.globalAlpha = revealProgress;
+                        ac.fillRect(0, 0, W, H);
+                        ac.restore();
+                    }
+
+                    // End and cleanup
+                    if (sinceSorry > 900) {
+                        const endFade = (sinceSorry - 900) / 60;
+                        ac.globalAlpha = 1 - endFade;
+                        if (endFade >= 1) {
+                            ac_el.remove();
+                            sorryInput.remove();
+                            bombActive = false;
+                            audio.play().catch(() => {});
+                            return;
+                        }
+                    }
+                }
+
+                // Draw speech bubble
+                const speechAge = frame - speechStart;
+                if (currentSpeech && speechAge < 200) {
+                    const bubbleAlpha = speechAge < 15 ? speechAge / 15 : speechAge > 170 ? (200 - speechAge) / 30 : 1;
+                    ac.save();
+                    ac.globalAlpha = bubbleAlpha;
+                    // Draw bubble (dark theme version)
+                    const bText = currentSpeech;
+                    ac.font = '15px Segoe UI';
+                    ac.textAlign = 'center';
+                    const tw = ac.measureText(bText).width;
+                    const pad = 16, bw = tw + pad * 2, bh = 36;
+                    const bx = Math.min(stickX, targetX) - bw / 2;
+                    const by = floorY - 95;
+                    ac.fillStyle = 'rgba(30,30,40,0.95)';
+                    ac.beginPath(); ac.roundRect(bx, by, bw, bh, 12); ac.fill();
+                    ac.strokeStyle = '#ff4444';
+                    ac.lineWidth = 1;
+                    ac.stroke();
+                    ac.fillStyle = 'rgba(30,30,40,0.95)';
+                    ac.beginPath();
+                    const tx = Math.min(stickX, targetX);
+                    ac.moveTo(tx - 6, by + bh); ac.lineTo(tx, by + bh + 10); ac.lineTo(tx + 6, by + bh);
+                    ac.closePath(); ac.fill();
+                    ac.fillStyle = '#ff6666';
+                    ac.fillText(bText, Math.min(stickX, targetX), by + bh / 2 + 5);
+                    ac.restore();
+                }
+
+                requestAnimationFrame(drawRefusalFrame);
+            }
+
+            // Start
+            ac.fillStyle = '#000';
+            ac.fillRect(0, 0, W, H);
+            setTimeout(() => requestAnimationFrame(drawRefusalFrame), 300);
         }
 
         // ==============================================
