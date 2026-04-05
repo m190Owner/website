@@ -60,6 +60,7 @@
             object-fit: cover;
             z-index: -9999;
             filter: brightness(0.1);
+            backface-visibility: hidden;
         }
 
         /* Custom Cursor */
@@ -3836,29 +3837,36 @@
         // PAGE FLIP (Q)
         // ==============================================
         let pageFlipped = false;
-        let flipOverlay = null;
+        let flipContainer = null;
 
         function togglePageFlip() {
             if (pageFlipped) {
                 // Flip back
-                document.body.style.transition = 'transform 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
-                document.body.style.transformStyle = 'preserve-3d';
-                document.body.style.transform = 'perspective(1500px) rotateY(0deg)';
-                setTimeout(() => {
-                    if (flipOverlay) { flipOverlay.remove(); flipOverlay = null; }
-                    document.body.style.transition = '';
-                    document.body.style.transformStyle = '';
-                    document.body.style.transform = '';
-                }, 1200);
+                if (flipContainer) {
+                    flipContainer.querySelector('.flip-inner').style.transform = 'rotateY(0deg)';
+                    setTimeout(() => { flipContainer.remove(); flipContainer = null; }, 1200);
+                }
                 pageFlipped = false;
                 return;
             }
 
             pageFlipped = true;
 
-            // Create the back side
-            flipOverlay = document.createElement('div');
-            flipOverlay.style.cssText = 'position:fixed;inset:0;z-index:9996;background:#0a0a12;overflow-y:auto;backface-visibility:hidden;transform:rotateY(180deg);';
+            // Create flip container that sits on top of everything
+            flipContainer = document.createElement('div');
+            flipContainer.style.cssText = 'position:fixed;inset:0;z-index:9996;perspective:1500px;';
+
+            const flipInner = document.createElement('div');
+            flipInner.className = 'flip-inner';
+            flipInner.style.cssText = 'width:100%;height:100%;transform-style:preserve-3d;transition:transform 1.2s cubic-bezier(0.4,0,0.2,1);transform:rotateY(0deg);';
+
+            // Front face - screenshot of the page (just a dark cover)
+            const front = document.createElement('div');
+            front.style.cssText = 'position:absolute;inset:0;backface-visibility:hidden;background:#0b0b0f;';
+
+            // Back face - the dark side content
+            const back = document.createElement('div');
+            back.style.cssText = 'position:absolute;inset:0;backface-visibility:hidden;transform:rotateY(180deg);background:#0a0a12;overflow-y:auto;';
 
             const secrets = [
                 { skill: 'Breaking websites with T key', pct: 98 },
@@ -3900,7 +3908,7 @@
                 </div>
             `).join('');
 
-            flipOverlay.innerHTML = `
+            back.innerHTML = `
                 <div style="max-width:700px;margin:0 auto;padding:60px 30px 80px;">
                     <div style="text-align:center;margin-bottom:40px;">
                         <div style="font-size:0.75rem;letter-spacing:6px;text-transform:uppercase;color:#ff6b6b;margin-bottom:10px;">You flipped the page</div>
@@ -3939,18 +3947,19 @@
                 </div>
             `;
 
-            document.body.appendChild(flipOverlay);
+            flipInner.appendChild(front);
+            flipInner.appendChild(back);
+            flipContainer.appendChild(flipInner);
+            document.body.appendChild(flipContainer);
 
             // Animate the flip
-            document.body.style.transition = 'transform 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
-            document.body.style.transformStyle = 'preserve-3d';
             requestAnimationFrame(() => {
-                document.body.style.transform = 'perspective(1500px) rotateY(180deg)';
+                flipInner.style.transform = 'rotateY(180deg)';
             });
 
             // Animate skill bars after flip completes
             setTimeout(() => {
-                const bars = flipOverlay.querySelectorAll('.flip-skill-bar');
+                const bars = back.querySelectorAll('.flip-skill-bar');
                 bars.forEach(bar => {
                     bar.style.width = bar.dataset.pct + '%';
                 });
