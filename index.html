@@ -1140,7 +1140,7 @@
                     const dx = centerX - t.x;
                     const dy = centerY - t.y;
                     const dist = Math.hypot(dx, dy) || 1;
-                    if (dist < explodeRadius) {
+                    if (dist < explodeRadius && !idleActive) {
                         flashAlpha = Math.max(flashAlpha, 0.6 + beat / 200);
                         t.exploding = true;
                         const angle = Math.random() * Math.PI * 2;
