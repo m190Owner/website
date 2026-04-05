@@ -1313,7 +1313,6 @@
                     const dy = centerY - t.y;
                     const dist = Math.hypot(dx, dy) || 1;
                     if (dist < explodeRadius && !idleActive) {
-                        flashAlpha = Math.max(flashAlpha, 0.6 + beat / 200);
                         t.exploding = true;
                         const angle = Math.random() * Math.PI * 2;
                         const force = 5 + beat / 15;
@@ -1347,14 +1346,6 @@
                 ctx.restore();
             });
             drawShockwaves();
-            if (flashAlpha > 0) {
-                ctx.save();
-                ctx.globalAlpha = flashAlpha;
-                ctx.fillStyle = "#ffffff";
-                ctx.fillRect(0, 0, w, h);
-                ctx.restore();
-                flashAlpha -= 0.03;
-            }
         }
 
         let hueBase = 220;
@@ -1899,15 +1890,16 @@
         let lastVisitorCount = 0;
         let toastInitialized = false;
 
-        function showToast(city, country) {
+        function showToast(title, message, isVisitor) {
             const toast = document.createElement('div');
             toast.className = 'toast';
 
-            const location = city && country ? `${city}, ${country}` : country || 'somewhere';
-            toast.innerHTML = `
-                <div class="toast-dot"></div>
-                <div class="toast-text">Someone from <strong>${location}</strong> just visited</div>
-            `;
+            if (isVisitor) {
+                const location = title && message ? `${title}, ${message}` : message || 'somewhere';
+                toast.innerHTML = `<div class="toast-dot"></div><div class="toast-text">Someone from <strong>${location}</strong> just visited</div>`;
+            } else {
+                toast.innerHTML = `<div class="toast-dot" style="background:#7aa2ff;box-shadow:0 0 6px #7aa2ff;"></div><div class="toast-text"><strong>${title}</strong> ${message}</div>`;
+            }
 
             toastContainer.appendChild(toast);
             setTimeout(() => toast.remove(), 5000);
@@ -1927,7 +1919,7 @@
 
                 if (data.count > lastVisitorCount && data.locations && data.locations.length > 0) {
                     const newest = data.locations[data.locations.length - 1];
-                    showToast(newest.city, newest.country);
+                    showToast(newest.city, newest.country, true);
                     lastVisitorCount = data.count;
                 }
             } catch (e) {}
@@ -2331,7 +2323,6 @@
                     clearInterval(tick);
                     numEl.textContent = '\u{1F4A5}';
                     numEl.style.fontSize = '16rem';
-                    flashAlpha = 1.5;
                     addShockwave(w / 2, h / 2, { glow: '#ff4400' }, 200, 3);
                     addShockwave(w / 2, h / 2, { glow: '#ff8800' }, 150, 2);
                     let sf = 0;
