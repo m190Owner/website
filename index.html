@@ -1730,6 +1730,9 @@
 
         }
 
+        // Portal state (must be declared before draw loop)
+        let portalActive = false, portalX = 0, portalY = 0, portalRadius = 0, portalAngle = 0;
+
         // Inject new systems into the draw loop
         const originalDraw = draw;
         draw = function() {
@@ -2347,7 +2350,6 @@
         // ==============================================
         // PORTAL EFFECT (click and hold)
         // ==============================================
-        let portalActive = false, portalX = 0, portalY = 0, portalRadius = 0, portalAngle = 0;
         let portalTimeout;
         document.addEventListener('mousedown', (e) => {
             if (e.target.closest('nav, .bottom-bar, .chat-input-container, .dj-overlay, .boss-overlay, .destruction-canvas, input, button, a')) return;
