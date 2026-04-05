@@ -89,6 +89,7 @@
             background: rgba(0, 0, 0, 0.6);
             backdrop-filter: blur(8px);
             z-index: 10;
+            perspective: 1000px;
         }
 
         /* Sections */
@@ -228,24 +229,55 @@
         /* Links */
         .links {
             margin-top: 25px;
+            perspective: 1000px;
         }
 
         .links a {
             display: inline-block;
             margin: 0 10px;
-            padding: 10px 22px;
-            border: 1px solid #7aa2ff;
-            border-radius: 30px;
-            color: #7aa2ff;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            color: #fff;
             text-decoration: none;
-            transition: all 0.3s ease;
+            transition: transform 0.5s;
             transform-style: preserve-3d;
-            perspective: 500px;
+            position: relative;
+            background: linear-gradient(#7aa2ff, #5a80cc);
+            text-shadow: 0 6px 10px rgba(0,0,0,0.6);
+            transform: rotateX(70deg) rotateZ(30deg);
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            font-size: 0.8rem;
+            font-weight: 600;
+        }
+
+        .links a::before {
+            content: "";
+            width: 100%;
+            height: 12px;
+            background-color: #4a6dad;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            transform: rotateX(90deg);
+            transform-origin: bottom;
+        }
+
+        .links a::after {
+            content: "";
+            width: 12px;
+            height: 100%;
+            background-color: #8bb4ff;
+            position: absolute;
+            top: 0;
+            right: 0;
+            transform: rotateY(-90deg);
+            transform-origin: right;
         }
 
         .links a:hover {
-            background: #7aa2ff;
-            color: #0b0b0f;
+            transform: rotateX(30deg) rotateZ(0);
         }
 
         /* Loader */
@@ -294,36 +326,95 @@
             cursor: pointer;
         }
 
-        #volume-controls button {
+        /* 3D Nav Buttons */
+        .nav-ctrl-btn {
+            position: relative;
+            background: linear-gradient(#7aa2ff, #5a80cc);
+            border: none;
+            border-radius: 3px;
+            color: #fff;
+            padding: 5px 10px;
+            font-family: inherit;
+            font-size: 0.85rem;
             cursor: pointer;
-            transition: 0.2s;
+            transition: transform 0.5s;
+            transform-style: preserve-3d;
+            text-shadow: 0 3px 6px rgba(0,0,0,0.5);
+            transform: rotateX(70deg) rotateZ(30deg);
+            letter-spacing: 1px;
         }
 
-        #volume-controls button:hover {
-            background: #7aa2ff;
-            color: #0b0b0f;
+        .nav-ctrl-btn::before {
+            content: "";
+            width: 100%;
+            height: 8px;
+            background-color: #4a6dad;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            transform: rotateX(90deg);
+            transform-origin: bottom;
         }
 
-        #prev-btn:hover, #next-btn:hover {
-            background: #7aa2ff;
-            color: #0b0b0f;
+        .nav-ctrl-btn::after {
+            content: "";
+            width: 8px;
+            height: 100%;
+            background-color: #8bb4ff;
+            position: absolute;
+            top: 0;
+            right: 0;
+            transform: rotateY(-90deg);
+            transform-origin: right;
+        }
+
+        .nav-ctrl-btn:hover {
+            transform: rotateX(30deg) rotateZ(0);
         }
 
         /* Feedback button styling */
         .feedback-btn {
-            background: transparent;
-            border: 1px solid #7aa2ff;
-            border-radius: 5px;
-            color: #7aa2ff;
-            padding: 5px 10px;
+            position: relative;
+            background: linear-gradient(#7aa2ff, #5a80cc);
+            border: none;
+            border-radius: 3px;
+            color: #fff;
+            padding: 8px 14px;
             font-family: inherit;
-            font-size: 1rem;
+            font-size: 0.8rem;
             cursor: pointer;
-            transition: background 0.2s, color 0.2s;
+            transition: transform 0.5s;
+            transform-style: preserve-3d;
+            text-shadow: 0 4px 8px rgba(0,0,0,0.5);
+            transform: rotateX(70deg) rotateZ(30deg);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+        .feedback-btn::before {
+            content: "";
+            width: 100%;
+            height: 10px;
+            background-color: #4a6dad;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            transform: rotateX(90deg);
+            transform-origin: bottom;
+        }
+        .feedback-btn::after {
+            content: "";
+            width: 10px;
+            height: 100%;
+            background-color: #8bb4ff;
+            position: absolute;
+            top: 0;
+            right: 0;
+            transform: rotateY(-90deg);
+            transform-origin: right;
         }
         .feedback-btn:hover {
-            background: #7aa2ff;
-            color: #0b0b0f;
+            transform: rotateX(30deg) rotateZ(0);
         }
 
         /* Discord Status Widget */
@@ -541,6 +632,7 @@
             gap: 8px;
             opacity: 0.4;
             transition: opacity 0.3s;
+            perspective: 1000px;
         }
 
         .chat-input-container:hover,
@@ -572,20 +664,50 @@
         }
 
         .chat-send {
-            background: rgba(122, 162, 255, 0.15);
-            border: 1px solid rgba(122, 162, 255, 0.3);
-            border-radius: 20px;
-            padding: 6px 14px;
-            color: #7aa2ff;
+            position: relative;
+            background: linear-gradient(#7aa2ff, #5a80cc);
+            border: none;
+            border-radius: 3px;
+            padding: 8px 16px;
+            color: #fff;
             font-family: inherit;
             font-size: 0.8rem;
             cursor: pointer;
-            transition: all 0.2s;
+            transition: transform 0.5s;
+            transform-style: preserve-3d;
+            text-shadow: 0 3px 6px rgba(0,0,0,0.5);
+            transform: rotateX(70deg) rotateZ(30deg);
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            font-weight: 600;
+        }
+
+        .chat-send::before {
+            content: "";
+            width: 100%;
+            height: 8px;
+            background-color: #4a6dad;
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            transform: rotateX(90deg);
+            transform-origin: bottom;
+        }
+
+        .chat-send::after {
+            content: "";
+            width: 8px;
+            height: 100%;
+            background-color: #8bb4ff;
+            position: absolute;
+            top: 0;
+            right: 0;
+            transform: rotateY(-90deg);
+            transform-origin: right;
         }
 
         .chat-send:hover {
-            background: #7aa2ff;
-            color: #0b0b0f;
+            transform: rotateX(30deg) rotateZ(0);
         }
 
         .chat-bubble {
@@ -726,13 +848,11 @@
             <!-- Feedback button -->
             <button class="feedback-btn" id="feedbackButton">Feedback</button>
             <div id="volume-controls" style="display: flex; align-items: center; gap: 10px; color: #7aa2ff;">
-                <button id="prev-btn" style="padding: 5px 8px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff; cursor: pointer; font-size: 0.85rem; transition: 0.2s;" title="Previous track">&#9664;</button>
+                <button id="prev-btn" class="nav-ctrl-btn" title="Previous track">&#9664;</button>
                 <span id="track-name" style="font-size: 0.7rem; min-width: 30px; text-align: center; opacity: 0.7;">1/5</span>
-                <button id="next-btn" style="padding: 5px 8px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff; cursor: pointer; font-size: 0.85rem; transition: 0.2s;" title="Next track">&#9654;</button>
+                <button id="next-btn" class="nav-ctrl-btn" title="Next track">&#9654;</button>
                 <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.3">
-                <button id="mute-btn" style="padding: 5px 10px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff; cursor: pointer; transition: 0.2s;">
-                    Mute
-                </button>
+                <button id="mute-btn" class="nav-ctrl-btn">Mute</button>
             </div>
         </div>
     </nav>
@@ -758,7 +878,7 @@
     </div>
 
     <!-- Key Hints -->
-    <div class="key-hints">G gravity &middot; E quake &middot; M melt &middot; B boss &middot; D dj &middot; T bomb &middot; X destroy &middot; C paint &middot; W win95 &middot; S slots &middot; F1 flappy</div>
+    <div class="key-hints">G gravity &middot; E quake &middot; M melt &middot; B boss &middot; D dj &middot; T bomb &middot; X destroy &middot; C paint &middot; W win95 &middot; S slots &middot; Q flip &middot; F1 flappy</div>
 
     <!-- Bottom Status Bar -->
     <div class="bottom-bar">
@@ -2174,6 +2294,7 @@
                 case 'c': togglePaintMode(); break;
                 case 'w': toggleWin95(); break;
                 case 's': toggleSlotMachine(); break;
+                case 'q': togglePageFlip(); break;
             }
             if (e.key === 'F1') { e.preventDefault(); toggleFlappy(); }
         });
@@ -3710,6 +3831,130 @@
                     }
                 }, spins > maxSpins - 10 ? 150 : 60);
             };
+        }
+        // ==============================================
+        // PAGE FLIP (Q)
+        // ==============================================
+        let pageFlipped = false;
+        let flipOverlay = null;
+
+        function togglePageFlip() {
+            if (pageFlipped) {
+                // Flip back
+                document.body.style.transition = 'transform 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
+                document.body.style.transformStyle = 'preserve-3d';
+                document.body.style.transform = 'perspective(1500px) rotateY(0deg)';
+                setTimeout(() => {
+                    if (flipOverlay) { flipOverlay.remove(); flipOverlay = null; }
+                    document.body.style.transition = '';
+                    document.body.style.transformStyle = '';
+                    document.body.style.transform = '';
+                }, 1200);
+                pageFlipped = false;
+                return;
+            }
+
+            pageFlipped = true;
+
+            // Create the back side
+            flipOverlay = document.createElement('div');
+            flipOverlay.style.cssText = 'position:fixed;inset:0;z-index:9996;background:#0a0a12;overflow-y:auto;backface-visibility:hidden;transform:rotateY(180deg);';
+
+            const secrets = [
+                { skill: 'Breaking websites with T key', pct: 98 },
+                { skill: 'Googling the error message', pct: 95 },
+                { skill: 'Closing 47 browser tabs at once', pct: 88 },
+                { skill: 'Pretending to understand regex', pct: 72 },
+                { skill: 'Ctrl+Z mastery', pct: 100 },
+                { skill: 'Making CSS "work" somehow', pct: 65 },
+                { skill: 'Blaming the cache', pct: 99 },
+                { skill: 'Stack Overflow speed-reading', pct: 91 },
+            ];
+
+            const facts = [
+                'This website has more lines of code than some operating systems (probably)',
+                'The T key bomb was tested 47 times. The stick figure filed a complaint.',
+                'Every pixel on this page was hand-artisanally-crafted (by Claude)',
+                'The DJ mode filter was originally set to "sounds like a robot in a washing machine"',
+                'If you found this page, you are officially a person of culture',
+                'The Windows 95 desktop is more stable than actual Windows 95',
+                'The Flappy Bird high score to beat is 0 (it is really hard ok)',
+                'This entire site is one HTML file. Yes, ONE. We are not sorry.',
+            ];
+
+            let skillBars = secrets.map(s => `
+                <div style="margin:8px 0;">
+                    <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+                        <span>${s.skill}</span>
+                        <span style="color:#ff6b6b;">${s.pct}%</span>
+                    </div>
+                    <div style="background:#1a1a2e;border-radius:4px;height:8px;overflow:hidden;">
+                        <div class="flip-skill-bar" style="width:0%;height:100%;background:linear-gradient(90deg,#7aa2ff,#ff6b6b);border-radius:4px;transition:width 1.5s ease;" data-pct="${s.pct}"></div>
+                    </div>
+                </div>
+            `).join('');
+
+            let factList = facts.map(f => `
+                <div style="padding:10px 14px;background:rgba(122,162,255,0.05);border-left:3px solid #7aa2ff;margin:8px 0;border-radius:0 6px 6px 0;font-size:0.9rem;color:#8a96b8;">
+                    ${f}
+                </div>
+            `).join('');
+
+            flipOverlay.innerHTML = `
+                <div style="max-width:700px;margin:0 auto;padding:60px 30px 80px;">
+                    <div style="text-align:center;margin-bottom:40px;">
+                        <div style="font-size:0.75rem;letter-spacing:6px;text-transform:uppercase;color:#ff6b6b;margin-bottom:10px;">You flipped the page</div>
+                        <div style="font-size:3rem;font-weight:900;background:linear-gradient(135deg,#ff6b6b,#7aa2ff);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:4px;">THE DARK SIDE</div>
+                        <div style="color:#5a6480;font-size:0.85rem;margin-top:8px;">Welcome to the back of the internet</div>
+                    </div>
+
+                    <div style="background:rgba(255,107,107,0.05);border:1px solid rgba(255,107,107,0.15);border-radius:12px;padding:24px;margin-bottom:30px;">
+                        <div style="color:#ff6b6b;font-size:1.1rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;margin-bottom:16px;">&#9760; Logan's REAL Skills</div>
+                        ${skillBars}
+                    </div>
+
+                    <div style="background:rgba(122,162,255,0.05);border:1px solid rgba(122,162,255,0.15);border-radius:12px;padding:24px;margin-bottom:30px;">
+                        <div style="color:#7aa2ff;font-size:1.1rem;font-weight:700;letter-spacing:3px;text-transform:uppercase;margin-bottom:16px;">&#128064; Classified Intel</div>
+                        ${factList}
+                    </div>
+
+                    <div style="text-align:center;padding:30px;background:rgba(255,255,255,0.02);border-radius:12px;border:1px dashed rgba(122,162,255,0.2);">
+                        <pre style="color:#3a4a6a;font-size:0.7rem;line-height:1.4;font-family:monospace;">
+    ╔══════════════════════════════════════╗
+    ║                                      ║
+    ║   if (you.readThis) {                ║
+    ║       you.coolness += 100;           ║
+    ║       logan.respect++;               ║
+    ║   }                                  ║
+    ║                                      ║
+    ║   // press Q to return to reality    ║
+    ║                                      ║
+    ╚══════════════════════════════════════╝
+                        </pre>
+                    </div>
+
+                    <div style="text-align:center;margin-top:30px;color:#3a4a6a;font-size:0.75rem;letter-spacing:2px;">
+                        PRESS Q TO FLIP BACK &middot; YOU SAW NOTHING
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(flipOverlay);
+
+            // Animate the flip
+            document.body.style.transition = 'transform 1.2s cubic-bezier(0.4, 0, 0.2, 1)';
+            document.body.style.transformStyle = 'preserve-3d';
+            requestAnimationFrame(() => {
+                document.body.style.transform = 'perspective(1500px) rotateY(180deg)';
+            });
+
+            // Animate skill bars after flip completes
+            setTimeout(() => {
+                const bars = flipOverlay.querySelectorAll('.flip-skill-bar');
+                bars.forEach(bar => {
+                    bar.style.width = bar.dataset.pct + '%';
+                });
+            }, 1300);
         }
     </script>
 </body>
