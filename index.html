@@ -494,6 +494,93 @@
             display: inline-block;
             min-width: 0.3em;
         }
+
+        /* Sound-reactive cursor transition */
+        .cursor {
+            transition: width 0.08s ease, height 0.08s ease, box-shadow 0.08s ease;
+        }
+
+        /* Chat Wall */
+        .chat-input-container {
+            position: fixed;
+            bottom: 45px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 11;
+            display: flex;
+            gap: 8px;
+            opacity: 0.4;
+            transition: opacity 0.3s;
+        }
+
+        .chat-input-container:hover,
+        .chat-input-container:focus-within {
+            opacity: 1;
+        }
+
+        .chat-input {
+            background: rgba(10, 12, 20, 0.8);
+            border: 1px solid rgba(122, 162, 255, 0.3);
+            border-radius: 20px;
+            padding: 6px 16px;
+            color: #cbd5ff;
+            font-family: inherit;
+            font-size: 0.8rem;
+            outline: none;
+            width: 240px;
+            backdrop-filter: blur(8px);
+            cursor: text;
+        }
+
+        .chat-input:focus {
+            border-color: #7aa2ff;
+            box-shadow: 0 0 10px rgba(122, 162, 255, 0.15);
+        }
+
+        .chat-input::placeholder {
+            color: #5a6480;
+        }
+
+        .chat-send {
+            background: rgba(122, 162, 255, 0.15);
+            border: 1px solid rgba(122, 162, 255, 0.3);
+            border-radius: 20px;
+            padding: 6px 14px;
+            color: #7aa2ff;
+            font-family: inherit;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .chat-send:hover {
+            background: #7aa2ff;
+            color: #0b0b0f;
+        }
+
+        .chat-bubble {
+            position: fixed;
+            white-space: nowrap;
+            font-size: 0.9rem;
+            color: rgba(200, 215, 255, 0.7);
+            text-shadow: 0 0 8px rgba(122, 162, 255, 0.3);
+            pointer-events: none;
+            z-index: 5;
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        /* Gravity hint */
+        .gravity-hint {
+            position: fixed;
+            bottom: 75px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.6rem;
+            color: rgba(138, 150, 184, 0.25);
+            z-index: 5;
+            pointer-events: none;
+            letter-spacing: 1px;
+        }
     </style>
 </head>
 <body>
@@ -559,6 +646,15 @@
             </div>
         </div>
     </section>
+
+    <!-- Chat Wall Input -->
+    <div class="chat-input-container">
+        <input type="text" class="chat-input" id="chat-input" placeholder="Leave a message..." maxlength="100" autocomplete="off">
+        <button class="chat-send" id="chat-send">Send</button>
+    </div>
+
+    <!-- Gravity Hint -->
+    <div class="gravity-hint">press G for gravity</div>
 
     <!-- Bottom Status Bar -->
     <div class="bottom-bar">
@@ -1758,6 +1854,236 @@
 
         checkNewVisitors();
         setInterval(checkNewVisitors, 15000);
+
+        // ==============================================
+        // SOUND-REACTIVE CURSOR SIZE
+        // ==============================================
+        function updateCursorSize() {
+            const beat = getBeatStrength();
+            const baseSize = 18;
+            const extra = (beat / 255) * 34;
+            const size = baseSize + extra;
+            cursor.style.width = size + 'px';
+            cursor.style.height = size + 'px';
+
+            const glowSpread = 20 + (beat / 255) * 40;
+            const glowAlpha = 0.6 + (beat / 255) * 0.4;
+            cursor.style.boxShadow = `0 0 ${glowSpread}px rgba(122, 162, 255, ${glowAlpha})`;
+
+            requestAnimationFrame(updateCursorSize);
+        }
+        updateCursorSize();
+
+        // ==============================================
+        // GRAVITY MODE (press G)
+        // ==============================================
+        let gravityActive = false;
+
+        document.addEventListener('keydown', (e) => {
+            if ((e.key === 'g' || e.key === 'G') && !gravityActive && document.activeElement.tagName !== 'INPUT') {
+                activateGravity();
+            }
+        });
+
+        function activateGravity() {
+            gravityActive = true;
+
+            const selectors = [
+                '.home-content h1',
+                '.links a',
+                '.discord-widget',
+                '#feedbackButton',
+                '#volume-controls',
+                'nav strong',
+                '.nav-visualizer',
+                '.bar-item',
+                '#map-link',
+                '.bar-sep'
+            ];
+
+            const gEls = [];
+            selectors.forEach(sel => {
+                document.querySelectorAll(sel).forEach(el => {
+                    const rect = el.getBoundingClientRect();
+                    const floor = window.innerHeight - rect.bottom;
+                    gEls.push({
+                        el,
+                        y: 0,
+                        vy: Math.random() * -3,
+                        rotation: 0,
+                        rotSpeed: (Math.random() - 0.5) * 8,
+                        floor: Math.max(10, floor - 5 - Math.random() * 20),
+                        origTransition: el.style.transition,
+                        origTransform: el.style.transform
+                    });
+                    el.style.transition = 'none';
+                });
+            });
+
+            const gravity = 0.65;
+            const bounce = 0.35;
+            const friction = 0.98;
+            let settled = 0;
+
+            function gravityFrame() {
+                settled = 0;
+                gEls.forEach(ge => {
+                    ge.vy += gravity;
+                    ge.y += ge.vy;
+                    ge.rotation += ge.rotSpeed;
+
+                    if (ge.y >= ge.floor) {
+                        ge.y = ge.floor;
+                        ge.vy *= -bounce;
+                        ge.rotSpeed *= 0.6;
+                        if (Math.abs(ge.vy) < 0.8) {
+                            ge.vy = 0;
+                            settled++;
+                        }
+                    }
+
+                    ge.rotSpeed *= friction;
+                    ge.el.style.transform = `translateY(${ge.y}px) rotate(${ge.rotation}deg)`;
+                });
+
+                if (settled < gEls.length) {
+                    requestAnimationFrame(gravityFrame);
+                } else {
+                    setTimeout(() => reassemble(gEls), 1500);
+                }
+            }
+
+            requestAnimationFrame(gravityFrame);
+        }
+
+        function reassemble(gEls) {
+            gEls.forEach(ge => {
+                ge.el.style.transition = 'transform 0.9s cubic-bezier(0.2, 0.8, 0.2, 1.15)';
+                ge.el.style.transform = ge.origTransform || '';
+            });
+
+            setTimeout(() => {
+                gEls.forEach(ge => {
+                    ge.el.style.transition = ge.origTransition || '';
+                });
+                gravityActive = false;
+            }, 1000);
+        }
+
+        // ==============================================
+        // VISITOR CHAT WALL (DANMAKU)
+        // ==============================================
+        const chatInput = document.getElementById('chat-input');
+        const chatSendBtn = document.getElementById('chat-send');
+        const seenChatIds = new Set();
+
+        function spawnChatBubble(text) {
+            const bubble = document.createElement('div');
+            bubble.className = 'chat-bubble';
+            bubble.textContent = text;
+
+            // Random vertical position (avoid top nav and bottom bar)
+            const yMin = 80;
+            const yMax = window.innerHeight - 80;
+            const y = yMin + Math.random() * (yMax - yMin);
+            bubble.style.top = y + 'px';
+            bubble.style.left = window.innerWidth + 'px';
+
+            // Random speed (8-15 seconds to cross)
+            const duration = 8000 + Math.random() * 7000;
+            const hue = 200 + Math.random() * 60;
+            const alpha = 0.5 + Math.random() * 0.3;
+            bubble.style.color = `hsla(${hue}, 60%, 80%, ${alpha})`;
+            bubble.style.fontSize = (0.8 + Math.random() * 0.4) + 'rem';
+
+            document.body.appendChild(bubble);
+
+            const startX = window.innerWidth + 20;
+            const endX = -bubble.offsetWidth - 20;
+            const startTime = performance.now();
+
+            function animateBubble(now) {
+                const elapsed = now - startTime;
+                const progress = elapsed / duration;
+
+                if (progress >= 1) {
+                    bubble.remove();
+                    return;
+                }
+
+                const x = startX + (endX - startX) * progress;
+                // Slight wave
+                const wave = Math.sin(progress * Math.PI * 2 + y) * 8;
+                bubble.style.transform = `translateX(${x - startX}px) translateY(${wave}px)`;
+                bubble.style.left = startX + 'px';
+                bubble.style.opacity = progress < 0.1 ? progress * 10 : progress > 0.85 ? (1 - progress) / 0.15 : 1;
+
+                requestAnimationFrame(animateBubble);
+            }
+
+            requestAnimationFrame(animateBubble);
+        }
+
+        async function sendChatMessage() {
+            const msg = chatInput.value.trim();
+            if (!msg) return;
+            chatInput.value = '';
+
+            // Immediately show locally
+            spawnChatBubble(msg);
+
+            try {
+                await fetch('chat.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg })
+                });
+            } catch (e) {}
+        }
+
+        chatSendBtn.addEventListener('click', sendChatMessage);
+        chatInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') sendChatMessage();
+            e.stopPropagation(); // Prevent G key triggering gravity while typing
+        });
+
+        // Load existing messages and spawn them gradually
+        async function loadChatMessages() {
+            try {
+                const res = await fetch('chat.php');
+                const messages = await res.json();
+
+                messages.forEach(m => {
+                    if (!seenChatIds.has(m.id)) {
+                        seenChatIds.add(m.id);
+                    }
+                });
+
+                // Spawn recent messages with staggered delays
+                let delay = 0;
+                const recent = messages.slice(-10);
+                recent.forEach(m => {
+                    setTimeout(() => spawnChatBubble(m.text), delay);
+                    delay += 2000 + Math.random() * 3000;
+                });
+            } catch (e) {}
+        }
+
+        loadChatMessages();
+
+        // Poll for new messages every 20 seconds
+        setInterval(async () => {
+            try {
+                const res = await fetch('chat.php');
+                const messages = await res.json();
+                messages.forEach(m => {
+                    if (!seenChatIds.has(m.id)) {
+                        seenChatIds.add(m.id);
+                        spawnChatBubble(m.text);
+                    }
+                });
+            } catch (e) {}
+        }, 20000);
     </script>
 </body>
 </html>
