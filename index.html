@@ -58,9 +58,8 @@
             width: 100vw;
             height: 100vh;
             object-fit: cover;
-            z-index: -9999;
-            filter: brightness(0.1);
-            backface-visibility: hidden;
+            z-index: -3;
+            filter: brightness(0.15);
         }
 
         /* Custom Cursor */
@@ -1189,8 +1188,7 @@
         }
 
         function drawStarfield() {
-            sfCtx.fillStyle = 'rgba(11, 11, 15, 0.3)';
-            sfCtx.fillRect(0, 0, w, h);
+            sfCtx.clearRect(0, 0, w, h);
 
             const beat = getBeatStrength();
             const speed = 2 + beat / 10;
