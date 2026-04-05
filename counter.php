@@ -5,8 +5,10 @@ header('Access-Control-Allow-Origin: *');
 $countFile = __DIR__ . '/visitor_count.txt';
 $activeDir = __DIR__ . '/active_visitors';
 
-if (!file_exists($countFile)) {
-    file_put_contents($countFile, '0');
+$migrated = __DIR__ . '/counter_migrated.txt';
+if (!file_exists($countFile) || !file_exists($migrated)) {
+    file_put_contents($countFile, '46');
+    file_put_contents($migrated, '1');
 }
 
 if (!is_dir($activeDir)) {
