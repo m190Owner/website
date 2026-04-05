@@ -358,147 +358,68 @@
             color: #8a96b8;
         }
 
-        /* Visitor Counter */
-        .visitor-counter {
+
+        /* Bottom Status Bar */
+        .bottom-bar {
             position: fixed;
-            bottom: 65px;
-            right: 30px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border: 1px solid rgba(122, 162, 255, 0.2);
-            border-radius: 30px;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(8px);
-            font-size: 0.8rem;
-            color: #8a96b8;
-            z-index: 10;
-            transition: all 0.3s ease;
-        }
-
-        .visitor-counter:hover {
-            border-color: #7aa2ff;
-            color: #cbd5ff;
-        }
-
-        .visitor-counter .counter-icon {
-            color: #7aa2ff;
-            font-size: 0.9rem;
-        }
-
-        .visitor-counter .counter-num {
-            font-weight: 600;
-            color: #7aa2ff;
-            letter-spacing: 1px;
-        }
-
-        .visitor-counter .counter-sep {
-            color: rgba(122, 162, 255, 0.3);
-            margin: 0 2px;
-        }
-
-        .visitor-counter .online-dot {
-            color: #3ba55d;
-            font-size: 0.6rem;
-            animation: pulse-dot 2s ease infinite;
-        }
-
-        /* Visitor Map */
-        .visitor-map {
-            position: fixed;
-            bottom: 20px;
-            left: 30px;
-            width: 280px;
-            height: 160px;
-            border: 1px solid rgba(122, 162, 255, 0.2);
-            border-radius: 12px;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(8px);
-            z-index: 10;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .visitor-map:hover {
-            border-color: #7aa2ff;
-            box-shadow: 0 0 12px rgba(122, 162, 255, 0.15);
-        }
-
-        .visitor-map canvas {
+            bottom: 0;
+            left: 0;
             width: 100%;
-            height: 100%;
-        }
-
-        .map-label {
-            position: absolute;
-            top: 8px;
-            left: 12px;
-            font-size: 0.65rem;
-            text-transform: uppercase;
-            letter-spacing: 1.5px;
-            color: #7aa2ff;
-            opacity: 0.7;
-        }
-
-        /* Click Counter */
-        .click-counter {
-            position: fixed;
-            bottom: 20px;
-            right: 30px;
             display: flex;
+            justify-content: space-between;
             align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border: 1px solid rgba(122, 162, 255, 0.2);
-            border-radius: 30px;
+            padding: 10px 30px;
             background: rgba(0, 0, 0, 0.5);
             backdrop-filter: blur(8px);
-            font-size: 0.8rem;
-            color: #8a96b8;
+            border-top: 1px solid rgba(122, 162, 255, 0.15);
             z-index: 10;
-            transition: all 0.3s ease;
-        }
-
-        .click-counter:hover {
-            border-color: #7aa2ff;
-            color: #cbd5ff;
-        }
-
-        .click-counter .click-num {
-            font-weight: 600;
-            color: #7aa2ff;
-            letter-spacing: 1px;
-        }
-
-        /* Site Uptime */
-        .site-uptime {
-            position: fixed;
-            bottom: 65px;
-            left: 30px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            padding: 8px 16px;
-            border: 1px solid rgba(122, 162, 255, 0.2);
-            border-radius: 30px;
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(8px);
             font-size: 0.75rem;
             color: #8a96b8;
-            z-index: 10;
-            transition: all 0.3s ease;
+        }
+
+        .bar-section {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .bar-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .bar-item .bar-num {
+            font-weight: 600;
+            color: #7aa2ff;
             font-variant-numeric: tabular-nums;
         }
 
-        .site-uptime:hover {
-            border-color: #7aa2ff;
-            color: #cbd5ff;
+        .bar-item .online-dot {
+            color: #3ba55d;
+            font-size: 0.5rem;
+            animation: pulse-dot 2s ease infinite;
         }
 
-        .uptime-num {
-            font-weight: 600;
-            color: #7aa2ff;
+        .bar-sep {
+            width: 1px;
+            height: 14px;
+            background: rgba(122, 162, 255, 0.2);
+        }
+
+        /* Visitor Map (center of bottom bar) */
+        .visitor-map-inline {
+            width: 200px;
+            height: 40px;
+            border: 1px solid rgba(122, 162, 255, 0.15);
+            border-radius: 6px;
+            overflow: hidden;
+            background: rgba(0, 0, 0, 0.3);
+        }
+
+        .visitor-map-inline canvas {
+            width: 100%;
+            height: 100%;
         }
 
         /* Audio Waveform Visualizer */
@@ -575,32 +496,36 @@
         </div>
     </section>
 
-    <!-- Visitor Map -->
-    <div class="visitor-map">
-        <span class="map-label">visitor map</span>
-        <canvas id="visitor-map-canvas" width="560" height="320"></canvas>
-    </div>
-
-    <!-- Visitor Counter -->
-    <div class="visitor-counter">
-        <span class="counter-dot online-dot">&#9679;</span>
-        <span class="counter-num" id="online-count">—</span>
-        <span>online</span>
-        <span class="counter-sep">|</span>
-        <span class="counter-num" id="visitor-count">—</span>
-        <span>total</span>
-    </div>
-
-    <!-- Site Uptime -->
-    <div class="site-uptime">
-        <span>uptime</span>
-        <span class="uptime-num" id="uptime-display">—</span>
-    </div>
-
-    <!-- Click Counter -->
-    <div class="click-counter">
-        <span class="click-num" id="click-count">—</span>
-        <span>clicks</span>
+    <!-- Bottom Status Bar -->
+    <div class="bottom-bar">
+        <div class="bar-section">
+            <div class="bar-item">
+                <span class="online-dot">&#9679;</span>
+                <span class="bar-num" id="online-count">—</span>
+                <span>online</span>
+            </div>
+            <div class="bar-sep"></div>
+            <div class="bar-item">
+                <span class="bar-num" id="visitor-count">—</span>
+                <span>visitors</span>
+            </div>
+            <div class="bar-sep"></div>
+            <div class="bar-item">
+                <span class="bar-num" id="click-count">—</span>
+                <span>clicks</span>
+            </div>
+        </div>
+        <div class="bar-section">
+            <div class="visitor-map-inline">
+                <canvas id="visitor-map-canvas" width="400" height="80"></canvas>
+            </div>
+        </div>
+        <div class="bar-section">
+            <div class="bar-item">
+                <span>uptime</span>
+                <span class="bar-num" id="uptime-display">—</span>
+            </div>
+        </div>
     </div>
 
     <!-- Background Music -->
@@ -702,13 +627,13 @@
 
                 // Glow
                 mapCtx.beginPath();
-                mapCtx.arc(x, y, 6, 0, Math.PI * 2);
+                mapCtx.arc(x, y, 4, 0, Math.PI * 2);
                 mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha * 0.15})`;
                 mapCtx.fill();
 
                 // Dot
                 mapCtx.beginPath();
-                mapCtx.arc(x, y, 2.5, 0, Math.PI * 2);
+                mapCtx.arc(x, y, 1.5, 0, Math.PI * 2);
                 mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha})`;
                 mapCtx.shadowColor = '#7aa2ff';
                 mapCtx.shadowBlur = 6;
@@ -722,7 +647,7 @@
                 const { x, y } = latLonToXY(newest.lat, newest.lon, cw, ch);
                 const pulse = (Date.now() % 2000) / 2000;
                 mapCtx.beginPath();
-                mapCtx.arc(x, y, 3 + pulse * 10, 0, Math.PI * 2);
+                mapCtx.arc(x, y, 2 + pulse * 6, 0, Math.PI * 2);
                 mapCtx.strokeStyle = `rgba(122, 162, 255, ${0.6 - pulse * 0.6})`;
                 mapCtx.lineWidth = 1.5;
                 mapCtx.stroke();
