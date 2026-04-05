@@ -366,6 +366,17 @@
             color: #7aa2ff;
             letter-spacing: 1px;
         }
+
+        .visitor-counter .counter-sep {
+            color: rgba(122, 162, 255, 0.3);
+            margin: 0 2px;
+        }
+
+        .visitor-counter .online-dot {
+            color: #3ba55d;
+            font-size: 0.6rem;
+            animation: pulse-dot 2s ease infinite;
+        }
     </style>
 </head>
 <body>
@@ -419,9 +430,12 @@
 
     <!-- Visitor Counter -->
     <div class="visitor-counter">
-        <span class="counter-icon">&#9679;</span>
+        <span class="counter-dot online-dot">&#9679;</span>
+        <span class="counter-num" id="online-count">—</span>
+        <span>online</span>
+        <span class="counter-sep">|</span>
         <span class="counter-num" id="visitor-count">—</span>
-        <span>visitors</span>
+        <span>total</span>
     </div>
 
     <!-- Background Music -->
@@ -431,18 +445,25 @@
 
     <script>
         // ==============================================
-        // VISITOR COUNTER
+        // VISITOR COUNTER + ONLINE TRACKING
         // ==============================================
-        async function updateVisitorCount() {
+        const visitorId = localStorage.getItem('vid') || Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('vid', visitorId);
+
+        async function counterFetch(action) {
             try {
-                const res = await fetch('counter.php');
+                const res = await fetch(`counter.php?action=${action}&id=${visitorId}`);
                 const data = await res.json();
                 document.getElementById('visitor-count').textContent = data.count.toLocaleString();
-            } catch (e) {
-                document.getElementById('visitor-count').textContent = '—';
-            }
+                document.getElementById('online-count').textContent = data.online;
+            } catch (e) {}
         }
-        updateVisitorCount();
+
+        // Initial visit (increments total)
+        counterFetch('visit');
+
+        // Heartbeat every 30 seconds (keeps online status alive)
+        setInterval(() => counterFetch('heartbeat'), 30000);
 
         // ==============================================
         // DISCORD WIDGET STATUS
