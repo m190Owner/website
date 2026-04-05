@@ -2364,50 +2364,106 @@
             let codeLines = [];
             let revealedZones = [];
 
+            // ~2.5 minutes at 60fps = ~9000 frames
+            // 404 shows for ~5s (300f), walk takes ~5s (300f), then long typing/rebuild
             const speeches = [
-                { frame: 240, text: 'I hate people.' },
-                { frame: 360, text: 'Alright let me fix this mess...' },
-                { frame: 460, text: 'Who even pressed that button?!' },
-                { frame: 570, text: 'This is why we can\'t have nice things...' },
-                { frame: 670, text: '*aggressive typing*' },
-                { frame: 770, text: 'Do you know how long this took to build?!' },
-                { frame: 870, text: 'I swear if someone presses T again...' },
-                { frame: 970, text: 'Don\'t. EVER. Do that again.' },
-                { frame: 1060, text: 'I am NOT paid enough for this.' },
-                { frame: 1150, text: 'Actually... I\'m not paid at all.' },
-                { frame: 1250, text: 'There. Happy now? Don\'t touch anything.' },
+                { frame: 180, text: '...' },
+                { frame: 350, text: 'Are you serious right now.' },
+                { frame: 600, text: 'I was on my lunch break.' },
+                { frame: 900, text: '*sigh*' },
+                { frame: 1100, text: 'I hate people.' },
+                { frame: 1500, text: 'Let me find my chair...' },
+                { frame: 1800, text: 'Ok. Where do I even begin.' },
+                { frame: 2100, text: 'The ENTIRE site is gone. Everything.' },
+                { frame: 2400, text: 'Do you understand what you\'ve done?' },
+                { frame: 2700, text: 'Months of work. Gone. Because you pressed T.' },
+                { frame: 3000, text: 'You know what... whatever. Let me just rebuild it.' },
+                { frame: 3300, text: '*opens IDE*' },
+                { frame: 3500, text: 'First the navigation...' },
+                { frame: 3800, text: 'There. Was that so hard? Oh wait... I\'M the one doing the work.' },
+                { frame: 4100, text: 'Now the title... Logan Sandivar...' },
+                { frame: 4400, text: 'You know he\'s going to blame me for this, right?' },
+                { frame: 4700, text: '*aggressive typing intensifies*' },
+                { frame: 5000, text: 'Links... particles... starfield... the whole shabang.' },
+                { frame: 5300, text: 'I could be gaming right now. I could be doing ANYTHING else.' },
+                { frame: 5600, text: 'But no. Someone had to press the button.' },
+                { frame: 5900, text: 'The button that LITERALLY says "bomb" next to it.' },
+                { frame: 6200, text: 'You read "time bomb" and thought "yeah let me click that"' },
+                { frame: 6500, text: 'Genius. Absolute genius.' },
+                { frame: 6800, text: 'Almost done... just the bottom bar left...' },
+                { frame: 7100, text: 'There. It\'s back. The website exists again.' },
+                { frame: 7400, text: 'Now listen to me very carefully.' },
+                { frame: 7600, text: 'Don\'t. EVER. Press T. Again.' },
+                { frame: 7900, text: 'I am not paid enough for this.' },
+                { frame: 8100, text: 'Actually... I\'m not paid at all.' },
+                { frame: 8300, text: 'I\'m a stick figure. I don\'t even have fingers.' },
+                { frame: 8500, text: 'And yet here I am. Rebuilding YOUR website.' },
+                { frame: 8700, text: 'Alright I\'m leaving. Don\'t touch ANYTHING.' },
             ];
 
-            // Zones to reveal (site pieces coming back)
+            // Zones to reveal (site pieces coming back slowly)
             const zones = [
-                { frame: 400, x: 0, y: 0, w: W, h: 55 },                    // nav
-                { frame: 530, x: W*0.25, y: H*0.25, w: W*0.5, h: 60 },      // name
-                { frame: 630, x: W*0.15, y: H*0.4, w: W*0.7, h: 80 },       // typing subtitle + links
-                { frame: 730, x: 0, y: 0, w: W, h: H },                      // starfield/particles (bg)
-                { frame: 900, x: 0, y: H-45, w: W, h: 45 },                  // bottom bar
+                { frame: 3500, x: 0, y: 0, w: W, h: 55 },                    // nav
+                { frame: 4100, x: W*0.25, y: H*0.25, w: W*0.5, h: 60 },      // name
+                { frame: 4700, x: W*0.15, y: H*0.4, w: W*0.7, h: 80 },       // typing subtitle + links
+                { frame: 5500, x: 0, y: 0, w: W, h: H },                      // starfield/particles (bg)
+                { frame: 6800, x: 0, y: H-45, w: W, h: 45 },                  // bottom bar
             ];
 
             const fakeCode = [
+                '// INCIDENT REPORT: visitor pressed T',
+                '// date: today. damage: total.',
+                '',
                 'function fixWebsite() {',
-                '  // TODO: ban visitors who press T',
+                '  // step 1: question life choices',
+                '  console.log("why me");',
+                '',
+                '  // step 2: ban the visitor',
                 '  if (visitor.pressedBomb) {',
                 '    visitor.ban("forever");',
+                '    visitor.sendEmail("you are banned");',
                 '    return "deserved";',
                 '  }',
+                '',
+                '  // step 3: rebuild everything',
                 '  rebuildNav();',
+                '  // this took 3 hours originally',
                 '  rebuildContent();',
-                '  // why do i do this to myself',
+                '  // this took 5 hours originally',
                 '  loadParticles();',
                 '  loadStarfield();',
+                '  loadCursorEffects();',
                 '  initBeatDetection();',
-                '  // i could be sleeping rn',
-                '  document.body.style.display = "flex";',
-                '  console.log("site rebuilt, again.");',
+                '  initDiscordWidget();',
+                '  // ffs',
+                '  loadVisitorCounter();',
+                '  loadChatWall();',
+                '  initGravityMode();',
+                '  // i should add a password to T',
+                '  initEarthquake();',
+                '  initDJMode();',
+                '  loadMultiplayerCursors();',
+                '',
+                '  // step 4: contemplate existence',
+                '  while (true) {',
+                '    cry();',
+                '    if (feelBetter()) break;',
+                '    // spoiler: never breaks',
+                '  }',
+                '',
+                '  console.log("site rebuilt... again");',
                 '  alert("STOP PRESSING T");',
                 '}',
                 '',
-                '// note to self: remove the T key',
+                '// note to self:',
+                '// - remove the T key from keyboard',
+                '// - add landmine under T key',
+                '// - require 3 forms of ID to press T',
+                '',
                 'fixWebsite();',
+                '// time elapsed: too long',
+                '// will to live: depleted',
+                '// coffee consumed: yes',
             ];
 
             function draw404() {
@@ -2572,18 +2628,18 @@
                 frame++;
                 ac.clearRect(0, 0, W, H);
 
-                // Check for new speech
+                // Check for new speech (each lasts ~200 frames = 3.3s)
                 for (let i = speeches.length - 1; i >= 0; i--) {
-                    if (frame >= speeches[i].frame && frame < speeches[i].frame + 100) {
+                    if (frame >= speeches[i].frame && frame < speeches[i].frame + 200) {
                         currentSpeech = speeches[i].text;
                         speechStart = speeches[i].frame;
                         break;
                     }
                 }
 
-                // Add code lines over time
-                if (frame > 350 && frame % 15 === 0) {
-                    const lineIdx = Math.floor((frame - 350) / 15);
+                // Add code lines over time (one line every 40 frames)
+                if (frame > 1800 && frame % 40 === 0) {
+                    const lineIdx = Math.floor((frame - 1800) / 40);
                     if (lineIdx < fakeCode.length) codeLines.push(fakeCode[lineIdx]);
                 }
 
@@ -2594,10 +2650,10 @@
 
                 // --- DRAW ---
 
-                // Draw 404 page base
-                const fadeProgress = Math.max(0, Math.min(1, (frame - 700) / 500));
+                // Draw 404 page base (stays solid much longer, fades from frame 4000-7000)
+                const fadeProgress = Math.max(0, Math.min(1, (frame - 4000) / 3000));
                 if (fadeProgress < 1) {
-                    ac.globalAlpha = 1 - fadeProgress * 0.7;
+                    ac.globalAlpha = 1 - fadeProgress * 0.8;
                     draw404();
                     ac.globalAlpha = 1;
                 }
@@ -2615,33 +2671,41 @@
                 ac.restore();
 
                 // Re-draw desk and stick figure on top (always visible)
-                if (frame > 200) {
+                if (frame > 1300) {
                     drawDesk(deskX, floorY);
                 }
 
-                // Walking phase
-                if (frame > 90 && stickX < targetX) {
-                    stickX += 3.5;
-                    walkCycle += 0.18;
+                // Walking phase (slower walk, starts at frame 300)
+                if (frame > 300 && stickX < targetX) {
+                    stickX += 1.8;
+                    walkCycle += 0.14;
                     drawStickFigure(stickX, floorY, 'walk', walkCycle);
-                } else if (frame > 90) {
+                } else if (stickX >= targetX) {
                     // Sitting and typing
                     drawStickFigure(targetX, floorY, 'sit', frame);
                 }
 
-                // Speech bubble
+                // Walking away at the end
+                if (frame > 8700) {
+                    const walkAwayX = targetX - (frame - 8700) * 2;
+                    if (walkAwayX > -80) {
+                        drawStickFigure(walkAwayX, floorY, 'walk', frame * 0.14);
+                    }
+                }
+
+                // Speech bubble (lasts 200 frames each)
                 const speechAge = frame - speechStart;
-                if (currentSpeech && speechAge < 100) {
-                    const bubbleAlpha = speechAge < 10 ? speechAge / 10 : speechAge > 80 ? (100 - speechAge) / 20 : 1;
+                if (currentSpeech && speechAge < 200) {
+                    const bubbleAlpha = speechAge < 15 ? speechAge / 15 : speechAge > 170 ? (200 - speechAge) / 30 : 1;
                     ac.globalAlpha = bubbleAlpha;
                     const bubbleX = Math.min(stickX, targetX);
                     drawSpeechBubble(bubbleX, floorY - 60, currentSpeech);
                     ac.globalAlpha = 1;
                 }
 
-                // End sequence
-                if (frame > 1350) {
-                    const endFade = (frame - 1350) / 60;
+                // End sequence (~9200 frames = ~2.5 min, then fade out)
+                if (frame > 9000) {
+                    const endFade = (frame - 9000) / 90;
                     ac.globalAlpha = 1 - endFade;
                     if (endFade >= 1) {
                         ac_el.remove();
