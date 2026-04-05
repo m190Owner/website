@@ -100,6 +100,15 @@
             text-align: center;
         }
 
+        #starfield {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -2;
+        }
+
         #particles {
             position: fixed;
             top: 0;
@@ -462,6 +471,36 @@
             letter-spacing: 1px;
         }
 
+        /* Site Uptime */
+        .site-uptime {
+            position: fixed;
+            bottom: 65px;
+            left: 30px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 1px solid rgba(122, 162, 255, 0.2);
+            border-radius: 30px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            font-size: 0.75rem;
+            color: #8a96b8;
+            z-index: 10;
+            transition: all 0.3s ease;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .site-uptime:hover {
+            border-color: #7aa2ff;
+            color: #cbd5ff;
+        }
+
+        .uptime-num {
+            font-weight: 600;
+            color: #7aa2ff;
+        }
+
         /* Audio Waveform Visualizer */
         .nav-visualizer {
             display: flex;
@@ -494,6 +533,7 @@
         <div class="loader-text">Booting m190...</div>
     </div>
 
+    <canvas id="starfield"></canvas>
     <canvas id="particles"></canvas>
     <div class="cursor"></div>
 
@@ -549,6 +589,12 @@
         <span class="counter-sep">|</span>
         <span class="counter-num" id="visitor-count">—</span>
         <span>total</span>
+    </div>
+
+    <!-- Site Uptime -->
+    <div class="site-uptime">
+        <span>uptime</span>
+        <span class="uptime-num" id="uptime-display">—</span>
     </div>
 
     <!-- Click Counter -->
@@ -866,10 +912,172 @@
         function resize() {
             w = canvas.width = window.innerWidth;
             h = canvas.height = window.innerHeight;
+            sfCanvas.width = w;
+            sfCanvas.height = h;
         }
 
         window.addEventListener('resize', resize);
+
+        // ==============================================
+        // 3D STARFIELD
+        // ==============================================
+        const sfCanvas = document.getElementById('starfield');
+        const sfCtx = sfCanvas.getContext('2d');
+        const STAR_COUNT = 400;
+        const stars = [];
+
+        function initStars() {
+            stars.length = 0;
+            for (let i = 0; i < STAR_COUNT; i++) {
+                stars.push({
+                    x: (Math.random() - 0.5) * 2000,
+                    y: (Math.random() - 0.5) * 2000,
+                    z: Math.random() * 2000
+                });
+            }
+        }
+
+        function drawStarfield() {
+            sfCtx.fillStyle = 'rgba(11, 11, 15, 0.3)';
+            sfCtx.fillRect(0, 0, w, h);
+
+            const beat = getBeatStrength();
+            const speed = 2 + beat / 10;
+            const cx = w / 2;
+            const cy = h / 2;
+
+            for (let i = 0; i < stars.length; i++) {
+                const s = stars[i];
+                s.z -= speed;
+
+                if (s.z <= 0) {
+                    s.x = (Math.random() - 0.5) * 2000;
+                    s.y = (Math.random() - 0.5) * 2000;
+                    s.z = 2000;
+                }
+
+                const sx = (s.x / s.z) * 500 + cx;
+                const sy = (s.y / s.z) * 500 + cy;
+                const size = Math.max(0.5, (1 - s.z / 2000) * 3);
+                const alpha = 1 - s.z / 2000;
+
+                // Streak/trail
+                const prevZ = s.z + speed;
+                const px = (s.x / prevZ) * 500 + cx;
+                const py = (s.y / prevZ) * 500 + cy;
+
+                if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) {
+                    const hue = 210 + (beat / 3);
+                    sfCtx.strokeStyle = `hsla(${hue}, 70%, 80%, ${alpha * 0.6})`;
+                    sfCtx.lineWidth = size * 0.8;
+                    sfCtx.beginPath();
+                    sfCtx.moveTo(px, py);
+                    sfCtx.lineTo(sx, sy);
+                    sfCtx.stroke();
+
+                    sfCtx.fillStyle = `hsla(${hue}, 80%, 90%, ${alpha})`;
+                    sfCtx.beginPath();
+                    sfCtx.arc(sx, sy, size, 0, Math.PI * 2);
+                    sfCtx.fill();
+                }
+            }
+
+            requestAnimationFrame(drawStarfield);
+        }
+
+        initStars();
+
+        // ==============================================
+        // SITE UPTIME
+        // ==============================================
+        const SITE_LAUNCH = new Date('2025-03-22T16:28:00+13:00').getTime();
+
+        function updateUptime() {
+            const diff = Date.now() - SITE_LAUNCH;
+            const days = Math.floor(diff / 86400000);
+            const hrs = Math.floor((diff % 86400000) / 3600000);
+            const mins = Math.floor((diff % 3600000) / 60000);
+            const secs = Math.floor((diff % 60000) / 1000);
+
+            let str = '';
+            if (days > 0) str += days + 'd ';
+            str += String(hrs).padStart(2, '0') + ':';
+            str += String(mins).padStart(2, '0') + ':';
+            str += String(secs).padStart(2, '0');
+
+            document.getElementById('uptime-display').textContent = str;
+        }
+
+        setInterval(updateUptime, 1000);
+        updateUptime();
+
         resize();
+        drawStarfield();
+
+        // ==============================================
+        // 3D WORD CLOUD
+        // ==============================================
+        const cloudWords = [
+            "Developer", "ServerLagger", "m190", "Creator",
+            "Gamer", "UID 759", "Chaos", "Code",
+            "Pixel", "Lag", "Menace", "Troll",
+            "Keyboard", "Bug", "Pro", "GG"
+        ];
+
+        const cloudItems = cloudWords.map((word, i) => {
+            const phi = Math.acos(-1 + (2 * i) / cloudWords.length);
+            const theta = Math.sqrt(cloudWords.length * Math.PI) * phi;
+            const radius = 220;
+            return {
+                word,
+                x: radius * Math.cos(theta) * Math.sin(phi),
+                y: radius * Math.sin(theta) * Math.sin(phi),
+                z: radius * Math.cos(phi)
+            };
+        });
+
+        let cloudAngle = 0;
+
+        function rotateY3D(x, z, angle) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            return { x: x * cos - z * sin, z: x * sin + z * cos };
+        }
+
+        function rotateX3D(y, z, angle) {
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            return { y: y * cos - z * sin, z: y * sin + z * cos };
+        }
+
+        function drawWordCloud(beat) {
+            cloudAngle += 0.004 + beat / 2000;
+            const cx = w - 220;
+            const cy = h / 2 - 40;
+
+            cloudItems.forEach(item => {
+                const ry = rotateY3D(item.x, item.z, cloudAngle);
+                const rx = rotateX3D(item.y, ry.z, cloudAngle * 0.3);
+
+                const scale = (rx.z + 400) / 600;
+                const alpha = Math.max(0.15, Math.min(1, scale));
+                const size = Math.max(8, 16 * scale);
+
+                const sx = cx + ry.x * 0.8;
+                const sy = cy + rx.y * 0.8;
+
+                ctx.save();
+                ctx.globalAlpha = alpha;
+                ctx.font = `${Math.floor(size)}px Segoe UI`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = `hsla(${220 + beat / 3}, 70%, ${60 + scale * 20}%, 1)`;
+                ctx.shadowColor = '#7aa2ff';
+                ctx.shadowBlur = 4 + beat / 10;
+                ctx.fillText(item.word, sx, sy);
+                ctx.restore();
+            });
+        }
 
         // ==============================================
         // FLOATING TEXT PARTICLE SYSTEM
@@ -1500,6 +1708,9 @@
 
             updateFloatingText(beat);
             drawFloatingText(beat);
+
+            // 3D Word cloud
+            drawWordCloud(beat);
 
             // Cursor trail
             updateTrail();
