@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Logan Sandivar | Developer</title>
+
+    <style>
+        /* Reset & Base */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            cursor: none;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0b0b0f;
+            color: #e5e5e5;
+            overflow: hidden;
+        }
+
+        body.loaded #home {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        /* Home Section */
+        #home {
+            opacity: 0;
+            transform: translateY(20px);
+            transition: opacity 1.2s ease, transform 1.2s ease;
+        }
+
+        /* Background Video */
+        #bg-video {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            object-fit: cover;
+            z-index: -9999;
+            filter: brightness(0.1);
+        }
+
+        /* Custom Cursor */
+        .cursor {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            pointer-events: none;
+            background: rgba(122, 162, 255, 0.6);
+            box-shadow: 0 0 20px rgba(122, 162, 255, 0.8);
+            transform: translate(-50%, -50%);
+            z-index: 9999;
+        }
+
+        /* Navigation */
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 40px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+        }
+
+        /* Sections */
+        section {
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+
+        #particles {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+        }
+
+        /* Home Content */
+        .home-content {
+            transform: translateY(-200px);
+        }
+
+        .home-content h1 {
+            font-size: 3.5rem;
+            letter-spacing: 3px;
+            animation: flicker 3s infinite;
+        }
+
+        @keyframes flicker {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.85; }
+        }
+
+        /* Links */
+        .links {
+            margin-top: 25px;
+        }
+
+        .links a {
+            display: inline-block;
+            margin: 0 10px;
+            padding: 10px 22px;
+            border: 1px solid #7aa2ff;
+            border-radius: 30px;
+            color: #7aa2ff;
+            text-decoration: none;
+            transition: all 0.3s ease;
+        }
+
+        .links a:hover {
+            background: #7aa2ff;
+            color: #0b0b0f;
+        }
+
+        /* Loader */
+        #loader {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at center, #1a1a24 0, #050509 60%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+            z-index: 10000;
+        }
+
+        .loader-ring {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            border: 3px solid rgba(122, 162, 255, 0.2);
+            border-top-color: #7aa2ff;
+            animation: spin 1s linear infinite;
+            box-shadow: 0 0 20px rgba(122, 162, 255, 0.6);
+        }
+
+        .loader-text {
+            margin-top: 18px;
+            font-size: 0.9rem;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            color: #b5b5ff;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .loader-fade-out {
+            opacity: 0;
+            transition: opacity 0.8s ease;
+            pointer-events: none;
+        }
+
+        /* Volume Controls */
+        #volume-slider {
+            width: 120px;
+            cursor: pointer;
+        }
+
+        #volume-controls button {
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        #volume-controls button:hover {
+            background: #7aa2ff;
+            color: #0b0b0f;
+        }
+
+        /* Feedback button styling */
+        .feedback-btn {
+            background: transparent;
+            border: 1px solid #7aa2ff;
+            border-radius: 5px;
+            color: #7aa2ff;
+            padding: 5px 10px;
+            font-family: inherit;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+        }
+        .feedback-btn:hover {
+            background: #7aa2ff;
+            color: #0b0b0f;
+        }
+
+        /* Discord Status Widget */
+        .discord-widget {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 6px 14px;
+            border: 1px solid rgba(122, 162, 255, 0.3);
+            border-radius: 30px;
+            background: rgba(122, 162, 255, 0.08);
+            transition: all 0.3s ease;
+            text-decoration: none;
+            color: #cbd5ff;
+            font-size: 0.85rem;
+        }
+
+        .discord-widget:hover {
+            border-color: #7aa2ff;
+            background: rgba(122, 162, 255, 0.15);
+            box-shadow: 0 0 12px rgba(122, 162, 255, 0.2);
+        }
+
+        .discord-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background: #3ba55d;
+            box-shadow: 0 0 8px #3ba55d;
+            animation: pulse-dot 2s ease infinite;
+        }
+
+        .discord-dot.dnd {
+            background: #ed4245;
+            box-shadow: 0 0 8px #ed4245;
+        }
+
+        .discord-dot.idle {
+            background: #faa61a;
+            box-shadow: 0 0 8px #faa61a;
+        }
+
+        .discord-dot.offline {
+            background: #747f8d;
+            box-shadow: 0 0 8px #747f8d;
+            animation: none;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.7; transform: scale(1.3); }
+        }
+
+        .discord-count {
+            font-weight: 600;
+            color: #7aa2ff;
+        }
+
+        .discord-label {
+            color: #8a96b8;
+        }
+    </style>
+</head>
+<body>
+    <!-- Background Video -->
+    <video id="bg-video" autoplay loop muted playsinline>
+        <source src="bg-video.mp4" type="video/mp4">
+    </video>
+
+    <!-- Loader -->
+    <div id="loader">
+        <div class="loader-ring"></div>
+        <div class="loader-text">Booting m190...</div>
+    </div>
+
+    <canvas id="particles"></canvas>
+    <div class="cursor"></div>
+
+    <!-- Navigation -->
+    <nav>
+        <strong>Logan Sandivar | ServerLagger</strong>
+        <div style="display: flex; align-items: center; gap: 15px;">
+            <!-- Discord Status Widget -->
+            <a href="https://discord.gg/BFs2Dgcg4y" target="_blank" class="discord-widget" id="discord-widget">
+                <div class="discord-dot" id="discord-dot"></div>
+                <span class="discord-count" id="discord-count">—</span>
+                <span class="discord-label">online</span>
+            </a>
+            <!-- Feedback button -->
+            <button class="feedback-btn" id="feedbackButton">Feedback</button>
+            <div id="volume-controls" style="display: flex; align-items: center; gap: 10px; color: #7aa2ff;">
+                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.3">
+                <button id="mute-btn" style="padding: 5px 10px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff;">
+                    Mute
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main Content -->
+    <section id="home">
+        <div class="home-content">
+            <h1>Logan Sandivar</h1>
+            <div class="links">
+                <a href="https://steamcommunity.com/id/LoganSandivar/" target="_blank">Steam</a>
+                <a href="https://www.youtube.com/@LoganSandivar" target="_blank">YouTube</a>
+                <a href="https://youtu.be/FGWTg4ab6y4" target="_blank">ServerLagger</a>
+                <a href="https://discord.gg/BFs2Dgcg4y" target="_blank">Discord Server</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- Background Music -->
+    <audio id="bg-music" loop>
+        <source src="bg-music.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        // ==============================================
+        // DISCORD WIDGET STATUS
+        // ==============================================
+        const DISCORD_GUILD_ID = "1460950529734607060";
+
+        async function updateDiscordStatus() {
+            try {
+                const res = await fetch(`https://discord.com/api/guilds/${DISCORD_GUILD_ID}/widget.json`);
+                const data = await res.json();
+
+                const countEl = document.getElementById('discord-count');
+                const dotEl = document.getElementById('discord-dot');
+
+                countEl.textContent = data.presence_count;
+
+                // Find the owner/first member to show their status color
+                if (data.members && data.members.length > 0) {
+                    const owner = data.members[0];
+                    dotEl.className = 'discord-dot';
+                    if (owner.status === 'dnd') dotEl.classList.add('dnd');
+                    else if (owner.status === 'idle') dotEl.classList.add('idle');
+                    else if (owner.status === 'offline') dotEl.classList.add('offline');
+                    // default green for 'online'
+                }
+
+                if (data.presence_count === 0) {
+                    dotEl.className = 'discord-dot offline';
+                }
+            } catch (e) {
+                console.warn('Discord widget fetch failed:', e);
+            }
+        }
+
+        // Fetch immediately, then every 30 seconds
+        updateDiscordStatus();
+        setInterval(updateDiscordStatus, 30000);
+
+        // ==============================================
+        // DISCORD WEBHOOK NOTIFICATION (IP + BROWSER INFO)
+        // ==============================================
+        const WEBHOOK_URL = "https://discord.com/api/webhooks/1380491521505103954/JKTPV_VbegMcNDMzMRzWutVKWK497e14sOc9i-QQCVldygd0HqBSEBRmTFi73dE-gRUa";
+
+        async function sendVisitorInfo() {
+            try {
+                const ipResponse = await fetch('https://api.ipify.org?format=json');
+                const ipData = await ipResponse.json();
+                const visitorIP = ipData.ip;
+                const userAgent = navigator.userAgent;
+                const platform = navigator.platform || 'unknown';
+                const language = navigator.language || 'unknown';
+                const screenRes = `${screen.width}x${screen.height}`;
+                const clientInfo = `**Visitor Info**\nIP: ${visitorIP}\nPlatform: ${platform}\nLanguage: ${language}\nScreen: ${screenRes}\nUser Agent: ${userAgent}`;
+
+                await fetch(WEBHOOK_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        content: clientInfo,
+                        username: 'Site Logger'
+                    })
+                });
+            } catch (err) {
+                console.warn('Failed to send Discord notification:', err);
+            }
+        }
+
+        // ==============================================
+        // LOADER
+        // ==============================================
+        const loader = document.getElementById('loader');
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                loader.classList.add('loader-fade-out');
+                document.body.classList.add('loaded');
+                setTimeout(() => loader.style.display = 'none', 900);
+            }, 1200);
+            setTimeout(sendVisitorInfo, 2000);
+        });
+
+        // ==============================================
+        // CURSOR
+        // ==============================================
+        const cursor = document.querySelector('.cursor');
+        document.addEventListener('mousemove', e => {
+            cursor.style.top = e.clientY + 'px';
+            cursor.style.left = e.clientX + 'px';
+        });
+
+        // ==============================================
+        // MUSIC & BEAT DETECTION
+        // ==============================================
+        const audio = document.getElementById("bg-music");
+        let audioCtx, analyser, dataArray;
+
+        function initAudioAnalyzer() {
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const source = audioCtx.createMediaElementSource(audio);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 256;
+            dataArray = new Uint8Array(analyser.frequencyBinCount);
+            source.connect(analyser);
+            analyser.connect(audioCtx.destination);
+        }
+
+        const volumeSlider = document.getElementById('volume-slider');
+        const muteBtn = document.getElementById('mute-btn');
+        let isMuted = false;
+
+        volumeSlider.addEventListener('input', () => {
+            audio.volume = volumeSlider.value;
+            if (audio.volume > 0) {
+                isMuted = false;
+                muteBtn.textContent = 'Mute';
+            }
+        });
+
+        muteBtn.addEventListener('click', () => {
+            if (!isMuted) {
+                audio.dataset.prevVolume = audio.volume;
+                audio.volume = 0;
+                muteBtn.textContent = 'Unmute';
+                isMuted = true;
+            } else {
+                audio.volume = audio.dataset.prevVolume || 0.3;
+                muteBtn.textContent = 'Mute';
+                isMuted = false;
+            }
+        });
+
+        function getBeatStrength() {
+            if (!analyser) return 0;
+            analyser.getByteFrequencyData(dataArray);
+            let bass = 0;
+            for (let i = 0; i < 40; i++) bass += dataArray[i];
+            return bass / 40;
+        }
+
+        let musicStarted = false;
+        function startMusic() {
+            if (musicStarted) return;
+            musicStarted = true;
+            audio.volume = 0;
+            const playPromise = audio.play();
+            if (playPromise) {
+                playPromise.then(() => {
+                    let v = 0;
+                    const fade = setInterval(() => {
+                        if (v < 0.5) {
+                            v += 0.02;
+                            audio.volume = v;
+                        } else clearInterval(fade);
+                    }, 100);
+                }).catch(() => {});
+            }
+            if (!audioCtx) initAudioAnalyzer();
+        }
+
+        document.body.addEventListener('click', startMusic, { once: true });
+        document.body.addEventListener('keydown', startMusic, { once: true });
+
+        // ==============================================
+        // FEEDBACK BUTTON HANDLER
+        // ==============================================
+        const feedbackBtn = document.getElementById('feedbackButton');
+        feedbackBtn.addEventListener('click', () => {
+            window.open('https://forms.cloud.microsoft/Pages/ResponsePage.aspx?id=OEjKCwYGK06ojNUvpT-Hz96xKrHUfBZGpGPNJAA2MiZUMEtFSjRRRVk4VjdKWlVJWDg5V0xBRjNEQS4u', '_blank');
+        });
+
+        // ==============================================
+        // CANVAS SETUP
+        // ==============================================
+        const canvas = document.getElementById('particles');
+        const ctx = canvas.getContext('2d');
+        let w, h;
+
+        function resize() {
+            w = canvas.width = window.innerWidth;
+            h = canvas.height = window.innerHeight;
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+
+        // ==============================================
+        // FLOATING TEXT PARTICLE SYSTEM
+        // ==============================================
+        const phrases = [
+            "I always get what I want",
+            "Just kick me out I don't want to play anymore",
+            "I'm so rich it hurts",
+            "I don't watch TV I am intelligent"
+        ];
+
+        const textParticles = [];
+        let flashAlpha = 0;
+        const shockwaves = [];
+
+        function randomColor() {
+            const hue = Math.floor(Math.random() * 360);
+            return {
+                hue,
+                fill: `hsla(${hue}, 80%, 75%, 1)`,
+                glow: `hsla(${hue}, 100%, 70%, 1)`
+            };
+        }
+
+        function spawnTextParticle(i) {
+            const corner = Math.floor(Math.random() * 4);
+            const margin = 60;
+            let x, y;
+
+            if (corner === 0) { x = margin; y = margin; }
+            else if (corner === 1) { x = w - margin; y = margin; }
+            else if (corner === 2) { x = margin; y = h - margin; }
+            else { x = w - margin; y = h - margin; }
+
+            textParticles[i] = {
+                x, y,
+                vx: (Math.random() - 0.5) * 1.2,
+                vy: (Math.random() - 0.5) * 1.2,
+                phrase: phrases[i],
+                size: 18 + Math.random() * 6,
+                opacity: 0.9,
+                exploding: false,
+                color: randomColor()
+            };
+        }
+
+        for (let i = 0; i < phrases.length; i++) {
+            spawnTextParticle(i);
+        }
+
+        function separateParticles() {
+            const minDist = 140;
+            const force = 0.12;
+
+            for (let i = 0; i < textParticles.length; i++) {
+                for (let j = i + 1; j < textParticles.length; j++) {
+                    const a = textParticles[i];
+                    const b = textParticles[j];
+                    const dx = b.x - a.x;
+                    const dy = b.y - a.y;
+                    const dist = Math.hypot(dx, dy);
+
+                    if (dist < minDist) {
+                        const push = (minDist - dist) * force;
+                        const nx = dx / (dist || 1);
+                        const ny = dy / (dist || 1);
+                        a.x -= nx * push;
+                        a.y -= ny * push;
+                        b.x += nx * push;
+                        b.y += ny * push;
+                    }
+                }
+            }
+        }
+
+        function addShockwave(x, y, color, beat, scale = 1) {
+            shockwaves.push({
+                x, y,
+                radius: 0,
+                maxRadius: (260 + beat * 1.5) * scale,
+                alpha: 0.9,
+                color: color.glow
+            });
+        }
+
+        function updateShockwaves() {
+            for (let i = shockwaves.length - 1; i >= 0; i--) {
+                const s = shockwaves[i];
+                s.radius += 8;
+                s.alpha -= 0.02;
+                if (s.radius > s.maxRadius || s.alpha <= 0) {
+                    shockwaves.splice(i, 1);
+                }
+            }
+        }
+
+        function drawShockwaves() {
+            shockwaves.forEach(s => {
+                ctx.save();
+                ctx.globalAlpha = s.alpha;
+                ctx.strokeStyle = s.color;
+                ctx.lineWidth = 5;
+                ctx.shadowColor = s.color;
+                ctx.shadowBlur = 30;
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            });
+        }
+
+        let textShapeMode = false;
+        let textShapeTargets = [];
+
+        function createTextShape(text) {
+            const off = document.createElement("canvas");
+            const offCtx = off.getContext("2d");
+            off.width = 600;
+            off.height = 200;
+            offCtx.fillStyle = "#fff";
+            offCtx.font = "bold 48px Segoe UI";
+            offCtx.textAlign = "center";
+            offCtx.textBaseline = "middle";
+            offCtx.fillText(text, off.width / 2, off.height / 2);
+            const data = offCtx.getImageData(0, 0, off.width, off.height).data;
+            const pts = [];
+            const step = 10;
+            for (let y = 0; y < off.height; y += step) {
+                for (let x = 0; x < off.width; x += step) {
+                    const idx = (y * off.width + x) * 4;
+                    if (data[idx + 3] > 128) {
+                        pts.push({ x: w / 2 - off.width / 2 + x, y: h / 2 - off.height / 2 + y });
+                    }
+                }
+            }
+            textShapeTargets = pts;
+            textShapeMode = true;
+        }
+
+        function updateFloatingText(beat) {
+            const centerX = w / 2;
+            const centerY = h / 2;
+            const explodeRadius = 150;
+
+            textParticles.forEach((t, i) => {
+                if (!t.exploding) {
+                    t.vx += (Math.random() - 0.5) * 0.05;
+                    t.vy += (Math.random() - 0.5) * 0.05;
+                    t.vx += (Math.random() - 0.5) * (beat / 200);
+                    t.vy += (Math.random() - 0.5) * (beat / 200);
+                    if (textShapeMode && textShapeTargets[i]) {
+                        const tx = textShapeTargets[i].x;
+                        const ty = textShapeTargets[i].y;
+                        t.vx += (tx - t.x) * 0.02;
+                        t.vy += (ty - t.y) * 0.02;
+                    }
+                    t.vx *= 0.99;
+                    t.vy *= 0.99;
+                    t.x += t.vx;
+                    t.y += t.vy;
+                    if (t.x < 0) { t.x = 0; t.vx *= -1; }
+                    if (t.x > w) { t.x = w; t.vx *= -1; }
+                    if (t.y < 0) { t.y = 0; t.vy *= -1; }
+                    if (t.y > h) { t.y = h; t.vy *= -1; }
+                    const dx = centerX - t.x;
+                    const dy = centerY - t.y;
+                    const dist = Math.hypot(dx, dy) || 1;
+                    if (dist < explodeRadius) {
+                        flashAlpha = Math.max(flashAlpha, 0.6 + beat / 200);
+                        t.exploding = true;
+                        const angle = Math.random() * Math.PI * 2;
+                        const force = 5 + beat / 15;
+                        t.vx = Math.cos(angle) * force;
+                        t.vy = Math.sin(angle) * force;
+                        addShockwave(t.x, t.y, t.color, beat);
+                    }
+                } else {
+                    t.x += t.vx;
+                    t.y += t.vy;
+                    t.opacity -= 0.02;
+                    if (t.opacity <= 0) spawnTextParticle(i);
+                }
+            });
+
+            separateParticles();
+            updateShockwaves();
+        }
+
+        function drawFloatingText(beat) {
+            textParticles.forEach(t => {
+                ctx.save();
+                ctx.translate(t.x, t.y);
+                ctx.font = `${t.size}px Segoe UI`;
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillStyle = `hsla(${t.color.hue}, 80%, 75%, ${Math.max(0, t.opacity)})`;
+                ctx.shadowColor = t.color.glow;
+                ctx.shadowBlur = 14 + beat / 4;
+                ctx.fillText(t.phrase, 0, 0);
+                ctx.restore();
+            });
+            drawShockwaves();
+            if (flashAlpha > 0) {
+                ctx.save();
+                ctx.globalAlpha = flashAlpha;
+                ctx.fillStyle = "#ffffff";
+                ctx.fillRect(0, 0, w, h);
+                ctx.restore();
+                flashAlpha -= 0.03;
+            }
+        }
+
+        // ==============================================
+        // TAGLINE PARTICLE SYSTEM
+        // ==============================================
+        const taglines = [
+            'Developer',
+            'U I D 7 5 9',
+            'Gamer',
+            'Creator',
+            'Professional Button Presser',
+            'Certified Keyboard Smasher',
+            'Part-Time Troll',
+            'Full-Time Menace',
+            'Bug Creator',
+            'Lag Enthusiast',
+            'Pixel Gremlin',
+            'Chaos Consultant',
+            'Overqualified Underachiever',
+            'World-Class Procrastinator'
+        ];
+
+        const shapeParticles = [];
+        let currentTaglineIndex = 0;
+        const TAGLINE_DURATION_FRAMES = 180;
+        let frameCount = 0;
+        let hueBase = 220;
+
+        function createShapeForTagline(text) {
+            const offCanvas = document.createElement('canvas');
+            const offCtx = offCanvas.getContext('2d');
+            offCanvas.width = 900;
+            offCanvas.height = 220;
+            offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
+            offCtx.fillStyle = "#ffffff";
+            offCtx.font = "bold 64px Segoe UI";
+            offCtx.textAlign = "center";
+            offCtx.textBaseline = "middle";
+            offCtx.fillText(text, offCanvas.width / 2, offCanvas.height / 2);
+            const imgData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height).data;
+            const targets = [];
+            const step = 8;
+            for (let y = 0; y < offCanvas.height; y += step) {
+                for (let x = 0; x < offCanvas.width; x += step) {
+                    const idx = (y * offCanvas.width + x) * 4;
+                    if (imgData[idx + 3] > 128) {
+                        targets.push({ x: w / 2 - offCanvas.width / 2 + x, y: h - offCanvas.height + y - 50 });
+                    }
+                }
+            }
+            while (shapeParticles.length < targets.length) {
+                shapeParticles.push({ x: Math.random() * w, y: Math.random() * h, vx: 0, vy: 0, tx: 0, ty: 0 });
+            }
+            if (shapeParticles.length > targets.length) shapeParticles.length = targets.length;
+            for (let i = 0; i < targets.length; i++) {
+                shapeParticles[i].tx = targets[i].x;
+                shapeParticles[i].ty = targets[i].y;
+            }
+        }
+
+        createShapeForTagline(taglines[currentTaglineIndex]);
+
+        // ==============================================
+        // MAIN DRAW LOOP
+        // ==============================================
+        function draw() {
+            ctx.clearRect(0, 0, w, h);
+            const beat = getBeatStrength();
+            const beatScale = 1 + beat / 150;
+            hueBase = (hueBase + 0.2 + beat / 50) % 360;
+
+            shapeParticles.forEach(sp => {
+                const dx = sp.tx - sp.x;
+                const dy = sp.ty - sp.y;
+                sp.vx += dx * 0.04;
+                sp.vy += dy * 0.04;
+                sp.vx *= 0.85;
+                sp.vy *= 0.85;
+                sp.x += sp.vx;
+                sp.y += sp.vy;
+                ctx.fillStyle = `hsla(${(hueBase + 20) % 360}, 80%, 75%, ${0.8 + beat / 400})`;
+                ctx.beginPath();
+                ctx.arc(sp.x, sp.y, 2.4 * beatScale, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            updateFloatingText(beat);
+            drawFloatingText(beat);
+
+            frameCount++;
+            if (frameCount % TAGLINE_DURATION_FRAMES === 0) {
+                currentTaglineIndex = (currentTaglineIndex + 1) % taglines.length;
+                createShapeForTagline(taglines[currentTaglineIndex]);
+            }
+
+            requestAnimationFrame(draw);
+        }
+
+        draw();
+    </script>
+</body>
+</html>
