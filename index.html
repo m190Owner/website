@@ -279,6 +279,11 @@
             color: #0b0b0f;
         }
 
+        #prev-btn:hover, #next-btn:hover {
+            background: #7aa2ff;
+            color: #0b0b0f;
+        }
+
         /* Feedback button styling */
         .feedback-btn {
             background: transparent;
@@ -626,8 +631,11 @@
             <!-- Feedback button -->
             <button class="feedback-btn" id="feedbackButton">Feedback</button>
             <div id="volume-controls" style="display: flex; align-items: center; gap: 10px; color: #7aa2ff;">
+                <button id="prev-btn" style="padding: 5px 8px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff; cursor: pointer; font-size: 0.85rem; transition: 0.2s;" title="Previous track">&#9664;</button>
+                <span id="track-name" style="font-size: 0.7rem; min-width: 30px; text-align: center; opacity: 0.7;">1/5</span>
+                <button id="next-btn" style="padding: 5px 8px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff; cursor: pointer; font-size: 0.85rem; transition: 0.2s;" title="Next track">&#9654;</button>
                 <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.3">
-                <button id="mute-btn" style="padding: 5px 10px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff;">
+                <button id="mute-btn" style="padding: 5px 10px; border: 1px solid #7aa2ff; border-radius: 5px; background: none; color: #7aa2ff; cursor: pointer; transition: 0.2s;">
                     Mute
                 </button>
             </div>
@@ -884,6 +892,41 @@
 
         document.body.addEventListener('click', startMusic, { once: true });
         document.body.addEventListener('keydown', startMusic, { once: true });
+
+        // ==============================================
+        // TRACK SWITCHING (PREV / NEXT)
+        // ==============================================
+        const tracks = [
+            'bg-music.mp3',
+            'bg-music 1.mp3',
+            'bg-music 2.mp3',
+            'bg-music 3.mp3',
+            'bg-music 4.mp3'
+        ];
+        let currentTrack = 0;
+        const trackLabel = document.getElementById('track-name');
+        const prevBtn = document.getElementById('prev-btn');
+        const nextBtn = document.getElementById('next-btn');
+
+        function switchTrack(index) {
+            currentTrack = ((index % tracks.length) + tracks.length) % tracks.length;
+            const wasPlaying = !audio.paused;
+            const vol = audio.volume;
+            audio.src = tracks[currentTrack];
+            audio.volume = vol;
+            trackLabel.textContent = `${currentTrack + 1}/${tracks.length}`;
+            if (wasPlaying) audio.play().catch(() => {});
+        }
+
+        prevBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            switchTrack(currentTrack - 1);
+        });
+
+        nextBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            switchTrack(currentTrack + 1);
+        });
 
         // ==============================================
         // FEEDBACK BUTTON HANDLER
