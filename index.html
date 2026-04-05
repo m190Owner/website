@@ -2298,7 +2298,7 @@
         }
 
         // ==============================================
-        // TIME BOMB (T)
+        // TIME BOMB (T) + AFTERMATH SEQUENCE
         // ==============================================
         let bombActive = false;
         function startTimeBomb() {
@@ -2331,11 +2331,334 @@
                         const i = Math.max(0, (1 - sf / 60)) * 45;
                         document.body.style.transform = `translate(${(Math.random()-0.5)*i}px, ${(Math.random()-0.5)*i}px)`;
                         if (sf < 60) requestAnimationFrame(bombShake);
-                        else { document.body.style.transform = ''; display.classList.remove('active'); bombActive = false; }
+                        else {
+                            document.body.style.transform = '';
+                            display.classList.remove('active');
+                            playBombAftermath();
+                        }
                     }
                     bombShake();
                 }
             }, 1000);
+        }
+
+        function playBombAftermath() {
+            const ac_el = document.createElement('canvas');
+            ac_el.style.cssText = 'position:fixed;inset:0;z-index:99999;cursor:default;';
+            ac_el.width = window.innerWidth;
+            ac_el.height = window.innerHeight;
+            document.body.appendChild(ac_el);
+            const ac = ac_el.getContext('2d');
+            const W = ac_el.width, H = ac_el.height;
+            const centerX = W / 2;
+
+            // Stick figure target position (slightly left of center for desk)
+            const deskX = centerX;
+            const floorY = H * 0.68;
+            const targetX = deskX - 50;
+            let stickX = -60;
+            let frame = 0;
+            let walkCycle = 0;
+            let currentSpeech = '';
+            let speechStart = 0;
+            let codeLines = [];
+            let revealedZones = [];
+
+            const speeches = [
+                { frame: 240, text: 'I hate people.' },
+                { frame: 360, text: 'Alright let me fix this mess...' },
+                { frame: 460, text: 'Who even pressed that button?!' },
+                { frame: 570, text: 'This is why we can\'t have nice things...' },
+                { frame: 670, text: '*aggressive typing*' },
+                { frame: 770, text: 'Do you know how long this took to build?!' },
+                { frame: 870, text: 'I swear if someone presses T again...' },
+                { frame: 970, text: 'Don\'t. EVER. Do that again.' },
+                { frame: 1060, text: 'I am NOT paid enough for this.' },
+                { frame: 1150, text: 'Actually... I\'m not paid at all.' },
+                { frame: 1250, text: 'There. Happy now? Don\'t touch anything.' },
+            ];
+
+            // Zones to reveal (site pieces coming back)
+            const zones = [
+                { frame: 400, x: 0, y: 0, w: W, h: 55 },                    // nav
+                { frame: 530, x: W*0.25, y: H*0.25, w: W*0.5, h: 60 },      // name
+                { frame: 630, x: W*0.15, y: H*0.4, w: W*0.7, h: 80 },       // typing subtitle + links
+                { frame: 730, x: 0, y: 0, w: W, h: H },                      // starfield/particles (bg)
+                { frame: 900, x: 0, y: H-45, w: W, h: 45 },                  // bottom bar
+            ];
+
+            const fakeCode = [
+                'function fixWebsite() {',
+                '  // TODO: ban visitors who press T',
+                '  if (visitor.pressedBomb) {',
+                '    visitor.ban("forever");',
+                '    return "deserved";',
+                '  }',
+                '  rebuildNav();',
+                '  rebuildContent();',
+                '  // why do i do this to myself',
+                '  loadParticles();',
+                '  loadStarfield();',
+                '  initBeatDetection();',
+                '  // i could be sleeping rn',
+                '  document.body.style.display = "flex";',
+                '  console.log("site rebuilt, again.");',
+                '  alert("STOP PRESSING T");',
+                '}',
+                '',
+                '// note to self: remove the T key',
+                'fixWebsite();',
+            ];
+
+            function draw404() {
+                ac.fillStyle = '#f0f0f0';
+                ac.fillRect(0, 0, W, H);
+                // Browser-like top bar
+                ac.fillStyle = '#e0e0e0';
+                ac.fillRect(0, 0, W, 35);
+                ac.fillStyle = '#fff';
+                ac.beginPath();
+                ac.roundRect(70, 7, W - 140, 21, 10);
+                ac.fill();
+                ac.fillStyle = '#999';
+                ac.font = '12px Segoe UI';
+                ac.textAlign = 'left';
+                ac.fillText('logansandivar.com', 85, 22);
+                // Dots
+                ac.fillStyle = '#ff5f57'; ac.beginPath(); ac.arc(20, 17, 6, 0, Math.PI*2); ac.fill();
+                ac.fillStyle = '#febc2e'; ac.beginPath(); ac.arc(38, 17, 6, 0, Math.PI*2); ac.fill();
+                ac.fillStyle = '#28c840'; ac.beginPath(); ac.arc(56, 17, 6, 0, Math.PI*2); ac.fill();
+
+                // 404 content
+                ac.fillStyle = '#222';
+                ac.font = 'bold 140px Segoe UI';
+                ac.textAlign = 'center';
+                ac.fillText('404', centerX, H * 0.3);
+                ac.fillStyle = '#555';
+                ac.font = '28px Segoe UI';
+                ac.fillText('Page Not Found', centerX, H * 0.3 + 50);
+                ac.fillStyle = '#999';
+                ac.font = '16px Segoe UI';
+                ac.fillText('The page you were looking for has been obliterated by a visitor.', centerX, H * 0.3 + 90);
+                ac.fillText('Dispatching developer...', centerX, H * 0.3 + 120);
+            }
+
+            function drawDesk(x, y) {
+                // Chair
+                ac.fillStyle = '#444';
+                ac.fillRect(x - 65, y - 5, 8, 35);
+                ac.fillRect(x - 65, y - 35, 8, 35);
+                // Desk surface
+                ac.fillStyle = '#6b4226';
+                ac.fillRect(x - 45, y, 130, 6);
+                // Desk legs
+                ac.fillStyle = '#5a3520';
+                ac.fillRect(x - 40, y + 6, 5, 35);
+                ac.fillRect(x + 80, y + 6, 5, 35);
+                // Monitor
+                ac.fillStyle = '#1a1a1a';
+                ac.fillRect(x, y - 42, 65, 42);
+                ac.fillStyle = '#0d1117';
+                ac.fillRect(x + 3, y - 39, 59, 36);
+                // Monitor stand
+                ac.fillStyle = '#333';
+                ac.fillRect(x + 27, y, 11, 5);
+                ac.fillRect(x + 20, y + 2, 25, 3);
+                // Keyboard
+                ac.fillStyle = '#555';
+                ac.fillRect(x + 5, y - 3, 40, 4);
+                // Code on screen
+                ac.font = '6px Consolas, monospace';
+                ac.textAlign = 'left';
+                const visibleLines = codeLines.slice(-5);
+                visibleLines.forEach((line, i) => {
+                    ac.fillStyle = line.startsWith('//') ? '#6a9955' : line.startsWith('  ') ? '#9cdcfe' : '#dcdcaa';
+                    ac.fillText(line.substring(0, 14), x + 5, y - 32 + i * 7);
+                });
+            }
+
+            function drawStickFigure(x, y, pose, anim) {
+                const headR = 14;
+                const headY = y - 58;
+                const neckY = headY + headR;
+                const shoulderY = y - 38;
+                const hipY = y - 5;
+
+                ac.strokeStyle = '#333';
+                ac.fillStyle = '#333';
+                ac.lineWidth = 3;
+                ac.lineCap = 'round';
+                ac.lineJoin = 'round';
+
+                // Head
+                ac.beginPath();
+                ac.arc(x, headY, headR, 0, Math.PI * 2);
+                ac.stroke();
+
+                // Angry eyes
+                ac.beginPath(); ac.arc(x - 5, headY - 3, 2, 0, Math.PI * 2); ac.fill();
+                ac.beginPath(); ac.arc(x + 5, headY - 3, 2, 0, Math.PI * 2); ac.fill();
+                // Angry eyebrows
+                ac.lineWidth = 2;
+                ac.beginPath(); ac.moveTo(x - 9, headY - 9); ac.lineTo(x - 2, headY - 7); ac.stroke();
+                ac.beginPath(); ac.moveTo(x + 9, headY - 9); ac.lineTo(x + 2, headY - 7); ac.stroke();
+                // Frown
+                ac.beginPath(); ac.arc(x, headY + 10, 5, 0.15 * Math.PI, 0.85 * Math.PI, false); ac.stroke();
+                ac.lineWidth = 3;
+
+                // Body
+                ac.beginPath(); ac.moveTo(x, neckY); ac.lineTo(x, hipY); ac.stroke();
+
+                if (pose === 'walk') {
+                    const legSwing = Math.sin(anim) * 18;
+                    const armSwing = Math.sin(anim) * 15;
+                    // Arms
+                    ac.beginPath(); ac.moveTo(x, shoulderY); ac.lineTo(x - 12 + armSwing, shoulderY + 22); ac.stroke();
+                    ac.beginPath(); ac.moveTo(x, shoulderY); ac.lineTo(x + 12 - armSwing, shoulderY + 22); ac.stroke();
+                    // Legs
+                    ac.beginPath(); ac.moveTo(x, hipY); ac.lineTo(x + legSwing, y + 20); ac.stroke();
+                    ac.beginPath(); ac.moveTo(x, hipY); ac.lineTo(x - legSwing, y + 20); ac.stroke();
+                } else if (pose === 'sit') {
+                    // Arms on desk
+                    const armBob = Math.sin(anim * 0.3) * 2;
+                    ac.beginPath(); ac.moveTo(x, shoulderY); ac.lineTo(x + 30, y - 2 + armBob); ac.stroke();
+                    ac.beginPath(); ac.moveTo(x, shoulderY); ac.lineTo(x + 45, y - 2 - armBob); ac.stroke();
+                    // Legs bent on chair
+                    ac.beginPath(); ac.moveTo(x, hipY); ac.lineTo(x + 12, y + 10); ac.lineTo(x + 5, y + 30); ac.stroke();
+                    ac.beginPath(); ac.moveTo(x, hipY); ac.lineTo(x - 5, y + 10); ac.lineTo(x - 12, y + 30); ac.stroke();
+                }
+            }
+
+            function drawSpeechBubble(x, y, text) {
+                ac.save();
+                ac.font = '15px Segoe UI';
+                ac.textAlign = 'center';
+                const tw = ac.measureText(text).width;
+                const pad = 16;
+                const bw = tw + pad * 2;
+                const bh = 34;
+                const bx = x - bw / 2;
+                const by = y - bh - 18;
+
+                // Bubble
+                ac.fillStyle = 'white';
+                ac.shadowColor = 'rgba(0,0,0,0.15)';
+                ac.shadowBlur = 8;
+                ac.beginPath();
+                ac.roundRect(bx, by, bw, bh, 12);
+                ac.fill();
+                ac.shadowBlur = 0;
+                ac.strokeStyle = '#ddd';
+                ac.lineWidth = 1;
+                ac.stroke();
+
+                // Triangle
+                ac.fillStyle = 'white';
+                ac.beginPath();
+                ac.moveTo(x - 6, by + bh);
+                ac.lineTo(x, by + bh + 10);
+                ac.lineTo(x + 6, by + bh);
+                ac.closePath();
+                ac.fill();
+                ac.stroke();
+
+                // Text
+                ac.fillStyle = '#333';
+                ac.fillText(text, x, by + bh / 2 + 5);
+                ac.restore();
+            }
+
+            function animateAftermath() {
+                frame++;
+                ac.clearRect(0, 0, W, H);
+
+                // Check for new speech
+                for (let i = speeches.length - 1; i >= 0; i--) {
+                    if (frame >= speeches[i].frame && frame < speeches[i].frame + 100) {
+                        currentSpeech = speeches[i].text;
+                        speechStart = speeches[i].frame;
+                        break;
+                    }
+                }
+
+                // Add code lines over time
+                if (frame > 350 && frame % 15 === 0) {
+                    const lineIdx = Math.floor((frame - 350) / 15);
+                    if (lineIdx < fakeCode.length) codeLines.push(fakeCode[lineIdx]);
+                }
+
+                // Check zone reveals
+                zones.forEach(z => {
+                    if (frame >= z.frame && !revealedZones.includes(z)) revealedZones.push(z);
+                });
+
+                // --- DRAW ---
+
+                // Draw 404 page base
+                const fadeProgress = Math.max(0, Math.min(1, (frame - 700) / 500));
+                if (fadeProgress < 1) {
+                    ac.globalAlpha = 1 - fadeProgress * 0.7;
+                    draw404();
+                    ac.globalAlpha = 1;
+                }
+
+                // Cut out revealed zones (show real site behind)
+                ac.save();
+                ac.globalCompositeOperation = 'destination-out';
+                revealedZones.forEach(z => {
+                    const zoneAge = frame - z.frame;
+                    const zoneAlpha = Math.min(1, zoneAge / 30);
+                    ac.globalAlpha = zoneAlpha;
+                    ac.fillStyle = 'white';
+                    ac.fillRect(z.x, z.y, z.w, z.h);
+                });
+                ac.restore();
+
+                // Re-draw desk and stick figure on top (always visible)
+                if (frame > 200) {
+                    drawDesk(deskX, floorY);
+                }
+
+                // Walking phase
+                if (frame > 90 && stickX < targetX) {
+                    stickX += 3.5;
+                    walkCycle += 0.18;
+                    drawStickFigure(stickX, floorY, 'walk', walkCycle);
+                } else if (frame > 90) {
+                    // Sitting and typing
+                    drawStickFigure(targetX, floorY, 'sit', frame);
+                }
+
+                // Speech bubble
+                const speechAge = frame - speechStart;
+                if (currentSpeech && speechAge < 100) {
+                    const bubbleAlpha = speechAge < 10 ? speechAge / 10 : speechAge > 80 ? (100 - speechAge) / 20 : 1;
+                    ac.globalAlpha = bubbleAlpha;
+                    const bubbleX = Math.min(stickX, targetX);
+                    drawSpeechBubble(bubbleX, floorY - 60, currentSpeech);
+                    ac.globalAlpha = 1;
+                }
+
+                // End sequence
+                if (frame > 1350) {
+                    const endFade = (frame - 1350) / 60;
+                    ac.globalAlpha = 1 - endFade;
+                    if (endFade >= 1) {
+                        ac_el.remove();
+                        bombActive = false;
+                        return;
+                    }
+                }
+
+                requestAnimationFrame(animateAftermath);
+            }
+
+            // Start with a brief blackout flash
+            ac.fillStyle = '#000';
+            ac.fillRect(0, 0, W, H);
+            setTimeout(() => {
+                requestAnimationFrame(animateAftermath);
+            }, 300);
         }
 
         // ==============================================
