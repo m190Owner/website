@@ -1350,65 +1350,7 @@
             }
         }
 
-        // ==============================================
-        // TAGLINE PARTICLE SYSTEM
-        // ==============================================
-        const taglines = [
-            'Developer',
-            'U I D 7 5 9',
-            'Gamer',
-            'Creator',
-            'Professional Button Presser',
-            'Certified Keyboard Smasher',
-            'Part-Time Troll',
-            'Full-Time Menace',
-            'Bug Creator',
-            'Lag Enthusiast',
-            'Pixel Gremlin',
-            'Chaos Consultant',
-            'Overqualified Underachiever',
-            'World-Class Procrastinator'
-        ];
-
-        const shapeParticles = [];
-        let currentTaglineIndex = 0;
-        const TAGLINE_DURATION_FRAMES = 180;
-        let frameCount = 0;
         let hueBase = 220;
-
-        function createShapeForTagline(text) {
-            const offCanvas = document.createElement('canvas');
-            const offCtx = offCanvas.getContext('2d');
-            offCanvas.width = 900;
-            offCanvas.height = 220;
-            offCtx.clearRect(0, 0, offCanvas.width, offCanvas.height);
-            offCtx.fillStyle = "#ffffff";
-            offCtx.font = "bold 64px Segoe UI";
-            offCtx.textAlign = "center";
-            offCtx.textBaseline = "middle";
-            offCtx.fillText(text, offCanvas.width / 2, offCanvas.height / 2);
-            const imgData = offCtx.getImageData(0, 0, offCanvas.width, offCanvas.height).data;
-            const targets = [];
-            const step = 8;
-            for (let y = 0; y < offCanvas.height; y += step) {
-                for (let x = 0; x < offCanvas.width; x += step) {
-                    const idx = (y * offCanvas.width + x) * 4;
-                    if (imgData[idx + 3] > 128) {
-                        targets.push({ x: w / 2 - offCanvas.width / 2 + x, y: h - offCanvas.height + y - 50 });
-                    }
-                }
-            }
-            while (shapeParticles.length < targets.length) {
-                shapeParticles.push({ x: Math.random() * w, y: Math.random() * h, vx: 0, vy: 0, tx: 0, ty: 0 });
-            }
-            if (shapeParticles.length > targets.length) shapeParticles.length = targets.length;
-            for (let i = 0; i < targets.length; i++) {
-                shapeParticles[i].tx = targets[i].x;
-                shapeParticles[i].ty = targets[i].y;
-            }
-        }
-
-        createShapeForTagline(taglines[currentTaglineIndex]);
 
         // ==============================================
         // MAIN DRAW LOOP (overridden below with effects)
@@ -1779,15 +1721,6 @@
                 t.vy += (targetY - t.y) * 0.008;
             });
 
-            // Swirl shape particles into a vortex
-            shapeParticles.forEach((sp, i) => {
-                const angle = idleAngle + (i / shapeParticles.length) * Math.PI * 2;
-                const radius = 80 + (i / shapeParticles.length) * 250;
-                const idleTargetX = cx + Math.cos(angle) * radius;
-                const idleTargetY = cy + Math.sin(angle) * radius;
-                sp.tx = sp.tx * 0.95 + idleTargetX * 0.05;
-                sp.ty = sp.ty * 0.95 + idleTargetY * 0.05;
-            });
         }
 
         // Inject new systems into the draw loop
@@ -1795,28 +1728,11 @@
         draw = function() {
             ctx.clearRect(0, 0, w, h);
             const beat = getBeatStrength();
-            const beatScale = 1 + beat / 150;
             hueBase = (hueBase + 0.2 + beat / 50) % 360;
 
             // Idle check
             checkIdle();
             updateIdle();
-
-            // Shape particles
-            shapeParticles.forEach(sp => {
-                const dx = sp.tx - sp.x;
-                const dy = sp.ty - sp.y;
-                sp.vx += dx * 0.04;
-                sp.vy += dy * 0.04;
-                sp.vx *= 0.85;
-                sp.vy *= 0.85;
-                sp.x += sp.vx;
-                sp.y += sp.vy;
-                ctx.fillStyle = `hsla(${(hueBase + 20) % 360}, 80%, 75%, ${0.8 + beat / 400})`;
-                ctx.beginPath();
-                ctx.arc(sp.x, sp.y, 2.4 * beatScale, 0, Math.PI * 2);
-                ctx.fill();
-            });
 
             updateFloatingText(beat);
             drawFloatingText(beat);
@@ -1832,14 +1748,6 @@
             checkLightning();
             updateLightning();
             drawLightning();
-
-            frameCount++;
-            if (frameCount % TAGLINE_DURATION_FRAMES === 0) {
-                currentTaglineIndex = (currentTaglineIndex + 1) % taglines.length;
-                if (!idleActive) {
-                    createShapeForTagline(taglines[currentTaglineIndex]);
-                }
-            }
 
             requestAnimationFrame(draw);
         };
