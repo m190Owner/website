@@ -331,6 +331,41 @@
         .discord-label {
             color: #8a96b8;
         }
+
+        /* Visitor Counter */
+        .visitor-counter {
+            position: fixed;
+            bottom: 20px;
+            right: 30px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 1px solid rgba(122, 162, 255, 0.2);
+            border-radius: 30px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            font-size: 0.8rem;
+            color: #8a96b8;
+            z-index: 10;
+            transition: all 0.3s ease;
+        }
+
+        .visitor-counter:hover {
+            border-color: #7aa2ff;
+            color: #cbd5ff;
+        }
+
+        .visitor-counter .counter-icon {
+            color: #7aa2ff;
+            font-size: 0.9rem;
+        }
+
+        .visitor-counter .counter-num {
+            font-weight: 600;
+            color: #7aa2ff;
+            letter-spacing: 1px;
+        }
     </style>
 </head>
 <body>
@@ -382,12 +417,33 @@
         </div>
     </section>
 
+    <!-- Visitor Counter -->
+    <div class="visitor-counter">
+        <span class="counter-icon">&#9679;</span>
+        <span class="counter-num" id="visitor-count">—</span>
+        <span>visitors</span>
+    </div>
+
     <!-- Background Music -->
     <audio id="bg-music" loop>
         <source src="bg-music.mp3" type="audio/mpeg">
     </audio>
 
     <script>
+        // ==============================================
+        // VISITOR COUNTER
+        // ==============================================
+        async function updateVisitorCount() {
+            try {
+                const res = await fetch('counter.php');
+                const data = await res.json();
+                document.getElementById('visitor-count').textContent = data.count.toLocaleString();
+            } catch (e) {
+                document.getElementById('visitor-count').textContent = '—';
+            }
+        }
+        updateVisitorCount();
+
         // ==============================================
         // DISCORD WIDGET STATUS
         // ==============================================
