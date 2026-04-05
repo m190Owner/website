@@ -599,18 +599,61 @@
             font-family: 'Segoe UI', sans-serif;
         }
 
-        /* Gravity hint */
-        .gravity-hint {
+        /* Key hints */
+        .key-hints {
             position: fixed;
             bottom: 75px;
             left: 50%;
             transform: translateX(-50%);
-            font-size: 0.6rem;
-            color: rgba(138, 150, 184, 0.25);
+            font-size: 0.55rem;
+            color: rgba(138, 150, 184, 0.2);
             z-index: 5;
             pointer-events: none;
             letter-spacing: 1px;
+            white-space: nowrap;
         }
+
+        /* Boss Key Overlay */
+        .boss-overlay { display:none; position:fixed; inset:0; z-index:99999; background:#fff; font-family:Calibri,sans-serif; color:#333; overflow:auto; cursor:default; }
+        .boss-overlay.active { display:block; }
+        .boss-toolbar { background:#217346; padding:4px 12px; display:flex; gap:10px; color:white; font-size:12px; align-items:center; }
+        .boss-formula { background:#f1f1f1; border-bottom:1px solid #d4d4d4; padding:3px 8px; font-size:12px; display:flex; gap:8px; align-items:center; }
+        .boss-table { border-collapse:collapse; width:100%; font-size:12px; }
+        .boss-table th { background:#f1f1f1; border:1px solid #d4d4d4; padding:2px 20px; font-weight:normal; text-align:center; position:sticky; top:0; }
+        .boss-table td { border:1px solid #e0e0e0; padding:2px 8px; min-width:80px; height:20px; }
+        .boss-table td:first-child { background:#f8f8f8; text-align:center; width:30px; min-width:30px; color:#666; }
+        .boss-table .selected { background:#d6e4f0; outline:2px solid #217346; }
+
+        /* DJ Mode Overlay */
+        .dj-overlay { display:none; position:fixed; inset:0; z-index:9998; background:rgba(0,0,0,0.88); backdrop-filter:blur(12px); flex-direction:column; align-items:center; justify-content:center; gap:25px; }
+        .dj-overlay.active { display:flex; }
+        .dj-disc { width:180px; height:180px; border-radius:50%; background:radial-gradient(circle,#333 20%,#111 21%,#222 50%,#111 80%,#333 100%); border:3px solid #7aa2ff; box-shadow:0 0 40px rgba(122,162,255,0.3); cursor:grab; position:relative; }
+        .dj-disc::after { content:''; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); width:18px; height:18px; background:#7aa2ff; border-radius:50%; box-shadow:0 0 10px #7aa2ff; }
+        .dj-disc.spinning { animation:disc-spin 2s linear infinite; }
+        @keyframes disc-spin { to { transform:rotate(360deg); } }
+        .dj-controls { display:flex; gap:30px; }
+        .dj-ctrl { display:flex; flex-direction:column; align-items:center; gap:6px; color:#8a96b8; font-size:0.7rem; }
+        .dj-ctrl input[type="range"] { width:110px; cursor:pointer; }
+        .dj-val { color:#7aa2ff; font-weight:600; font-size:0.75rem; }
+
+        /* Time Bomb */
+        .bomb-display { display:none; position:fixed; inset:0; z-index:9997; align-items:center; justify-content:center; pointer-events:none; }
+        .bomb-display.active { display:flex; }
+        .bomb-number { font-size:14rem; font-weight:900; color:#ff3333; text-shadow:0 0 60px rgba(255,50,50,0.8),0 0 120px rgba(255,50,50,0.4); animation:bomb-pulse 1s ease infinite; }
+        @keyframes bomb-pulse { 0%,100% { transform:scale(1); } 50% { transform:scale(1.08); } }
+
+        /* Voice Indicator */
+        .voice-indicator { position:fixed; top:60px; left:20px; z-index:100; display:none; align-items:center; gap:6px; padding:6px 12px; background:rgba(10,12,20,0.8); border:1px solid rgba(255,80,80,0.4); border-radius:20px; font-size:0.7rem; color:#ff6666; backdrop-filter:blur(8px); }
+        .voice-indicator.active { display:flex; }
+        .voice-dot { width:8px; height:8px; border-radius:50%; background:#ff4444; box-shadow:0 0 8px #ff4444; animation:pulse-dot 1s ease infinite; }
+
+        /* Multiplayer Cursors */
+        .multi-cursor { position:fixed; width:12px; height:12px; border-radius:50%; pointer-events:none; z-index:9990; transition:left 0.4s linear,top 0.4s linear; }
+        .multi-cursor::after { content:'visitor'; position:absolute; top:14px; left:6px; font-size:0.55rem; color:inherit; white-space:nowrap; opacity:0.6; }
+
+        /* Destruction Canvas */
+        .destruction-canvas { position:fixed; inset:0; z-index:9996; pointer-events:none; display:none; }
+        .destruction-canvas.active { display:block; pointer-events:all; cursor:crosshair; }
     </style>
 </head>
 <body>
@@ -621,6 +664,33 @@
 
     <!-- Toast Container -->
     <div class="toast-container" id="toast-container"></div>
+
+    <!-- Boss Key Overlay -->
+    <div class="boss-overlay" id="boss-overlay"></div>
+
+    <!-- DJ Mode Overlay -->
+    <div class="dj-overlay" id="dj-overlay">
+        <div style="color:#7aa2ff; font-size:1.3rem; letter-spacing:3px; font-weight:700;">DJ MODE</div>
+        <div class="dj-disc spinning" id="dj-disc"></div>
+        <div class="dj-controls">
+            <div class="dj-ctrl"><span>SPEED</span><input type="range" id="dj-speed" min="0.25" max="3" step="0.05" value="1"><span class="dj-val" id="dj-speed-val">1.00x</span></div>
+            <div class="dj-ctrl"><span>FILTER</span><input type="range" id="dj-filter" min="200" max="20000" step="100" value="20000"><span class="dj-val" id="dj-filter-val">20kHz</span></div>
+            <div class="dj-ctrl"><span>ECHO</span><input type="range" id="dj-echo" min="0" max="1" step="0.05" value="0"><span class="dj-val" id="dj-echo-val">0%</span></div>
+        </div>
+        <div style="color:#5a6480; font-size:0.6rem; margin-top:8px;">press D to exit &middot; drag disc to scratch</div>
+    </div>
+
+    <!-- Time Bomb Display -->
+    <div class="bomb-display" id="bomb-display"><div class="bomb-number" id="bomb-number">10</div></div>
+
+    <!-- Voice Indicator -->
+    <div class="voice-indicator" id="voice-indicator"><div class="voice-dot"></div><span>VOICE</span></div>
+
+    <!-- Destruction Canvas -->
+    <canvas class="destruction-canvas" id="destruction-canvas"></canvas>
+
+    <!-- Face Tracking Hidden Canvas -->
+    <canvas id="face-canvas" style="display:none;" width="160" height="120"></canvas>
 
     <!-- Background Video -->
     <video id="bg-video" autoplay loop muted playsinline>
@@ -687,8 +757,8 @@
         <button class="chat-send" id="chat-send">Send</button>
     </div>
 
-    <!-- Gravity Hint -->
-    <div class="gravity-hint">press G for gravity</div>
+    <!-- Key Hints -->
+    <div class="key-hints">G gravity &middot; E earthquake &middot; M melt &middot; B boss &middot; D dj &middot; T bomb &middot; V voice &middot; F face &middot; X destroy</div>
 
     <!-- Bottom Status Bar -->
     <div class="bottom-bar">
@@ -1683,6 +1753,51 @@
             updateLightning();
             drawLightning();
 
+            // Portal effect
+            if (portalActive && portalRadius > 0) {
+                portalAngle += 0.12;
+                portalRadius = Math.min(portalRadius + 3, 150);
+                for (let i = 0; i < 6; i++) {
+                    const r = portalRadius * (1 - i * 0.13);
+                    const a = portalAngle + i * 0.6;
+                    ctx.save();
+                    ctx.globalAlpha = 0.6 - i * 0.08;
+                    ctx.strokeStyle = `hsla(${270 + i * 15}, 80%, 60%, 1)`;
+                    ctx.lineWidth = 3 - i * 0.3;
+                    ctx.shadowColor = `hsla(${270 + i * 15}, 100%, 60%, 1)`;
+                    ctx.shadowBlur = 25;
+                    ctx.beginPath();
+                    ctx.ellipse(portalX, portalY, r, r * 0.55, a, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+                // Inner glow
+                const grad = ctx.createRadialGradient(portalX, portalY, 0, portalX, portalY, portalRadius * 0.4);
+                grad.addColorStop(0, 'rgba(150, 100, 255, 0.3)');
+                grad.addColorStop(1, 'rgba(150, 100, 255, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(portalX, portalY, portalRadius * 0.4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Pull particles toward portal
+                textParticles.forEach(t => {
+                    if (t.exploding) return;
+                    const dx = portalX - t.x, dy = portalY - t.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < portalRadius * 3 && dist > 10) {
+                        const f = (portalRadius * 3 - dist) / (portalRadius * 3) * 0.6;
+                        t.vx += (dx / dist) * f;
+                        t.vy += (dy / dist) * f;
+                    }
+                });
+                trailParticles.forEach(p => {
+                    const dx = portalX - p.x, dy = portalY - p.y;
+                    const dist = Math.hypot(dx, dy);
+                    if (dist < portalRadius * 2) { p.vx += (dx / dist) * 0.4; p.vy += (dy / dist) * 0.4; }
+                });
+            }
+
             requestAnimationFrame(draw);
         };
 
@@ -1838,15 +1953,9 @@
         updateCursorSize();
 
         // ==============================================
-        // GRAVITY MODE (press G)
+        // GRAVITY MODE
         // ==============================================
         let gravityActive = false;
-
-        document.addEventListener('keydown', (e) => {
-            if ((e.key === 'g' || e.key === 'G') && !gravityActive && document.activeElement.tagName !== 'INPUT') {
-                activateGravity();
-            }
-        });
 
         function activateGravity() {
             gravityActive = true;
@@ -2047,6 +2156,500 @@
                 });
             } catch (e) {}
         }, 20000);
+
+        // ==============================================
+        // UNIFIED KEY HANDLER
+        // ==============================================
+        let bossActive = false;
+        document.addEventListener('keydown', (e) => {
+            if (document.activeElement.tagName === 'INPUT') return;
+            if (bossActive && e.key.toLowerCase() !== 'b') return;
+            switch (e.key.toLowerCase()) {
+                case 'g': if (!gravityActive) activateGravity(); break;
+                case 'e': activateEarthquake(); break;
+                case 'm': activateScreenMelt(); break;
+                case 'b': toggleBossKey(); break;
+                case 'd': toggleDJMode(); break;
+                case 't': startTimeBomb(); break;
+                case 'v': toggleVoiceCommands(); break;
+                case 'f': toggleFaceTracking(); break;
+                case 'x': toggleDestructionMode(); break;
+            }
+        });
+
+        // ==============================================
+        // EARTHQUAKE MODE (E)
+        // ==============================================
+        let earthquakeActive = false;
+        function activateEarthquake() {
+            if (earthquakeActive) return;
+            earthquakeActive = true;
+            // Crack overlay
+            const crackOvl = document.createElement('canvas');
+            crackOvl.style.cssText = 'position:fixed;inset:0;z-index:9997;pointer-events:none;';
+            crackOvl.width = window.innerWidth; crackOvl.height = window.innerHeight;
+            document.body.appendChild(crackOvl);
+            const cc = crackOvl.getContext('2d');
+            for (let c = 0; c < 6; c++) {
+                cc.strokeStyle = `rgba(255,255,255,${0.5 + Math.random() * 0.4})`;
+                cc.lineWidth = 1.5 + Math.random() * 2;
+                cc.shadowColor = '#7aa2ff'; cc.shadowBlur = 12;
+                cc.beginPath();
+                let cx = Math.random() * crackOvl.width, cy = 0;
+                cc.moveTo(cx, cy);
+                for (let s = 0; s < 12 + Math.random() * 10; s++) {
+                    cx += (Math.random() - 0.5) * 80;
+                    cy += 15 + Math.random() * 40;
+                    cc.lineTo(cx, cy);
+                    if (Math.random() < 0.3) { // branch
+                        cc.stroke(); cc.beginPath(); cc.moveTo(cx, cy);
+                        let bx = cx, by = cy;
+                        for (let b = 0; b < 4; b++) { bx += (Math.random()-0.5)*50; by += 10+Math.random()*20; cc.lineTo(bx, by); }
+                        cc.stroke(); cc.beginPath(); cc.moveTo(cx, cy);
+                    }
+                }
+                cc.stroke();
+            }
+            let frame = 0;
+            function quake() {
+                const p = frame / 120;
+                const intensity = (1 - p) * 30;
+                document.body.style.transform = `translate(${(Math.random()-0.5)*intensity}px, ${(Math.random()-0.5)*intensity}px) rotate(${(Math.random()-0.5)*intensity*0.15}deg)`;
+                if (p > 0.4) crackOvl.style.opacity = 1 - (p - 0.4) / 0.6;
+                frame++;
+                if (frame < 120) { requestAnimationFrame(quake); }
+                else { document.body.style.transform = ''; crackOvl.remove(); earthquakeActive = false; }
+            }
+            quake();
+        }
+
+        // ==============================================
+        // SCREEN MELT (M)
+        // ==============================================
+        let meltActive = false;
+        function activateScreenMelt() {
+            if (meltActive) return;
+            meltActive = true;
+            let frame = 0;
+            function melt() {
+                frame++;
+                const t = frame / 90;
+                const drop = t * t * window.innerHeight * 0.6;
+                const stretch = 1 + t * 0.4;
+                const wave = Math.sin(frame * 0.15) * 10 * t;
+                document.body.style.transform = `translateY(${drop}px) scaleY(${stretch}) translateX(${wave}px)`;
+                document.body.style.transformOrigin = 'top center';
+                document.body.style.filter = `blur(${t * 4}px) saturate(${1 - t * 0.6})`;
+                document.body.style.opacity = 1 - t * 0.3;
+                if (t < 1) { requestAnimationFrame(melt); }
+                else {
+                    setTimeout(() => {
+                        document.body.style.transition = 'all 0.8s ease-out';
+                        document.body.style.transform = '';
+                        document.body.style.filter = '';
+                        document.body.style.opacity = '';
+                        document.body.style.transformOrigin = '';
+                        setTimeout(() => { document.body.style.transition = ''; meltActive = false; }, 900);
+                    }, 800);
+                }
+            }
+            melt();
+        }
+
+        // ==============================================
+        // BOSS KEY (B)
+        // ==============================================
+        function toggleBossKey() {
+            bossActive = !bossActive;
+            const ovl = document.getElementById('boss-overlay');
+            if (bossActive) {
+                if (!ovl.innerHTML) {
+                    const cols = ['A','B','C','D','E','F','G','H','I','J'];
+                    const rows = [
+                        ['Department','Q1 Revenue','Q2 Revenue','Q3 Revenue','Q4 Revenue','YTD Total','Growth %','Target','Variance','Status'],
+                        ['Sales','$142,500','$156,800','$163,200','$171,400','$633,900','12.4%','$600,000','$33,900','Above'],
+                        ['Marketing','$98,300','$102,100','$97,800','$105,600','$403,800','3.2%','$400,000','$3,800','On Track'],
+                        ['Engineering','$267,200','$271,500','$273,800','$269,400','$1,081,900','1.8%','$1,050,000','$31,900','Above'],
+                        ['Operations','$83,100','$88,700','$85,400','$91,300','$348,500','6.7%','$340,000','$8,500','Above'],
+                        ['HR','$45,200','$45,200','$46,800','$47,100','$184,300','2.1%','$180,000','$4,300','On Track'],
+                        ['Finance','$52,800','$53,100','$54,200','$55,600','$215,700','3.4%','$210,000','$5,700','Above'],
+                        ['Legal','$38,400','$39,200','$38,800','$40,100','$156,500','2.8%','$155,000','$1,500','On Track'],
+                        ['Support','$71,600','$73,200','$75,100','$76,800','$296,700','4.9%','$290,000','$6,700','Above'],
+                        ['R&D','$189,500','$195,200','$198,700','$203,100','$786,500','5.2%','$750,000','$36,500','Above'],
+                    ];
+                    let h = '<div class="boss-toolbar"><span>\u{1F4CA}</span><span style="font-weight:600">Q4_Financial_Report_FINAL_v3.xlsx - Excel</span><span style="margin-left:auto;opacity:0.4;font-size:10px">press B to return</span></div>';
+                    h += '<div class="boss-formula"><span style="background:#e8e8e8;padding:1px 6px;border:1px solid #ccc;font-size:11px">B2</span><span style="color:#999">fx</span><span>$142,500</span></div>';
+                    h += '<table class="boss-table"><thead><tr><th></th>';
+                    cols.forEach(c => h += `<th>${c}</th>`);
+                    h += '</tr></thead><tbody>';
+                    for (let r = 0; r < 35; r++) {
+                        h += `<tr><td>${r+1}</td>`;
+                        for (let c = 0; c < cols.length; c++) {
+                            const val = rows[r] ? (rows[r][c] || '') : '';
+                            const cls = r === 1 && c === 1 ? ' class="selected"' : '';
+                            h += `<td${cls}>${val}</td>`;
+                        }
+                        h += '</tr>';
+                    }
+                    h += '</tbody></table>';
+                    ovl.innerHTML = h;
+                }
+                ovl.classList.add('active');
+                if (!audio.paused) { audio.pause(); ovl.dataset.wasPlaying = '1'; }
+            } else {
+                ovl.classList.remove('active');
+                if (ovl.dataset.wasPlaying === '1') { audio.play().catch(()=>{}); ovl.dataset.wasPlaying = ''; }
+            }
+        }
+
+        // ==============================================
+        // TIME BOMB (T)
+        // ==============================================
+        let bombActive = false;
+        function startTimeBomb() {
+            if (bombActive) return;
+            bombActive = true;
+            const display = document.getElementById('bomb-display');
+            const numEl = document.getElementById('bomb-number');
+            display.classList.add('active');
+            let count = 10;
+            numEl.textContent = count;
+            numEl.style.color = '#ff3333';
+            numEl.style.fontSize = '14rem';
+
+            const tick = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    numEl.textContent = count;
+                    if (count <= 3) { numEl.style.color = '#ff0000'; numEl.style.fontSize = '18rem'; }
+                    const shake = (10 - count) * 2;
+                    document.body.style.transform = `translate(${(Math.random()-0.5)*shake}px, ${(Math.random()-0.5)*shake}px)`;
+                } else {
+                    clearInterval(tick);
+                    numEl.textContent = '\u{1F4A5}';
+                    numEl.style.fontSize = '16rem';
+                    flashAlpha = 1.5;
+                    addShockwave(w / 2, h / 2, { glow: '#ff4400' }, 200, 3);
+                    addShockwave(w / 2, h / 2, { glow: '#ff8800' }, 150, 2);
+                    let sf = 0;
+                    function bombShake() {
+                        sf++;
+                        const i = Math.max(0, (1 - sf / 60)) * 45;
+                        document.body.style.transform = `translate(${(Math.random()-0.5)*i}px, ${(Math.random()-0.5)*i}px)`;
+                        if (sf < 60) requestAnimationFrame(bombShake);
+                        else { document.body.style.transform = ''; display.classList.remove('active'); bombActive = false; }
+                    }
+                    bombShake();
+                }
+            }, 1000);
+        }
+
+        // ==============================================
+        // PORTAL EFFECT (click and hold)
+        // ==============================================
+        let portalActive = false, portalX = 0, portalY = 0, portalRadius = 0, portalAngle = 0;
+        let portalTimeout;
+        document.addEventListener('mousedown', (e) => {
+            if (e.target.closest('nav, .bottom-bar, .chat-input-container, .dj-overlay, .boss-overlay, .destruction-canvas, input, button, a')) return;
+            portalTimeout = setTimeout(() => {
+                portalActive = true;
+                portalX = e.clientX;
+                portalY = e.clientY;
+                portalRadius = 1;
+            }, 400);
+        });
+        document.addEventListener('mouseup', () => {
+            clearTimeout(portalTimeout);
+            if (portalActive) {
+                portalActive = false;
+                portalRadius = 0;
+            }
+        });
+
+        // ==============================================
+        // DESTRUCTION MODE (X toggle)
+        // ==============================================
+        let destructionActive = false, isDestroying = false, lastDX, lastDY;
+        const destroyCanvas = document.getElementById('destruction-canvas');
+        const destroyCtx = destroyCanvas.getContext('2d');
+
+        function toggleDestructionMode() {
+            destructionActive = !destructionActive;
+            if (destructionActive) {
+                destroyCanvas.width = window.innerWidth;
+                destroyCanvas.height = window.innerHeight;
+                destroyCanvas.classList.add('active');
+                showToast('Mode', 'Destruction mode ON \u2014 drag to tear');
+            } else {
+                destroyCanvas.classList.remove('active');
+                destroyCtx.clearRect(0, 0, destroyCanvas.width, destroyCanvas.height);
+                showToast('Mode', 'Destruction mode OFF');
+            }
+        }
+
+        destroyCanvas.addEventListener('mousedown', (e) => { isDestroying = true; lastDX = e.clientX; lastDY = e.clientY; });
+        destroyCanvas.addEventListener('mousemove', (e) => {
+            if (!isDestroying) return;
+            const x = e.clientX, y = e.clientY;
+            destroyCtx.save();
+            destroyCtx.globalCompositeOperation = 'lighter';
+            destroyCtx.strokeStyle = '#ff4422';
+            destroyCtx.lineWidth = 3 + Math.random() * 8;
+            destroyCtx.shadowColor = '#ff6600';
+            destroyCtx.shadowBlur = 25;
+            destroyCtx.beginPath();
+            destroyCtx.moveTo(lastDX, lastDY);
+            const dx = x - lastDX, dy = y - lastDY;
+            const steps = Math.max(1, Math.floor(Math.hypot(dx, dy) / 5));
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                destroyCtx.lineTo(lastDX + dx * t + (Math.random()-0.5)*12, lastDY + dy * t + (Math.random()-0.5)*12);
+            }
+            destroyCtx.stroke();
+            // Ember glow
+            destroyCtx.fillStyle = 'rgba(255,100,0,0.25)';
+            destroyCtx.beginPath();
+            destroyCtx.arc(x, y, 12 + Math.random() * 15, 0, Math.PI * 2);
+            destroyCtx.fill();
+            destroyCtx.restore();
+            lastDX = x; lastDY = y;
+        });
+        destroyCanvas.addEventListener('mouseup', () => { isDestroying = false; });
+
+        // ==============================================
+        // VOICE COMMANDS (V toggle)
+        // ==============================================
+        let voiceActive = false, recognition = null;
+        function toggleVoiceCommands() {
+            const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+            if (!SR) { showToast('Voice', 'Speech recognition not supported'); return; }
+            voiceActive = !voiceActive;
+            const ind = document.getElementById('voice-indicator');
+            if (voiceActive) {
+                ind.classList.add('active');
+                recognition = new SR();
+                recognition.continuous = true;
+                recognition.interimResults = false;
+                recognition.onresult = (e) => {
+                    const cmd = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
+                    if (cmd.includes('gravity')) activateGravity();
+                    else if (cmd.includes('quake') || cmd.includes('earthquake')) activateEarthquake();
+                    else if (cmd.includes('melt')) activateScreenMelt();
+                    else if (cmd.includes('boss')) toggleBossKey();
+                    else if (cmd.includes('bomb') || cmd.includes('explode')) startTimeBomb();
+                    else if (cmd.includes('dj') || cmd.includes('music')) toggleDJMode();
+                    else if (cmd.includes('destroy')) toggleDestructionMode();
+                    showToast('Voice', `Heard: "${cmd}"`);
+                };
+                recognition.onend = () => { if (voiceActive) try { recognition.start(); } catch(e){} };
+                recognition.start();
+                showToast('Voice', 'Listening for commands...');
+            } else {
+                ind.classList.remove('active');
+                if (recognition) { recognition.onend = null; recognition.abort(); recognition = null; }
+            }
+        }
+
+        // ==============================================
+        // WEBCAM BACKGROUND
+        // ==============================================
+        let webcamStream = null;
+        async function initWebcam() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 }, audio: false });
+                webcamStream = stream;
+                const bgVideo = document.getElementById('bg-video');
+                bgVideo.srcObject = stream;
+                bgVideo.loop = false;
+                bgVideo.muted = true;
+                bgVideo.play().catch(() => {});
+            } catch (e) { /* keep default bg video */ }
+        }
+        // Try after first user interaction (needed for permission)
+        document.body.addEventListener('click', () => { if (!webcamStream) initWebcam(); }, { once: true });
+
+        // ==============================================
+        // DJ MODE (D toggle)
+        // ==============================================
+        let djActive = false, djFilter = null, djDelay = null, djDelayGain = null;
+
+        function initDJEffects() {
+            if (!audioCtx || djFilter) return;
+            djFilter = audioCtx.createBiquadFilter();
+            djFilter.type = 'lowpass';
+            djFilter.frequency.value = 20000;
+            analyser.disconnect();
+            analyser.connect(djFilter);
+            djFilter.connect(audioCtx.destination);
+            // Echo/delay effect
+            djDelay = audioCtx.createDelay(0.5);
+            djDelay.delayTime.value = 0.15;
+            djDelayGain = audioCtx.createGain();
+            djDelayGain.gain.value = 0;
+            djFilter.connect(djDelay);
+            djDelay.connect(djDelayGain);
+            djDelayGain.connect(audioCtx.destination);
+            djDelayGain.connect(djDelay); // feedback
+        }
+
+        function toggleDJMode() {
+            djActive = !djActive;
+            const ovl = document.getElementById('dj-overlay');
+            const disc = document.getElementById('dj-disc');
+            if (djActive) {
+                ovl.classList.add('active');
+                disc.classList.add('spinning');
+                if (audioCtx) initDJEffects();
+            } else {
+                ovl.classList.remove('active');
+                audio.playbackRate = 1;
+                if (djFilter) djFilter.frequency.value = 20000;
+                if (djDelayGain) djDelayGain.gain.value = 0;
+                document.getElementById('dj-speed').value = 1;
+                document.getElementById('dj-speed-val').textContent = '1.00x';
+                document.getElementById('dj-filter').value = 20000;
+                document.getElementById('dj-filter-val').textContent = '20kHz';
+                document.getElementById('dj-echo').value = 0;
+                document.getElementById('dj-echo-val').textContent = '0%';
+            }
+        }
+
+        // DJ sliders
+        document.getElementById('dj-speed').addEventListener('input', (e) => {
+            audio.playbackRate = parseFloat(e.target.value);
+            document.getElementById('dj-speed-val').textContent = parseFloat(e.target.value).toFixed(2) + 'x';
+        });
+        document.getElementById('dj-filter').addEventListener('input', (e) => {
+            if (djFilter) djFilter.frequency.value = parseFloat(e.target.value);
+            const v = parseFloat(e.target.value);
+            document.getElementById('dj-filter-val').textContent = v >= 1000 ? (v/1000).toFixed(1) + 'kHz' : v + 'Hz';
+        });
+        document.getElementById('dj-echo').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('dj-echo-val').textContent = Math.round(v * 100) + '%';
+            if (djDelayGain) djDelayGain.gain.value = v * 0.45;
+        });
+
+        // Disc scratch (drag)
+        const djDisc = document.getElementById('dj-disc');
+        let discDragging = false, discLastX = 0;
+        djDisc.addEventListener('mousedown', (e) => {
+            discDragging = true; discLastX = e.clientX;
+            djDisc.classList.remove('spinning'); djDisc.style.cursor = 'grabbing';
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!discDragging) return;
+            const dx = e.clientX - discLastX;
+            audio.playbackRate = Math.max(0.1, Math.min(3, 1 + dx * 0.008));
+            document.getElementById('dj-speed').value = audio.playbackRate;
+            document.getElementById('dj-speed-val').textContent = audio.playbackRate.toFixed(2) + 'x';
+            const rot = parseFloat(djDisc.dataset.rot || 0) + dx * 0.5;
+            djDisc.dataset.rot = rot;
+            djDisc.style.transform = `rotate(${rot}deg)`;
+            discLastX = e.clientX;
+        });
+        document.addEventListener('mouseup', () => {
+            if (!discDragging) return;
+            discDragging = false;
+            djDisc.style.cursor = 'grab';
+            if (djActive) { djDisc.classList.add('spinning'); djDisc.style.transform = ''; }
+            // Smooth return to 1x
+            const snap = setInterval(() => {
+                const diff = 1 - audio.playbackRate;
+                if (Math.abs(diff) < 0.05) { audio.playbackRate = 1; clearInterval(snap); }
+                else audio.playbackRate += diff * 0.15;
+                document.getElementById('dj-speed').value = audio.playbackRate;
+                document.getElementById('dj-speed-val').textContent = audio.playbackRate.toFixed(2) + 'x';
+            }, 30);
+        });
+
+        // ==============================================
+        // MULTIPLAYER CURSORS
+        // ==============================================
+        const cursorColor = `hsl(${Math.floor(Math.random() * 360)}, 70%, 60%)`;
+        const otherCursors = {};
+        let lastCursorSend = 0;
+
+        document.addEventListener('mousemove', () => {
+            const now = Date.now();
+            if (now - lastCursorSend < 600) return;
+            lastCursorSend = now;
+            fetch('cursors.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: visitorId, x: (mouseX / window.innerWidth * 100).toFixed(1), y: (mouseY / window.innerHeight * 100).toFixed(1), color: cursorColor })
+            }).catch(() => {});
+        });
+
+        setInterval(async () => {
+            try {
+                const res = await fetch('cursors.php');
+                const data = await res.json();
+                const active = new Set();
+                for (const [id, info] of Object.entries(data)) {
+                    if (id === visitorId) continue;
+                    active.add(id);
+                    if (!otherCursors[id]) {
+                        const el = document.createElement('div');
+                        el.className = 'multi-cursor';
+                        el.style.color = info.color;
+                        el.style.background = info.color;
+                        el.style.boxShadow = `0 0 10px ${info.color}`;
+                        document.body.appendChild(el);
+                        otherCursors[id] = el;
+                    }
+                    otherCursors[id].style.left = (info.x / 100 * window.innerWidth) + 'px';
+                    otherCursors[id].style.top = (info.y / 100 * window.innerHeight) + 'px';
+                }
+                for (const [id, el] of Object.entries(otherCursors)) {
+                    if (!active.has(id)) { el.remove(); delete otherCursors[id]; }
+                }
+            } catch (e) {}
+        }, 800);
+
+        // ==============================================
+        // FACE TRACKING CURSOR (F toggle)
+        // ==============================================
+        let faceTrackingActive = false;
+        const faceCanvas = document.getElementById('face-canvas');
+        const faceCtx = faceCanvas.getContext('2d', { willReadFrequently: true });
+
+        function toggleFaceTracking() {
+            if (!webcamStream) { showToast('Face', 'Webcam not available \u2014 click page first to enable'); return; }
+            faceTrackingActive = !faceTrackingActive;
+            if (faceTrackingActive) {
+                showToast('Face', 'Face tracking ON');
+                trackFace();
+            } else {
+                showToast('Face', 'Face tracking OFF');
+            }
+        }
+
+        function trackFace() {
+            if (!faceTrackingActive || !webcamStream) return;
+            const video = document.getElementById('bg-video');
+            faceCtx.drawImage(video, 0, 0, 160, 120);
+            const imgData = faceCtx.getImageData(0, 0, 160, 120).data;
+            let sumX = 0, sumY = 0, count = 0;
+            for (let y = 0; y < 120; y += 2) {
+                for (let x = 0; x < 160; x += 2) {
+                    const i = (y * 160 + x) * 4;
+                    const r = imgData[i], g = imgData[i+1], b = imgData[i+2];
+                    if (r > 95 && g > 40 && b > 20 && r > g && r > b && (r - g) > 15 && r - b > 15) {
+                        sumX += x; sumY += y; count++;
+                    }
+                }
+            }
+            if (count > 80) {
+                const fx = (1 - (sumX / count) / 160) * window.innerWidth;
+                const fy = (sumY / count) / 120 * window.innerHeight;
+                mouseX += (fx - mouseX) * 0.12;
+                mouseY += (fy - mouseY) * 0.12;
+                cursor.style.left = mouseX + 'px';
+                cursor.style.top = mouseY + 'px';
+            }
+            setTimeout(() => requestAnimationFrame(trackFace), 50);
+        }
     </script>
 </body>
 </html>
