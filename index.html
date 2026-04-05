@@ -200,6 +200,31 @@
             100% { transform: translate(0); }
         }
 
+        /* Typing Intro */
+        .typing-subtitle {
+            font-size: 1.1rem;
+            color: #8a96b8;
+            margin-top: 10px;
+            height: 1.5em;
+            font-family: 'Consolas', 'Courier New', monospace;
+            letter-spacing: 1px;
+        }
+
+        .typing-subtitle .typing-cursor {
+            display: inline-block;
+            width: 2px;
+            height: 1.1em;
+            background: #7aa2ff;
+            margin-left: 2px;
+            vertical-align: text-bottom;
+            animation: blink-cursor 0.7s step-end infinite;
+        }
+
+        @keyframes blink-cursor {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
         /* Links */
         .links {
             margin-top: 25px;
@@ -646,6 +671,7 @@
     <section id="home">
         <div class="home-content">
             <h1 class="glitch" data-text="Logan Sandivar">Logan Sandivar</h1>
+            <div class="typing-subtitle"><span id="typing-text"></span><span class="typing-cursor"></span></div>
             <div class="links">
                 <a href="https://steamcommunity.com/id/LoganSandivar/" target="_blank">Steam</a>
                 <a href="https://www.youtube.com/@LoganSandivar" target="_blank">YouTube</a>
@@ -1420,6 +1446,58 @@
                     clearInterval(interval);
                     h1.textContent = finalName;
                     h1.setAttribute('data-text', finalName);
+                    // Start typing intro after name decrypts
+                    startTypingIntro();
+                }
+            }, 40);
+        }
+
+        // ==============================================
+        // TYPING INTRO (SUBTITLE)
+        // ==============================================
+        const typingPhrases = [
+            'Developer',
+            'UID 759',
+            'Creator',
+            'ServerLagger',
+            'Professional Button Presser',
+            'Certified Keyboard Smasher',
+            'Full-Time Menace',
+            'Lag Enthusiast',
+            'Chaos Consultant'
+        ];
+        const typingEl = document.getElementById('typing-text');
+        let typingIndex = 0;
+
+        function startTypingIntro() {
+            typePhrase(typingPhrases[typingIndex]);
+        }
+
+        function typePhrase(phrase) {
+            let i = 0;
+            typingEl.textContent = '';
+
+            const typeInterval = setInterval(() => {
+                typingEl.textContent = phrase.slice(0, i + 1);
+                i++;
+                if (i >= phrase.length) {
+                    clearInterval(typeInterval);
+                    // Pause, then erase
+                    setTimeout(() => erasePhrase(phrase), 2000);
+                }
+            }, 70);
+        }
+
+        function erasePhrase(phrase) {
+            let i = phrase.length;
+
+            const eraseInterval = setInterval(() => {
+                i--;
+                typingEl.textContent = phrase.slice(0, i);
+                if (i <= 0) {
+                    clearInterval(eraseInterval);
+                    typingIndex = (typingIndex + 1) % typingPhrases.length;
+                    setTimeout(() => typePhrase(typingPhrases[typingIndex]), 400);
                 }
             }, 40);
         }
