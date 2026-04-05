@@ -352,7 +352,7 @@
         /* Visitor Counter */
         .visitor-counter {
             position: fixed;
-            bottom: 20px;
+            bottom: 65px;
             right: 30px;
             display: flex;
             align-items: center;
@@ -393,6 +393,73 @@
             color: #3ba55d;
             font-size: 0.6rem;
             animation: pulse-dot 2s ease infinite;
+        }
+
+        /* Visitor Map */
+        .visitor-map {
+            position: fixed;
+            bottom: 20px;
+            left: 30px;
+            width: 280px;
+            height: 160px;
+            border: 1px solid rgba(122, 162, 255, 0.2);
+            border-radius: 12px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .visitor-map:hover {
+            border-color: #7aa2ff;
+            box-shadow: 0 0 12px rgba(122, 162, 255, 0.15);
+        }
+
+        .visitor-map canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .map-label {
+            position: absolute;
+            top: 8px;
+            left: 12px;
+            font-size: 0.65rem;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: #7aa2ff;
+            opacity: 0.7;
+        }
+
+        /* Click Counter */
+        .click-counter {
+            position: fixed;
+            bottom: 20px;
+            right: 30px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 16px;
+            border: 1px solid rgba(122, 162, 255, 0.2);
+            border-radius: 30px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            font-size: 0.8rem;
+            color: #8a96b8;
+            z-index: 10;
+            transition: all 0.3s ease;
+        }
+
+        .click-counter:hover {
+            border-color: #7aa2ff;
+            color: #cbd5ff;
+        }
+
+        .click-counter .click-num {
+            font-weight: 600;
+            color: #7aa2ff;
+            letter-spacing: 1px;
         }
 
         /* Audio Waveform Visualizer */
@@ -468,6 +535,12 @@
         </div>
     </section>
 
+    <!-- Visitor Map -->
+    <div class="visitor-map">
+        <span class="map-label">visitor map</span>
+        <canvas id="visitor-map-canvas" width="560" height="320"></canvas>
+    </div>
+
     <!-- Visitor Counter -->
     <div class="visitor-counter">
         <span class="counter-dot online-dot">&#9679;</span>
@@ -476,6 +549,12 @@
         <span class="counter-sep">|</span>
         <span class="counter-num" id="visitor-count">—</span>
         <span>total</span>
+    </div>
+
+    <!-- Click Counter -->
+    <div class="click-counter">
+        <span class="click-num" id="click-count">—</span>
+        <span>clicks</span>
     </div>
 
     <!-- Background Music -->
@@ -490,20 +569,122 @@
         const visitorId = localStorage.getItem('vid') || Math.random().toString(36).slice(2, 10);
         localStorage.setItem('vid', visitorId);
 
+        let visitorLocations = [];
+
         async function counterFetch(action) {
             try {
                 const res = await fetch(`counter.php?action=${action}&id=${visitorId}`);
                 const data = await res.json();
                 document.getElementById('visitor-count').textContent = data.count.toLocaleString();
                 document.getElementById('online-count').textContent = data.online;
+                document.getElementById('click-count').textContent = data.clicks.toLocaleString();
+                if (data.locations) {
+                    visitorLocations = data.locations;
+                    drawVisitorMap();
+                }
             } catch (e) {}
         }
 
         // Initial visit (increments total)
         counterFetch('visit');
 
-        // Heartbeat every 30 seconds (keeps online status alive)
+        // Heartbeat every 30 seconds
         setInterval(() => counterFetch('heartbeat'), 30000);
+
+        // Click counter — track all clicks on the page
+        document.addEventListener('click', () => {
+            counterFetch('click');
+        });
+
+        // ==============================================
+        // VISITOR MAP
+        // ==============================================
+        const mapCanvas = document.getElementById('visitor-map-canvas');
+        const mapCtx = mapCanvas.getContext('2d');
+
+        // Simple Mercator projection
+        function latLonToXY(lat, lon, cw, ch) {
+            const x = ((lon + 180) / 360) * cw;
+            const latRad = (lat * Math.PI) / 180;
+            const mercN = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+            const y = (ch / 2) - (cw * mercN) / (2 * Math.PI);
+            return { x, y };
+        }
+
+        // Simplified world outline (continent boundaries as polygon paths)
+        const continents = [
+            // North America
+            [[50,-130],[55,-125],[60,-140],[70,-160],[72,-155],[65,-168],[60,-165],[55,-165],[55,-130],[50,-125],[48,-123],[45,-124],[40,-124],[35,-120],[30,-118],[25,-112],[20,-105],[15,-95],[18,-88],[20,-87],[22,-85],[25,-80],[30,-82],[35,-75],[40,-72],[45,-65],[48,-55],[50,-60],[55,-60],[60,-65],[65,-65],[60,-80],[55,-85],[50,-90],[53,-95],[55,-100],[52,-110],[50,-120],[50,-130]],
+            // South America
+            [[12,-75],[10,-72],[8,-77],[5,-77],[2,-80],[-5,-80],[-10,-78],[-15,-75],[-20,-63],[-25,-58],[-30,-57],[-35,-57],[-40,-62],[-45,-65],[-50,-70],[-55,-68],[-55,-65],[-50,-60],[-45,-60],[-40,-55],[-35,-50],[-30,-48],[-25,-45],[-20,-40],[-15,-40],[-10,-35],[-5,-35],[0,-50],[5,-60],[10,-68],[12,-75]],
+            // Europe
+            [[38,-10],[36,0],[38,5],[43,3],[44,8],[46,5],[48,2],[50,-5],[52,-5],[54,0],[56,-5],[58,-3],[60,5],[62,6],[65,12],[68,16],[70,25],[68,30],[60,30],[55,28],[50,20],[48,17],[46,15],[44,12],[42,15],[40,25],[38,25],[36,22],[38,15],[38,-10]],
+            // Africa
+            [[35,-5],[37,10],[33,12],[30,32],[25,35],[20,38],[15,42],[10,45],[5,42],[0,42],[-5,40],[-10,40],[-15,42],[-20,35],[-25,35],[-30,32],[-35,20],[-35,18],[-30,17],[-20,14],[-15,12],[-10,14],[-5,12],[0,10],[5,5],[5,0],[10,-5],[10,-15],[15,-17],[20,-17],[25,-15],[30,-10],[35,-5]],
+            // Asia
+            [[40,25],[42,45],[38,48],[35,52],[30,50],[25,55],[22,60],[25,65],[30,70],[35,75],[40,80],[45,80],[50,75],[55,70],[60,65],[65,70],[68,80],[65,90],[60,100],[55,110],[50,120],[45,130],[40,135],[35,140],[30,130],[25,120],[20,110],[15,105],[10,100],[5,100],[0,105],[-5,105],[-8,115],[-5,120],[5,120],[10,115],[15,110],[20,105],[22,90],[20,75],[22,70],[25,65],[28,55],[30,50],[35,52],[38,48],[42,45],[45,50],[50,55],[55,60],[60,60],[65,65],[70,70],[70,140],[65,170],[60,165],[55,165],[60,160],[60,140],[55,135],[50,140],[45,143],[40,135],[35,130],[30,120],[25,110],[20,108],[15,100],[5,105],[0,110],[-5,115],[-8,120],[5,100],[10,98],[15,100],[20,100],[22,90],[25,70],[30,55],[35,45],[40,28],[40,25]],
+            // Australia
+            [[-15,130],[-12,135],[-15,140],[-18,145],[-20,148],[-25,152],[-30,153],[-35,150],[-38,145],[-38,140],[-35,137],[-32,134],[-30,130],[-25,115],[-22,115],[-20,118],[-18,122],[-15,128],[-15,130]]
+        ];
+
+        function drawVisitorMap() {
+            const cw = mapCanvas.width;
+            const ch = mapCanvas.height;
+            mapCtx.clearRect(0, 0, cw, ch);
+
+            // Draw continents
+            continents.forEach(cont => {
+                mapCtx.beginPath();
+                cont.forEach((p, i) => {
+                    const { x, y } = latLonToXY(p[0], p[1], cw, ch);
+                    if (i === 0) mapCtx.moveTo(x, y);
+                    else mapCtx.lineTo(x, y);
+                });
+                mapCtx.closePath();
+                mapCtx.fillStyle = 'rgba(122, 162, 255, 0.08)';
+                mapCtx.fill();
+                mapCtx.strokeStyle = 'rgba(122, 162, 255, 0.2)';
+                mapCtx.lineWidth = 0.5;
+                mapCtx.stroke();
+            });
+
+            // Draw visitor dots
+            visitorLocations.forEach((loc, i) => {
+                const { x, y } = latLonToXY(loc.lat, loc.lon, cw, ch);
+                const age = (Date.now() / 1000 - loc.time) / 86400; // days old
+                const alpha = Math.max(0.3, 1 - age * 0.05);
+
+                // Glow
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 6, 0, Math.PI * 2);
+                mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha * 0.15})`;
+                mapCtx.fill();
+
+                // Dot
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 2.5, 0, Math.PI * 2);
+                mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha})`;
+                mapCtx.shadowColor = '#7aa2ff';
+                mapCtx.shadowBlur = 6;
+                mapCtx.fill();
+                mapCtx.shadowBlur = 0;
+            });
+
+            // Pulse animation on newest dot
+            if (visitorLocations.length > 0) {
+                const newest = visitorLocations[visitorLocations.length - 1];
+                const { x, y } = latLonToXY(newest.lat, newest.lon, cw, ch);
+                const pulse = (Date.now() % 2000) / 2000;
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 3 + pulse * 10, 0, Math.PI * 2);
+                mapCtx.strokeStyle = `rgba(122, 162, 255, ${0.6 - pulse * 0.6})`;
+                mapCtx.lineWidth = 1.5;
+                mapCtx.stroke();
+            }
+        }
+
+        // Redraw map for pulse animation
+        setInterval(drawVisitorMap, 100);
 
         // ==============================================
         // DISCORD WIDGET STATUS
