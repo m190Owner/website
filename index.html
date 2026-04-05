@@ -2415,7 +2415,7 @@
         let voiceActive = false, recognition = null;
         function toggleVoiceCommands() {
             const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-            if (!SR) { showToast('Voice', 'Speech recognition not supported'); return; }
+            if (!SR) return;
             voiceActive = !voiceActive;
             const ind = document.getElementById('voice-indicator');
             if (voiceActive) {
