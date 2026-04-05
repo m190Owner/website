@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visitor Map | Logan Sandivar</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
+    <meta name="theme-color" content="#7aa2ff" />
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0b0b0f;
+            color: #e5e5e5;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        nav {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 40px;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            z-index: 10;
+            border-bottom: 1px solid rgba(122, 162, 255, 0.15);
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .nav-left strong {
+            color: #e5e5e5;
+        }
+
+        .nav-link {
+            color: #7aa2ff;
+            text-decoration: none;
+            font-size: 0.9rem;
+            padding: 5px 14px;
+            border: 1px solid #7aa2ff;
+            border-radius: 5px;
+            transition: all 0.2s;
+        }
+
+        .nav-link:hover {
+            background: #7aa2ff;
+            color: #0b0b0f;
+        }
+
+        .map-container {
+            position: fixed;
+            top: 60px;
+            left: 0;
+            right: 0;
+            bottom: 60px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        #visitor-map-canvas {
+            width: 100%;
+            height: 100%;
+        }
+
+        .map-title {
+            position: fixed;
+            top: 80px;
+            left: 40px;
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: #cbd5ff;
+            letter-spacing: 1px;
+        }
+
+        .map-subtitle {
+            position: fixed;
+            top: 110px;
+            left: 40px;
+            font-size: 0.8rem;
+            color: #6b7aa0;
+        }
+
+        .map-stats {
+            position: fixed;
+            top: 80px;
+            right: 40px;
+            display: flex;
+            gap: 24px;
+            font-size: 0.8rem;
+            color: #8a96b8;
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .stat-num {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #7aa2ff;
+        }
+
+        /* Bottom bar */
+        .bottom-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 10px 30px;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            border-top: 1px solid rgba(122, 162, 255, 0.15);
+            z-index: 10;
+            font-size: 0.75rem;
+            color: #6b7aa0;
+            gap: 30px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #7aa2ff;
+            box-shadow: 0 0 6px #7aa2ff;
+        }
+
+        .legend-dot.recent {
+            animation: pulse-legend 2s ease infinite;
+        }
+
+        .legend-dot.old {
+            opacity: 0.3;
+        }
+
+        @keyframes pulse-legend {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.4); }
+        }
+
+        /* Tooltip */
+        .map-tooltip {
+            position: fixed;
+            padding: 6px 12px;
+            background: rgba(15, 15, 25, 0.9);
+            border: 1px solid rgba(122, 162, 255, 0.3);
+            border-radius: 6px;
+            font-size: 0.75rem;
+            color: #cbd5ff;
+            pointer-events: none;
+            z-index: 20;
+            display: none;
+            backdrop-filter: blur(4px);
+        }
+    </style>
+</head>
+<body>
+    <nav>
+        <div class="nav-left">
+            <strong>Logan Sandivar</strong>
+            <a href="index.html" class="nav-link">Home</a>
+        </div>
+    </nav>
+
+    <div class="map-title">Visitor Map</div>
+    <div class="map-subtitle">Showing locations of recent visitors</div>
+
+    <div class="map-stats">
+        <div class="stat">
+            <span class="stat-num" id="total-visitors">—</span>
+            <span>total visitors</span>
+        </div>
+        <div class="stat">
+            <span class="stat-num" id="unique-locations">—</span>
+            <span>locations</span>
+        </div>
+    </div>
+
+    <div class="map-container">
+        <canvas id="visitor-map-canvas"></canvas>
+    </div>
+
+    <div class="map-tooltip" id="tooltip"></div>
+
+    <div class="bottom-bar">
+        <div class="legend-item">
+            <div class="legend-dot recent"></div>
+            <span>recent visitor</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot"></div>
+            <span>visitor</span>
+        </div>
+        <div class="legend-item">
+            <div class="legend-dot old"></div>
+            <span>older visit</span>
+        </div>
+    </div>
+
+    <script>
+        // Resize canvas to fill container
+        const mapCanvas = document.getElementById('visitor-map-canvas');
+        const mapCtx = mapCanvas.getContext('2d');
+        const tooltip = document.getElementById('tooltip');
+        let visitorLocations = [];
+
+        function resizeMap() {
+            const container = document.querySelector('.map-container');
+            mapCanvas.width = container.clientWidth;
+            mapCanvas.height = container.clientHeight;
+        }
+        window.addEventListener('resize', resizeMap);
+        resizeMap();
+
+        // Fetch data
+        async function fetchData() {
+            try {
+                const res = await fetch('counter.php?action=heartbeat&id=mapview');
+                const data = await res.json();
+                visitorLocations = data.locations || [];
+                document.getElementById('total-visitors').textContent = data.count;
+                document.getElementById('unique-locations').textContent = visitorLocations.length;
+            } catch (e) {}
+        }
+        fetchData();
+        setInterval(fetchData, 30000);
+
+        // Mercator projection
+        function latLonToXY(lat, lon, cw, ch) {
+            const x = ((lon + 180) / 360) * cw;
+            const latRad = (lat * Math.PI) / 180;
+            const mercN = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
+            const y = (ch / 2) - (cw * mercN) / (2 * Math.PI);
+            return { x, y };
+        }
+
+        // Continent outlines
+        const continents = [
+            [[50,-130],[55,-125],[60,-140],[70,-160],[72,-155],[65,-168],[60,-165],[55,-165],[55,-130],[50,-125],[48,-123],[45,-124],[40,-124],[35,-120],[30,-118],[25,-112],[20,-105],[15,-95],[18,-88],[20,-87],[22,-85],[25,-80],[30,-82],[35,-75],[40,-72],[45,-65],[48,-55],[50,-60],[55,-60],[60,-65],[65,-65],[60,-80],[55,-85],[50,-90],[53,-95],[55,-100],[52,-110],[50,-120],[50,-130]],
+            [[12,-75],[10,-72],[8,-77],[5,-77],[2,-80],[-5,-80],[-10,-78],[-15,-75],[-20,-63],[-25,-58],[-30,-57],[-35,-57],[-40,-62],[-45,-65],[-50,-70],[-55,-68],[-55,-65],[-50,-60],[-45,-60],[-40,-55],[-35,-50],[-30,-48],[-25,-45],[-20,-40],[-15,-40],[-10,-35],[-5,-35],[0,-50],[5,-60],[10,-68],[12,-75]],
+            [[38,-10],[36,0],[38,5],[43,3],[44,8],[46,5],[48,2],[50,-5],[52,-5],[54,0],[56,-5],[58,-3],[60,5],[62,6],[65,12],[68,16],[70,25],[68,30],[60,30],[55,28],[50,20],[48,17],[46,15],[44,12],[42,15],[40,25],[38,25],[36,22],[38,15],[38,-10]],
+            [[35,-5],[37,10],[33,12],[30,32],[25,35],[20,38],[15,42],[10,45],[5,42],[0,42],[-5,40],[-10,40],[-15,42],[-20,35],[-25,35],[-30,32],[-35,20],[-35,18],[-30,17],[-20,14],[-15,12],[-10,14],[-5,12],[0,10],[5,5],[5,0],[10,-5],[10,-15],[15,-17],[20,-17],[25,-15],[30,-10],[35,-5]],
+            [[40,25],[42,45],[38,48],[35,52],[30,50],[25,55],[22,60],[25,65],[30,70],[35,75],[40,80],[45,80],[50,75],[55,70],[60,65],[65,70],[68,80],[65,90],[60,100],[55,110],[50,120],[45,130],[40,135],[35,140],[30,130],[25,120],[20,110],[15,105],[10,100],[5,100],[0,105],[-5,105],[-8,115],[-5,120],[5,120],[10,115],[15,110],[20,105],[22,90],[20,75],[22,70],[25,65],[28,55],[30,50],[35,52],[38,48],[42,45],[45,50],[50,55],[55,60],[60,60],[65,65],[70,70],[70,140],[65,170],[60,165],[55,165],[60,160],[60,140],[55,135],[50,140],[45,143],[40,135],[35,130],[30,120],[25,110],[20,108],[15,100],[5,105],[0,110],[-5,115],[-8,120],[5,100],[10,98],[15,100],[20,100],[22,90],[25,70],[30,55],[35,45],[40,28],[40,25]],
+            [[-15,130],[-12,135],[-15,140],[-18,145],[-20,148],[-25,152],[-30,153],[-35,150],[-38,145],[-38,140],[-35,137],[-32,134],[-30,130],[-25,115],[-22,115],[-20,118],[-18,122],[-15,128],[-15,130]]
+        ];
+
+        // Tooltip on hover
+        let dotPositions = [];
+
+        mapCanvas.addEventListener('mousemove', (e) => {
+            const rect = mapCanvas.getBoundingClientRect();
+            const scaleX = mapCanvas.width / rect.width;
+            const scaleY = mapCanvas.height / rect.height;
+            const mx = (e.clientX - rect.left) * scaleX;
+            const my = (e.clientY - rect.top) * scaleY;
+
+            let found = null;
+            for (const dp of dotPositions) {
+                const dist = Math.hypot(dp.x - mx, dp.y - my);
+                if (dist < 12) {
+                    found = dp;
+                    break;
+                }
+            }
+
+            if (found) {
+                tooltip.style.display = 'block';
+                tooltip.style.left = (e.clientX + 12) + 'px';
+                tooltip.style.top = (e.clientY - 10) + 'px';
+                const date = new Date(found.time * 1000);
+                tooltip.textContent = `${found.city}, ${found.country} — ${date.toLocaleDateString()}`;
+            } else {
+                tooltip.style.display = 'none';
+            }
+        });
+
+        function drawVisitorMap() {
+            const cw = mapCanvas.width;
+            const ch = mapCanvas.height;
+            mapCtx.clearRect(0, 0, cw, ch);
+            dotPositions = [];
+
+            // Grid lines
+            mapCtx.strokeStyle = 'rgba(122, 162, 255, 0.04)';
+            mapCtx.lineWidth = 1;
+            for (let lat = -60; lat <= 80; lat += 20) {
+                const { y } = latLonToXY(lat, 0, cw, ch);
+                mapCtx.beginPath();
+                mapCtx.moveTo(0, y);
+                mapCtx.lineTo(cw, y);
+                mapCtx.stroke();
+            }
+            for (let lon = -180; lon <= 180; lon += 30) {
+                const { x } = latLonToXY(0, lon, cw, ch);
+                mapCtx.beginPath();
+                mapCtx.moveTo(x, 0);
+                mapCtx.lineTo(x, ch);
+                mapCtx.stroke();
+            }
+
+            // Continents
+            continents.forEach(cont => {
+                mapCtx.beginPath();
+                cont.forEach((p, i) => {
+                    const { x, y } = latLonToXY(p[0], p[1], cw, ch);
+                    if (i === 0) mapCtx.moveTo(x, y);
+                    else mapCtx.lineTo(x, y);
+                });
+                mapCtx.closePath();
+                mapCtx.fillStyle = 'rgba(122, 162, 255, 0.06)';
+                mapCtx.fill();
+                mapCtx.strokeStyle = 'rgba(122, 162, 255, 0.15)';
+                mapCtx.lineWidth = 1;
+                mapCtx.stroke();
+            });
+
+            // Visitor dots
+            visitorLocations.forEach((loc) => {
+                const { x, y } = latLonToXY(loc.lat, loc.lon, cw, ch);
+                const age = (Date.now() / 1000 - loc.time) / 86400;
+                const alpha = Math.max(0.2, 1 - age * 0.03);
+
+                // Outer glow
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 12, 0, Math.PI * 2);
+                mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha * 0.06})`;
+                mapCtx.fill();
+
+                // Mid glow
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 6, 0, Math.PI * 2);
+                mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha * 0.12})`;
+                mapCtx.fill();
+
+                // Core dot
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 3, 0, Math.PI * 2);
+                mapCtx.fillStyle = `rgba(122, 162, 255, ${alpha})`;
+                mapCtx.shadowColor = '#7aa2ff';
+                mapCtx.shadowBlur = 8;
+                mapCtx.fill();
+                mapCtx.shadowBlur = 0;
+
+                dotPositions.push({ x, y, city: loc.city, country: loc.country, time: loc.time });
+            });
+
+            // Pulse on newest
+            if (visitorLocations.length > 0) {
+                const newest = visitorLocations[visitorLocations.length - 1];
+                const { x, y } = latLonToXY(newest.lat, newest.lon, cw, ch);
+                const pulse = (Date.now() % 2000) / 2000;
+
+                mapCtx.beginPath();
+                mapCtx.arc(x, y, 4 + pulse * 18, 0, Math.PI * 2);
+                mapCtx.strokeStyle = `rgba(122, 162, 255, ${0.5 - pulse * 0.5})`;
+                mapCtx.lineWidth = 2;
+                mapCtx.stroke();
+            }
+        }
+
+        setInterval(drawVisitorMap, 80);
+    </script>
+</body>
+</html>
