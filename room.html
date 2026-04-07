@@ -78,40 +78,28 @@
             transition: opacity 0.3s;
         }
 
-        /* YouTube overlay */
-        #yt-overlay {
-            position: fixed; inset: 0; z-index: 100;
-            background: rgba(0,0,0,0.92);
-            display: none; align-items: center; justify-content: center;
-            flex-direction: column;
+        /* YouTube on-screen player */
+        #yt-screen {
+            position: fixed; z-index: 50;
+            display: none; overflow: hidden;
+            pointer-events: auto;
         }
-        #yt-overlay.active { display: flex; }
-        #yt-overlay iframe {
-            width: min(90vw, 960px);
-            height: min(50.6vw, 540px);
-            border: 2px solid rgba(122,162,255,0.3);
-            border-radius: 8px;
-            box-shadow: 0 0 60px rgba(122,162,255,0.2);
+        #yt-screen iframe {
+            width: 100%; height: 100%;
+            border: none; display: block;
         }
-        #yt-overlay .yt-title {
-            color: #ccc; font-size: 0.95rem;
-            margin-bottom: 12px; letter-spacing: 1px;
-            max-width: 960px; text-align: center;
+        #yt-bar {
+            position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+            z-index: 51; display: none;
+            background: rgba(10,10,15,0.85);
+            padding: 8px 18px; border-radius: 8px;
+            border: 1px solid rgba(122,162,255,0.2);
+            backdrop-filter: blur(5px);
+            color: #ccc; font-size: 0.8rem;
+            text-align: center; letter-spacing: 1px;
+            pointer-events: none;
         }
-        #yt-overlay .yt-close {
-            margin-top: 18px; background: none;
-            border: 1px solid rgba(122,162,255,0.3);
-            color: #7aa2ff; padding: 8px 22px;
-            border-radius: 6px; cursor: pointer;
-            font-size: 0.8rem; letter-spacing: 1px;
-            transition: background 0.2s;
-        }
-        #yt-overlay .yt-close:hover { background: rgba(122,162,255,0.15); }
-        #yt-overlay .yt-channel {
-            margin-top: 8px; color: #5a6480; font-size: 0.7rem;
-        }
-        #yt-overlay .yt-channel a { color: #7aa2ff; text-decoration: none; }
-        #yt-overlay .yt-channel a:hover { text-decoration: underline; }
+        #yt-bar span { color: #7aa2ff; }
 
         /* Crosshair */
         #crosshair {
@@ -144,12 +132,10 @@
     <div id="crosshair"></div>
     <div id="interact-prompt">Press E to interact</div>
 
-    <div id="yt-overlay">
-        <div class="yt-title" id="yt-title"></div>
+    <div id="yt-screen">
         <iframe id="yt-player" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-        <button class="yt-close" id="yt-close">ESC &middot; Close</button>
-        <div class="yt-channel">from <a href="https://www.youtube.com/@LoganSandivar" target="_blank">@LoganSandivar</a></div>
     </div>
+    <div id="yt-bar"><span>ESC</span> to close</div>
 
     <a href="index.html" class="back-btn">&#8592; Back to Site</a>
 
@@ -722,28 +708,69 @@
             { id: 'ziGNUKyjsko', title: 'The Logan Special ft Advanced Aim' },
         ];
 
-        const ytOverlay = document.getElementById('yt-overlay');
+        const ytScreen = document.getElementById('yt-screen');
         const ytPlayer = document.getElementById('yt-player');
-        const ytTitle = document.getElementById('yt-title');
-        const ytClose = document.getElementById('yt-close');
+        const ytBar = document.getElementById('yt-bar');
+
+        // Reference to main monitor screen mesh (children[1] is the screen plane)
+        const mainScreen = monitor.children[1];
+
+        function projectScreenToViewport() {
+            // Screen PlaneGeometry is 1.28 x 0.72, corners in local mesh space
+            const halfW = 0.64, halfH = 0.36;
+            const corners = [
+                new THREE.Vector3(-halfW, halfH, 0),
+                new THREE.Vector3(halfW, halfH, 0),
+                new THREE.Vector3(-halfW, -halfH, 0),
+                new THREE.Vector3(halfW, -halfH, 0),
+            ];
+            corners.forEach(c => {
+                mainScreen.localToWorld(c);
+                c.project(camera);
+            });
+            const vw = window.innerWidth, vh = window.innerHeight;
+            const pts = corners.map(c => ({
+                x: (c.x + 1) / 2 * vw,
+                y: -(c.y - 1) / 2 * vh,
+            }));
+            const minX = Math.min(...pts.map(p => p.x));
+            const maxX = Math.max(...pts.map(p => p.x));
+            const minY = Math.min(...pts.map(p => p.y));
+            const maxY = Math.max(...pts.map(p => p.y));
+            return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
+        }
+
+        function updateScreenPosition() {
+            if (!ytOverlayOpen) return;
+            const r = projectScreenToViewport();
+            ytScreen.style.left = r.left + 'px';
+            ytScreen.style.top = r.top + 'px';
+            ytScreen.style.width = r.width + 'px';
+            ytScreen.style.height = r.height + 'px';
+        }
 
         function openYouTube() {
             const vid = ytVideos[Math.floor(Math.random() * ytVideos.length)];
-            ytTitle.textContent = vid.title;
             ytPlayer.src = 'https://www.youtube.com/embed/' + vid.id + '?autoplay=1&rel=0';
-            ytOverlay.classList.add('active');
+            ytScreen.style.display = 'block';
+            ytBar.style.display = 'block';
             ytOverlayOpen = true;
+            // Dim the screen glow so video is clearly visible
+            mainScreen.material = new THREE.MeshStandardMaterial({ color: 0x000000 });
+            updateScreenPosition();
             document.exitPointerLock();
         }
 
         function closeYouTube() {
             ytPlayer.src = '';
-            ytOverlay.classList.remove('active');
+            ytScreen.style.display = 'none';
+            ytBar.style.display = 'none';
             ytOverlayOpen = false;
+            // Restore screen glow
+            mainScreen.material = screenMat;
         }
 
-        ytOverlay.addEventListener('click', (e) => e.stopPropagation());
-        ytClose.addEventListener('click', closeYouTube);
+        ytScreen.addEventListener('click', (e) => e.stopPropagation());
 
         const interactMessages = {
             'frame': [
@@ -866,6 +893,9 @@
             pcLed.material.emissive.copy(pcColor);
             pcGlow.color.copy(pcColor);
 
+            // Update YouTube screen position
+            updateScreenPosition();
+
             // Subtle label float
             monitorLabel.position.y = 2.1 + Math.sin(animTime * 1.5) * 0.03;
             shelfLabel.position.y = 2.8 + Math.sin(animTime * 1.2 + 1) * 0.03;
@@ -889,6 +919,7 @@
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
             renderer.setSize(window.innerWidth, window.innerHeight);
+            updateScreenPosition();
         });
     </script>
 </body>
