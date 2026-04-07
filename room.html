@@ -78,6 +78,41 @@
             transition: opacity 0.3s;
         }
 
+        /* YouTube overlay */
+        #yt-overlay {
+            position: fixed; inset: 0; z-index: 100;
+            background: rgba(0,0,0,0.92);
+            display: none; align-items: center; justify-content: center;
+            flex-direction: column;
+        }
+        #yt-overlay.active { display: flex; }
+        #yt-overlay iframe {
+            width: min(90vw, 960px);
+            height: min(50.6vw, 540px);
+            border: 2px solid rgba(122,162,255,0.3);
+            border-radius: 8px;
+            box-shadow: 0 0 60px rgba(122,162,255,0.2);
+        }
+        #yt-overlay .yt-title {
+            color: #ccc; font-size: 0.95rem;
+            margin-bottom: 12px; letter-spacing: 1px;
+            max-width: 960px; text-align: center;
+        }
+        #yt-overlay .yt-close {
+            margin-top: 18px; background: none;
+            border: 1px solid rgba(122,162,255,0.3);
+            color: #7aa2ff; padding: 8px 22px;
+            border-radius: 6px; cursor: pointer;
+            font-size: 0.8rem; letter-spacing: 1px;
+            transition: background 0.2s;
+        }
+        #yt-overlay .yt-close:hover { background: rgba(122,162,255,0.15); }
+        #yt-overlay .yt-channel {
+            margin-top: 8px; color: #5a6480; font-size: 0.7rem;
+        }
+        #yt-overlay .yt-channel a { color: #7aa2ff; text-decoration: none; }
+        #yt-overlay .yt-channel a:hover { text-decoration: underline; }
+
         /* Crosshair */
         #crosshair {
             position: fixed; top: 50%; left: 50%;
@@ -108,6 +143,13 @@
 
     <div id="crosshair"></div>
     <div id="interact-prompt">Press E to interact</div>
+
+    <div id="yt-overlay">
+        <div class="yt-title" id="yt-title"></div>
+        <iframe id="yt-player" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        <button class="yt-close" id="yt-close">ESC &middot; Close</button>
+        <div class="yt-channel">from <a href="https://www.youtube.com/@LoganSandivar" target="_blank">@LoganSandivar</a></div>
+    </div>
 
     <a href="index.html" class="back-btn">&#8592; Back to Site</a>
 
@@ -183,7 +225,7 @@
         const ceilingMat = new THREE.MeshStandardMaterial({ color: 0x0d0d15, roughness: 1.0 });
         const deskMat = new THREE.MeshStandardMaterial({ color: 0x2a2015, roughness: 0.6, metalness: 0.1 });
         const metalMat = new THREE.MeshStandardMaterial({ color: 0x333340, roughness: 0.3, metalness: 0.8 });
-        const screenMat = new THREE.MeshStandardMaterial({ color: 0x7aa2ff, emissive: 0x7aa2ff, emissiveIntensity: 0.8, roughness: 0.1 });
+        const screenMat = new THREE.MeshStandardMaterial({ color: 0x7aa2ff, emissive: 0x7aa2ff, emissiveIntensity: 0.8, roughness: 0.1, side: THREE.DoubleSide });
         const shelfMat = new THREE.MeshStandardMaterial({ color: 0x2a1a0a, roughness: 0.7 });
         const bookMats = [
             new THREE.MeshStandardMaterial({ color: 0xff4444 }),
@@ -293,6 +335,8 @@
             // Screen bezel
             const bezel = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.85, 0.04), new THREE.MeshStandardMaterial({ color: 0x111115 }));
             bezel.position.set(0, 0.5, 0);
+            bezel.userData.interactive = true;
+            bezel.userData.type = 'monitor';
             group.add(bezel);
 
             // Screen
@@ -462,17 +506,47 @@
         // ==============================================
         // DECORATIVE OBJECTS
         // ==============================================
+        // PC Tower (under desk, right side)
+        const pcGroup = new THREE.Group();
+        const pcCase = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, 0.45),
+            new THREE.MeshStandardMaterial({ color: 0x1a1a22, roughness: 0.4, metalness: 0.6 }));
+        pcCase.position.y = 0.25;
+        pcCase.userData.interactive = true;
+        pcCase.userData.type = 'monitor';
+        pcGroup.add(pcCase);
+        // Glass side panel
+        const pcGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.44, 0.46),
+            new THREE.MeshStandardMaterial({ color: 0x7aa2ff, emissive: 0x7aa2ff, emissiveIntensity: 0.15, transparent: true, opacity: 0.3 }));
+        pcGlass.position.set(0.115, 0.25, 0);
+        pcGlass.rotation.y = Math.PI / 2;
+        pcGroup.add(pcGlass);
+        // RGB strip inside PC
+        const pcLed = new THREE.Mesh(new THREE.BoxGeometry(0.01, 0.4, 0.02),
+            new THREE.MeshStandardMaterial({ color: 0x7aa2ff, emissive: 0x7aa2ff, emissiveIntensity: 2.0 }));
+        pcLed.position.set(0.08, 0.25, -0.1);
+        pcGroup.add(pcLed);
+        // PC internal glow
+        const pcGlow = new THREE.PointLight(0x7aa2ff, 0.3, 1.5);
+        pcGlow.position.set(0, 0.25, 0);
+        pcGroup.add(pcGlow);
+        pcGroup.position.set(1.3, 0, -3.3);
+        scene.add(pcGroup);
+
         // Keyboard on desk
         const keyboard = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.02, 0.18),
             new THREE.MeshStandardMaterial({ color: 0x222228, roughness: 0.4, metalness: 0.5 }));
         keyboard.position.set(0, 0.9, -2.9);
         keyboard.castShadow = true;
+        keyboard.userData.interactive = true;
+        keyboard.userData.type = 'monitor';
         scene.add(keyboard);
 
         // Mouse on desk
         const mouse = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.02, 0.1),
             new THREE.MeshStandardMaterial({ color: 0x222228, roughness: 0.3, metalness: 0.6 }));
         mouse.position.set(0.5, 0.9, -2.9);
+        mouse.userData.interactive = true;
+        mouse.userData.type = 'monitor';
         scene.add(mouse);
 
         // Coffee mug
@@ -587,8 +661,10 @@
         document.addEventListener('keydown', (e) => { keys[e.code] = true; });
         document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
+        let ytOverlayOpen = false;
+
         document.addEventListener('click', () => {
-            if (!locked) {
+            if (!locked && !ytOverlayOpen) {
                 renderer.domElement.requestPointerLock();
             }
         });
@@ -599,7 +675,7 @@
         });
 
         document.addEventListener('mousemove', (e) => {
-            if (!locked) return;
+            if (!locked || ytOverlayOpen) return;
             yaw -= e.movementX * lookSpeed;
             pitch -= e.movementY * lookSpeed;
             pitch = Math.max(-Math.PI/2.2, Math.min(Math.PI/2.2, pitch));
@@ -612,13 +688,64 @@
         const interactPrompt = document.getElementById('interact-prompt');
         let hoveredObject = null;
 
+        // YouTube videos from @LoganSandivar
+        const ytVideos = [
+            { id: '1FFeZetsiOI', title: 'Fivem Funny moments' },
+            { id: '1W1QhCh9SLs', title: 'Creed Killer' },
+            { id: '4MM98eck_lg', title: 'Masterloser would have hit him.' },
+            { id: '4a_O1A7Zkpk', title: 'Unleashing Chaos: The Invite Spammer Torments Streamers LIVE!' },
+            { id: '7pRHSXhCjsY', title: 'Stirring Up Drama: My Experience in the E Girls discord' },
+            { id: '8Wi1onmODes', title: 'The Art of Destruction Taking Down Casual Servers in CSGO' },
+            { id: 'FGWTg4ab6y4', title: 'The adventures of Serverlagger' },
+            { id: 'J6jyCo23XN8', title: 'Unleashing Chaos in CSGO Epic Griefing Gameplay!' },
+            { id: 'OIlW_shj21Q', title: 'CSGO Griefing Game' },
+            { id: 'QFbwE4n-sLo', title: 'Lil gremlin getting mad at 3am' },
+            { id: 'Y99RzLZnrKM', title: 'CSGO masterclass griefing' },
+            { id: 'YNztQg14dXg', title: 'The adventures of ServerLagger finale ft CallmeCarson and MoeTV' },
+            { id: '_j3eamyWjYo', title: 'Ban evasion is fun.' },
+            { id: 'd-3taakMCL8', title: 'Logan on gmod' },
+            { id: 'eMCP5PWnSKE', title: 'I found my old hard drive.' },
+            { id: 'hgUDrOxYm0o', title: 'lets ruin some peoples game.' },
+            { id: 'hooSY5SHBzE', title: 'how to play csgo in 2022' },
+            { id: 'ioIE5uzJijA', title: 'Woah relax take a break.' },
+            { id: 'khaVLxY15aQ', title: 'Anti backtrack' },
+            { id: 'mDK-B76vr58', title: 'Rich guy' },
+            { id: 'mnpRcTypdBE', title: 'Drunk white girl gets mad!!' },
+            { id: 'syd1pUrELbw', title: 'ServerLagger returns....' },
+            { id: 'tPc2dgp6DRM', title: 'The Faceit Experience with advancedaim.net' },
+            { id: 'ttOR3w1eo7U', title: 'Butterflies' },
+            { id: 'tzz6JlgZn-0', title: 'Lag makes them go mad ft Advancedaim' },
+            { id: 'wHCQ_eTi_GE', title: 'Im still standing ft Proxima' },
+            { id: 'wUoKwcG7aYI', title: 'Im the best TABG player.' },
+            { id: 'xvpD9OOidS0', title: 'Girl in csgo!!! ft advanced aim' },
+            { id: 'ysOtjC1tdwI', title: 'Australians......' },
+            { id: 'ziGNUKyjsko', title: 'The Logan Special ft Advanced Aim' },
+        ];
+
+        const ytOverlay = document.getElementById('yt-overlay');
+        const ytPlayer = document.getElementById('yt-player');
+        const ytTitle = document.getElementById('yt-title');
+        const ytClose = document.getElementById('yt-close');
+
+        function openYouTube() {
+            const vid = ytVideos[Math.floor(Math.random() * ytVideos.length)];
+            ytTitle.textContent = vid.title;
+            ytPlayer.src = 'https://www.youtube.com/embed/' + vid.id + '?autoplay=1&rel=0';
+            ytOverlay.classList.add('active');
+            ytOverlayOpen = true;
+            document.exitPointerLock();
+        }
+
+        function closeYouTube() {
+            ytPlayer.src = '';
+            ytOverlay.classList.remove('active');
+            ytOverlayOpen = false;
+        }
+
+        ytOverlay.addEventListener('click', (e) => e.stopPropagation());
+        ytClose.addEventListener('click', closeYouTube);
+
         const interactMessages = {
-            'monitor': [
-                'Ah yes, the command center. This is where the magic happens.',
-                'Two monitors. Because one screen of chaos wasn\'t enough.',
-                'Fun fact: this monitor has seen things. Terrible, terrible CSS things.',
-                'The code on this screen? Don\'t look too closely. Trust me.',
-            ],
             'frame': [
                 '"Best Website That Is Also a Single HTML File" - Nobody, 2024',
                 '"Most Likely to Crash Your Browser" - Achievement Unlocked',
@@ -627,12 +754,34 @@
             ],
         };
 
+        function isNearDesk() {
+            const dx = camera.position.x - 0;
+            const dz = camera.position.z - (-3.2);
+            return Math.sqrt(dx * dx + dz * dz) < 3;
+        }
+
         document.addEventListener('keydown', (e) => {
-            if (e.code === 'KeyE' && hoveredObject) {
-                const type = hoveredObject.userData.type;
-                const msgs = interactMessages[type] || ['Interesting...'];
-                const msg = msgs[Math.floor(Math.random() * msgs.length)];
-                showInteraction(msg);
+            if (e.code === 'Escape' && ytOverlayOpen) {
+                closeYouTube();
+                return;
+            }
+            if (e.code === 'KeyE' && !ytOverlayOpen) {
+                // If near the desk, open YouTube
+                if (isNearDesk()) {
+                    openYouTube();
+                    return;
+                }
+                // Otherwise check raycasted object
+                if (hoveredObject) {
+                    const type = hoveredObject.userData.type;
+                    if (type === 'monitor') {
+                        openYouTube();
+                        return;
+                    }
+                    const msgs = interactMessages[type] || ['Interesting...'];
+                    const msg = msgs[Math.floor(Math.random() * msgs.length)];
+                    showInteraction(msg);
+                }
             }
         });
 
@@ -689,14 +838,18 @@
                 const intersects = raycaster.intersectObjects(scene.children, true);
                 hoveredObject = null;
                 for (const hit of intersects) {
-                    if (hit.object.userData.interactive && hit.distance < 3) {
+                    if (hit.object.userData.interactive && hit.distance < 5) {
                         hoveredObject = hit.object;
                         break;
                     }
                 }
-                interactPrompt.style.display = hoveredObject ? 'block' : 'none';
-                if (hoveredObject) {
-                    interactPrompt.textContent = 'Press E to interact';
+                const nearDesk = isNearDesk();
+                const showPrompt = hoveredObject || nearDesk;
+                interactPrompt.style.display = showPrompt ? 'block' : 'none';
+                if (showPrompt) {
+                    interactPrompt.textContent = nearDesk || (hoveredObject && hoveredObject.userData.type === 'monitor')
+                        ? 'Press E to watch a video'
+                        : 'Press E to interact';
                     interactPrompt.style.opacity = '1';
                 }
             }
@@ -705,6 +858,13 @@
             mainLight.intensity = 1.5 + Math.sin(animTime * 0.5) * 0.1;
             monitorGlow.intensity = 0.6 + Math.sin(animTime * 2) * 0.1;
             accentLight.color.setHSL((animTime * 0.05) % 1, 0.8, 0.5);
+
+            // PC RGB cycling
+            const pcHue = (animTime * 0.15) % 1;
+            const pcColor = new THREE.Color().setHSL(pcHue, 0.9, 0.5);
+            pcLed.material.color.copy(pcColor);
+            pcLed.material.emissive.copy(pcColor);
+            pcGlow.color.copy(pcColor);
 
             // Subtle label float
             monitorLabel.position.y = 2.1 + Math.sin(animTime * 1.5) * 0.03;
