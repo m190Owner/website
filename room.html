@@ -712,37 +712,42 @@
         const ytPlayer = document.getElementById('yt-player');
         const ytBar = document.getElementById('yt-bar');
 
-        // Reference to main monitor screen mesh (children[1] is the screen plane)
+        // References to both monitor screen meshes (children[1] is the screen plane)
         const mainScreen = monitor.children[1];
+        const secondScreen = monitor2.children[1];
+        const blackMat = new THREE.MeshStandardMaterial({ color: 0x000000 });
 
-        function projectScreenToViewport() {
-            // Screen PlaneGeometry is 1.28 x 0.72, corners in local mesh space
+        function projectBothScreens() {
             const halfW = 0.64, halfH = 0.36;
-            const corners = [
-                new THREE.Vector3(-halfW, halfH, 0),
-                new THREE.Vector3(halfW, halfH, 0),
-                new THREE.Vector3(-halfW, -halfH, 0),
-                new THREE.Vector3(halfW, -halfH, 0),
-            ];
-            corners.forEach(c => {
-                mainScreen.localToWorld(c);
-                c.project(camera);
+            const allPts = [];
+            // Project corners of both screens
+            [mainScreen, secondScreen].forEach(scr => {
+                const corners = [
+                    new THREE.Vector3(-halfW, halfH, 0),
+                    new THREE.Vector3(halfW, halfH, 0),
+                    new THREE.Vector3(-halfW, -halfH, 0),
+                    new THREE.Vector3(halfW, -halfH, 0),
+                ];
+                corners.forEach(c => {
+                    scr.localToWorld(c);
+                    c.project(camera);
+                });
+                const vw = window.innerWidth, vh = window.innerHeight;
+                corners.forEach(c => allPts.push({
+                    x: (c.x + 1) / 2 * vw,
+                    y: -(c.y - 1) / 2 * vh,
+                }));
             });
-            const vw = window.innerWidth, vh = window.innerHeight;
-            const pts = corners.map(c => ({
-                x: (c.x + 1) / 2 * vw,
-                y: -(c.y - 1) / 2 * vh,
-            }));
-            const minX = Math.min(...pts.map(p => p.x));
-            const maxX = Math.max(...pts.map(p => p.x));
-            const minY = Math.min(...pts.map(p => p.y));
-            const maxY = Math.max(...pts.map(p => p.y));
+            const minX = Math.min(...allPts.map(p => p.x));
+            const maxX = Math.max(...allPts.map(p => p.x));
+            const minY = Math.min(...allPts.map(p => p.y));
+            const maxY = Math.max(...allPts.map(p => p.y));
             return { left: minX, top: minY, width: maxX - minX, height: maxY - minY };
         }
 
         function updateScreenPosition() {
             if (!ytOverlayOpen) return;
-            const r = projectScreenToViewport();
+            const r = projectBothScreens();
             ytScreen.style.left = r.left + 'px';
             ytScreen.style.top = r.top + 'px';
             ytScreen.style.width = r.width + 'px';
@@ -755,8 +760,9 @@
             ytScreen.style.display = 'block';
             ytBar.style.display = 'block';
             ytOverlayOpen = true;
-            // Dim the screen glow so video is clearly visible
-            mainScreen.material = new THREE.MeshStandardMaterial({ color: 0x000000 });
+            // Dim both screens so video is clearly visible
+            mainScreen.material = blackMat;
+            secondScreen.material = blackMat;
             updateScreenPosition();
             document.exitPointerLock();
         }
@@ -768,6 +774,7 @@
             ytOverlayOpen = false;
             // Restore screen glow
             mainScreen.material = screenMat;
+            secondScreen.material = screenMat;
         }
 
         ytScreen.addEventListener('click', (e) => e.stopPropagation());
