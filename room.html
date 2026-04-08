@@ -113,6 +113,79 @@
         }
         #crosshair::before { width: 2px; height: 100%; left: 50%; transform: translateX(-50%); }
         #crosshair::after { height: 2px; width: 100%; top: 50%; transform: translateY(-50%); }
+
+        /* Player count badge */
+        #player-count {
+            position: fixed; top: 15px; right: 200px;
+            background: rgba(10,10,15,0.8); color: #7aa2ff;
+            padding: 6px 14px; border-radius: 8px;
+            font-size: 0.75rem; letter-spacing: 1px; z-index: 10;
+            border: 1px solid rgba(122,162,255,0.15);
+            backdrop-filter: blur(5px);
+        }
+        #player-count .dot {
+            display: inline-block; width: 6px; height: 6px;
+            background: #44ff88; border-radius: 50%; margin-right: 6px;
+            animation: dotPulse 2s infinite;
+        }
+        @keyframes dotPulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        /* Pet HUD */
+        #pet-hud {
+            position: fixed; bottom: 70px; right: 20px;
+            background: rgba(10,10,15,0.85); color: #e5e5e5;
+            padding: 14px 18px; border-radius: 12px;
+            font-size: 0.75rem; z-index: 10;
+            border: 1px solid rgba(122,162,255,0.15);
+            backdrop-filter: blur(5px);
+            min-width: 180px;
+            transition: opacity 0.3s;
+        }
+        .pet-name {
+            color: #7aa2ff; font-weight: 700; font-size: 0.9rem;
+            letter-spacing: 1px; margin-bottom: 8px;
+        }
+        .pet-mood {
+            font-size: 0.65rem; color: #5a6480; margin-bottom: 10px;
+        }
+        .pet-stat {
+            display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
+        }
+        .pet-stat-label {
+            width: 60px; color: #8a8a9a; font-size: 0.7rem;
+        }
+        .pet-bar-outer {
+            flex: 1; height: 4px; background: #1a1a28; border-radius: 2px; overflow: hidden;
+        }
+        .pet-bar-inner {
+            height: 100%; border-radius: 2px; transition: width 0.5s, background 0.5s;
+        }
+        .pet-interactions {
+            font-size: 0.6rem; color: #5a6480; margin-top: 8px; text-align: right;
+        }
+
+        /* Pet interact menu */
+        #pet-menu {
+            position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+            display: none; gap: 8px; z-index: 12;
+        }
+        #pet-menu button {
+            background: rgba(10,10,15,0.9); color: #7aa2ff;
+            border: 1px solid rgba(122,162,255,0.3); padding: 8px 16px;
+            border-radius: 8px; font-size: 0.8rem; cursor: pointer;
+            font-family: 'Segoe UI', sans-serif; letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        #pet-menu button:hover {
+            background: rgba(122,162,255,0.15);
+            border-color: #7aa2ff;
+        }
+        #pet-menu button span {
+            font-size: 1rem; margin-right: 4px;
+        }
     </style>
 </head>
 <body>
@@ -125,7 +198,7 @@
     <div id="hud">
         <div class="hud-title">Logan's Room</div>
         <div class="hud-controls">
-            <span>WASD</span> move &middot; <span>Mouse</span> look &middot; <span>E</span> interact &middot; <span>ESC</span> unlock
+            <span>WASD</span> move &middot; <span>Mouse</span> look &middot; <span>E</span> interact &middot; <span>F</span> pet &middot; <span>ESC</span> unlock
         </div>
     </div>
 
@@ -136,6 +209,32 @@
         <iframe id="yt-player" src="" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
     </div>
     <div id="yt-bar"><span>ESC</span> to close</div>
+
+    <div id="player-count"><span class="dot"></span><span id="p-count">1</span> in room</div>
+
+    <div id="pet-hud">
+        <div class="pet-name" id="pet-name">Byte</div>
+        <div class="pet-mood" id="pet-mood">Happy</div>
+        <div class="pet-stat">
+            <span class="pet-stat-label">Hunger</span>
+            <div class="pet-bar-outer"><div class="pet-bar-inner" id="bar-hunger" style="width:80%;background:#44ff88;"></div></div>
+        </div>
+        <div class="pet-stat">
+            <span class="pet-stat-label">Happiness</span>
+            <div class="pet-bar-outer"><div class="pet-bar-inner" id="bar-happiness" style="width:80%;background:#7aa2ff;"></div></div>
+        </div>
+        <div class="pet-stat">
+            <span class="pet-stat-label">Energy</span>
+            <div class="pet-bar-outer"><div class="pet-bar-inner" id="bar-energy" style="width:80%;background:#ffaa44;"></div></div>
+        </div>
+        <div class="pet-interactions" id="pet-interactions">0 total interactions</div>
+    </div>
+
+    <div id="pet-menu">
+        <button onclick="petAction('feed')"><span>🍕</span> Feed</button>
+        <button onclick="petAction('pet')"><span>💜</span> Pet</button>
+        <button onclick="petAction('play')"><span>⚡</span> Play</button>
+    </div>
 
     <a href="index.html" class="back-btn">&#8592; Back to Site</a>
 
@@ -828,6 +927,449 @@
         }
 
         // ==============================================
+        // MULTIPLAYER SYSTEM
+        // ==============================================
+        const myId = localStorage.getItem('vid') || Math.random().toString(36).slice(2, 10);
+        localStorage.setItem('vid', myId);
+        const myColor = '#' + Math.floor(Math.random()*0xffffff).toString(16).padStart(6, '0');
+        const myName = 'Visitor-' + myId.slice(0, 4);
+        const remotePlayers = {};
+
+        function createAvatarModel(color) {
+            const group = new THREE.Group();
+            // Body (capsule-like)
+            const bodyGeo = new THREE.CylinderGeometry(0.18, 0.18, 0.7, 8);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: new THREE.Color(color), emissive: new THREE.Color(color),
+                emissiveIntensity: 0.3, roughness: 0.4, metalness: 0.3
+            });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 1.1;
+            group.add(body);
+
+            // Head
+            const headGeo = new THREE.SphereGeometry(0.18, 8, 8);
+            const head = new THREE.Mesh(headGeo, bodyMat);
+            head.position.y = 1.6;
+            group.add(head);
+
+            // Visor (eyes)
+            const visorGeo = new THREE.BoxGeometry(0.22, 0.06, 0.1);
+            const visorMat = new THREE.MeshStandardMaterial({
+                color: 0x000000, emissive: new THREE.Color(color),
+                emissiveIntensity: 1.0, roughness: 0.1
+            });
+            const visor = new THREE.Mesh(visorGeo, visorMat);
+            visor.position.set(0, 1.62, 0.14);
+            group.add(visor);
+
+            // Glow light
+            const glow = new THREE.PointLight(new THREE.Color(color), 0.3, 2);
+            glow.position.y = 1.3;
+            group.add(glow);
+
+            return group;
+        }
+
+        function createNameSprite(name, color) {
+            const c = document.createElement('canvas');
+            const cx = c.getContext('2d');
+            c.width = 256; c.height = 64;
+            cx.font = 'bold 24px Segoe UI';
+            cx.fillStyle = color;
+            cx.textAlign = 'center';
+            cx.fillText(name, 128, 36);
+            const tex = new THREE.CanvasTexture(c);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, opacity: 0.85 });
+            const sprite = new THREE.Sprite(mat);
+            sprite.scale.set(1.2, 0.3, 1);
+            sprite.position.y = 2.0;
+            return sprite;
+        }
+
+        function updateRemotePlayers(data) {
+            const activeIds = new Set();
+            let count = 1; // count self
+
+            for (const [id, info] of Object.entries(data)) {
+                if (id === myId) continue;
+                activeIds.add(id);
+                count++;
+
+                if (!remotePlayers[id]) {
+                    // Create new avatar
+                    const avatar = createAvatarModel(info.color);
+                    const nameTag = createNameSprite(info.name, info.color);
+                    avatar.add(nameTag);
+                    scene.add(avatar);
+                    remotePlayers[id] = {
+                        mesh: avatar,
+                        targetX: info.x, targetY: info.y, targetZ: info.z, targetRy: info.ry
+                    };
+                }
+                // Update target positions for interpolation
+                remotePlayers[id].targetX = info.x;
+                remotePlayers[id].targetY = info.y;
+                remotePlayers[id].targetZ = info.z;
+                remotePlayers[id].targetRy = info.ry;
+            }
+
+            // Remove disconnected players
+            for (const id of Object.keys(remotePlayers)) {
+                if (!activeIds.has(id)) {
+                    scene.remove(remotePlayers[id].mesh);
+                    delete remotePlayers[id];
+                }
+            }
+
+            document.getElementById('p-count').textContent = count;
+        }
+
+        function interpolatePlayers(dt) {
+            const speed = 8;
+            for (const p of Object.values(remotePlayers)) {
+                p.mesh.position.x += (p.targetX - p.mesh.position.x) * speed * dt;
+                p.mesh.position.z += (p.targetZ - p.mesh.position.z) * speed * dt;
+                p.mesh.rotation.y += (p.targetRy - p.mesh.rotation.y) * speed * dt;
+                // Subtle bob when moving
+                const moving = Math.abs(p.targetX - p.mesh.position.x) > 0.01 || Math.abs(p.targetZ - p.mesh.position.z) > 0.01;
+                if (moving) {
+                    p.mesh.position.y = Math.sin(Date.now() * 0.008) * 0.04;
+                } else {
+                    p.mesh.position.y += (0 - p.mesh.position.y) * 4 * dt;
+                }
+            }
+        }
+
+        // Send own position every 200ms
+        setInterval(() => {
+            fetch('room_players.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    id: myId, x: camera.position.x, y: 0,
+                    z: camera.position.z, ry: yaw,
+                    color: myColor, name: myName
+                })
+            }).catch(() => {});
+        }, 200);
+
+        // Fetch other players every 300ms
+        setInterval(() => {
+            fetch('room_players.php')
+                .then(r => r.json())
+                .then(updateRemotePlayers)
+                .catch(() => {});
+        }, 300);
+
+        // ==============================================
+        // VIRTUAL PET: "BYTE" THE ROBOT
+        // ==============================================
+        const petGroup = new THREE.Group();
+        let petState = { hunger: 80, happiness: 80, energy: 80, totalInteractions: 0 };
+        let petTargetPos = new THREE.Vector3(1, 0, 1);
+        let petWanderTimer = 0;
+        let nearPet = false;
+        let petBounce = 0;
+        let petEmote = null;
+        let petEmoteTimer = 0;
+
+        // Build the pet model — a cute mini robot
+        (function buildPet() {
+            // Body
+            const bodyGeo = new THREE.BoxGeometry(0.35, 0.3, 0.3);
+            const bodyMat = new THREE.MeshStandardMaterial({
+                color: 0x7aa2ff, roughness: 0.3, metalness: 0.5
+            });
+            const body = new THREE.Mesh(bodyGeo, bodyMat);
+            body.position.y = 0.3;
+            body.castShadow = true;
+            petGroup.add(body);
+
+            // Head
+            const headGeo = new THREE.BoxGeometry(0.3, 0.25, 0.25);
+            const headMat = new THREE.MeshStandardMaterial({
+                color: 0x8ab2ff, roughness: 0.3, metalness: 0.4
+            });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 0.55;
+            head.castShadow = true;
+            petGroup.add(head);
+
+            // Eyes (two glowing dots)
+            const eyeGeo = new THREE.SphereGeometry(0.035, 8, 8);
+            const eyeMat = new THREE.MeshStandardMaterial({
+                color: 0x44ff88, emissive: 0x44ff88, emissiveIntensity: 2.0
+            });
+            const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeL.position.set(-0.07, 0.57, 0.13);
+            petGroup.add(eyeL);
+            const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+            eyeR.position.set(0.07, 0.57, 0.13);
+            petGroup.add(eyeR);
+
+            // Antenna
+            const antennaGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.12, 6);
+            const antennaMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+            const antenna = new THREE.Mesh(antennaGeo, antennaMat);
+            antenna.position.set(0, 0.72, 0);
+            petGroup.add(antenna);
+
+            // Antenna tip (glowing)
+            const tipGeo = new THREE.SphereGeometry(0.025, 8, 8);
+            const tipMat = new THREE.MeshStandardMaterial({
+                color: 0xff6b6b, emissive: 0xff6b6b, emissiveIntensity: 2.0
+            });
+            const tip = new THREE.Mesh(tipGeo, tipMat);
+            tip.position.set(0, 0.79, 0);
+            petGroup.add(tip);
+
+            // Legs (two little cubes)
+            const legGeo = new THREE.BoxGeometry(0.08, 0.15, 0.1);
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x5580cc, metalness: 0.5 });
+            const legL = new THREE.Mesh(legGeo, legMat);
+            legL.position.set(-0.1, 0.08, 0);
+            petGroup.add(legL);
+            const legR = new THREE.Mesh(legGeo, legMat);
+            legR.position.set(0.1, 0.08, 0);
+            petGroup.add(legR);
+
+            // Pet glow
+            const petGlow = new THREE.PointLight(0x7aa2ff, 0.5, 2.5);
+            petGlow.position.y = 0.4;
+            petGroup.add(petGlow);
+
+            // Name tag
+            const nameTag = createTextSprite('Byte', '#7aa2ff', 32);
+            nameTag.position.y = 1.0;
+            nameTag.scale.set(0.8, 0.2, 1);
+            petGroup.add(nameTag);
+
+            petGroup.userData.interactive = true;
+            petGroup.userData.type = 'pet';
+            // Make children ray-castable
+            petGroup.children.forEach(c => {
+                c.userData.interactive = true;
+                c.userData.type = 'pet';
+            });
+        })();
+
+        petGroup.position.set(1, 0, 1);
+        scene.add(petGroup);
+
+        // Pet emote sprite system
+        let emoteSprite = null;
+        function showPetEmote(emoji) {
+            if (emoteSprite) petGroup.remove(emoteSprite);
+            const c = document.createElement('canvas');
+            const cx = c.getContext('2d');
+            c.width = 128; c.height = 128;
+            cx.font = '64px serif';
+            cx.textAlign = 'center';
+            cx.fillText(emoji, 64, 80);
+            const tex = new THREE.CanvasTexture(c);
+            const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+            emoteSprite = new THREE.Sprite(mat);
+            emoteSprite.scale.set(0.4, 0.4, 1);
+            emoteSprite.position.set(0.3, 1.0, 0);
+            petGroup.add(emoteSprite);
+            petEmoteTimer = 2.0;
+        }
+
+        // Particle burst for pet interactions
+        const petParticles = [];
+        function spawnPetParticles(color) {
+            for (let i = 0; i < 12; i++) {
+                const geo = new THREE.SphereGeometry(0.02, 4, 4);
+                const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(color) });
+                const p = new THREE.Mesh(geo, mat);
+                p.position.copy(petGroup.position);
+                p.position.y += 0.5;
+                p.userData.vel = new THREE.Vector3(
+                    (Math.random() - 0.5) * 2,
+                    Math.random() * 3 + 1,
+                    (Math.random() - 0.5) * 2
+                );
+                p.userData.life = 1.0;
+                scene.add(p);
+                petParticles.push(p);
+            }
+        }
+
+        function updatePetParticles(dt) {
+            for (let i = petParticles.length - 1; i >= 0; i--) {
+                const p = petParticles[i];
+                p.userData.life -= dt * 1.5;
+                p.userData.vel.y -= 6 * dt;
+                p.position.add(p.userData.vel.clone().multiplyScalar(dt));
+                p.material.opacity = Math.max(0, p.userData.life);
+                p.material.transparent = true;
+                if (p.userData.life <= 0) {
+                    scene.remove(p);
+                    petParticles.splice(i, 1);
+                }
+            }
+        }
+
+        // Pet AI - wandering
+        function updatePetAI(dt) {
+            petWanderTimer -= dt;
+            if (petWanderTimer <= 0) {
+                // Pick a new random position in the room
+                petTargetPos.set(
+                    (Math.random() - 0.5) * (roomW - 2),
+                    0,
+                    (Math.random() - 0.5) * (roomD - 2)
+                );
+                petWanderTimer = 4 + Math.random() * 6;
+            }
+
+            // If a player is nearby, sometimes move toward them
+            const distToPlayer = petGroup.position.distanceTo(camera.position);
+            if (distToPlayer < 4 && petState.happiness > 30) {
+                // Occasionally approach the nearest player
+                if (Math.random() < 0.002) {
+                    petTargetPos.set(
+                        camera.position.x + (Math.random() - 0.5),
+                        0,
+                        camera.position.z + (Math.random() - 0.5)
+                    );
+                    petWanderTimer = 3;
+                }
+            }
+
+            // Move toward target
+            const dx = petTargetPos.x - petGroup.position.x;
+            const dz = petTargetPos.z - petGroup.position.z;
+            const dist = Math.sqrt(dx * dx + dz * dz);
+
+            // Speed based on energy
+            const speed = petState.energy > 30 ? 0.6 : 0.2;
+
+            if (dist > 0.2) {
+                petGroup.position.x += (dx / dist) * speed * dt;
+                petGroup.position.z += (dz / dist) * speed * dt;
+                // Face movement direction
+                petGroup.rotation.y = Math.atan2(dx, dz);
+                // Walking bounce
+                petBounce += dt * 8;
+                petGroup.position.y = Math.abs(Math.sin(petBounce)) * 0.06;
+            } else {
+                // Idle bobbing
+                petGroup.position.y = Math.sin(animTime * 2) * 0.02;
+            }
+
+            // Clamp to room bounds
+            const m = 0.5;
+            petGroup.position.x = Math.max(-roomW/2 + m, Math.min(roomW/2 - m, petGroup.position.x));
+            petGroup.position.z = Math.max(-roomD/2 + m, Math.min(roomD/2 - m, petGroup.position.z));
+        }
+
+        // Pet mood / visual updates
+        function updatePetVisuals() {
+            const eyeL = petGroup.children[2];
+            const eyeR = petGroup.children[3];
+            const tip = petGroup.children[5];
+            const glow = petGroup.children[8];
+
+            // Eye color based on mood
+            let eyeColor, moodText;
+            const avg = (petState.hunger + petState.happiness + petState.energy) / 3;
+            if (avg > 70) {
+                eyeColor = 0x44ff88; moodText = 'Happy & Healthy!';
+            } else if (avg > 50) {
+                eyeColor = 0x7aa2ff; moodText = 'Doing okay';
+            } else if (avg > 30) {
+                eyeColor = 0xffaa44; moodText = 'Needs attention...';
+            } else {
+                eyeColor = 0xff4444; moodText = 'Please help me!';
+            }
+
+            eyeL.material.color.setHex(eyeColor);
+            eyeL.material.emissive.setHex(eyeColor);
+            eyeR.material.color.setHex(eyeColor);
+            eyeR.material.emissive.setHex(eyeColor);
+
+            // Antenna tip pulses faster when unhappy
+            const pulseSpeed = avg > 50 ? 1.5 : 4;
+            tip.material.emissiveIntensity = 1.5 + Math.sin(animTime * pulseSpeed) * 1.0;
+
+            // Update HUD
+            document.getElementById('pet-mood').textContent = moodText;
+            updateBar('bar-hunger', petState.hunger);
+            updateBar('bar-happiness', petState.happiness);
+            updateBar('bar-energy', petState.energy);
+            document.getElementById('pet-interactions').textContent =
+                (petState.totalInteractions || 0) + ' total interactions';
+        }
+
+        function updateBar(id, val) {
+            const el = document.getElementById(id);
+            el.style.width = val + '%';
+            if (val > 60) el.style.background = '#44ff88';
+            else if (val > 30) el.style.background = '#ffaa44';
+            else el.style.background = '#ff4444';
+        }
+
+        // Fetch pet state every 3 seconds
+        function fetchPetState() {
+            fetch('pet.php')
+                .then(r => r.json())
+                .then(data => {
+                    petState = data;
+                    updatePetVisuals();
+                })
+                .catch(() => {});
+        }
+        fetchPetState();
+        setInterval(fetchPetState, 3000);
+
+        // Pet interaction
+        function petAction(action) {
+            fetch('pet.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.pet) {
+                    petState = data.pet;
+                    updatePetVisuals();
+                }
+                // Emote + particles
+                if (action === 'feed') {
+                    showPetEmote('🍕');
+                    spawnPetParticles('#44ff88');
+                } else if (action === 'pet') {
+                    showPetEmote('💜');
+                    spawnPetParticles('#aa44ff');
+                } else if (action === 'play') {
+                    showPetEmote('⚡');
+                    spawnPetParticles('#ffaa44');
+                }
+            })
+            .catch(() => {});
+        }
+
+        // Check proximity to pet
+        function checkPetProximity() {
+            const d = camera.position.distanceTo(petGroup.position);
+            nearPet = d < 2.5;
+            document.getElementById('pet-menu').style.display = nearPet && locked ? 'flex' : 'none';
+        }
+
+        // F key opens pet menu interaction
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyF' && nearPet && !ytOverlayOpen) {
+                // Cycle through actions
+                const actions = ['feed', 'pet', 'play'];
+                const rand = actions[Math.floor(Math.random() * actions.length)];
+                petAction(rand);
+            }
+        });
+
+        // ==============================================
         // ANIMATION LOOP
         // ==============================================
         const clock = new THREE.Clock();
@@ -876,12 +1418,17 @@
                     }
                 }
                 const nearDesk = isNearDesk();
-                const showPrompt = hoveredObject || nearDesk;
+                const isPet = hoveredObject && hoveredObject.userData.type === 'pet';
+                const showPrompt = hoveredObject || nearDesk || nearPet;
                 interactPrompt.style.display = showPrompt ? 'block' : 'none';
                 if (showPrompt) {
-                    interactPrompt.textContent = nearDesk || (hoveredObject && hoveredObject.userData.type === 'monitor')
-                        ? 'Press E to watch a video'
-                        : 'Press E to interact';
+                    if (nearPet || isPet) {
+                        interactPrompt.textContent = 'Press F to interact with Byte';
+                    } else if (nearDesk || (hoveredObject && hoveredObject.userData.type === 'monitor')) {
+                        interactPrompt.textContent = 'Press E to watch a video';
+                    } else {
+                        interactPrompt.textContent = 'Press E to interact';
+                    }
                     interactPrompt.style.opacity = '1';
                 }
             }
@@ -904,6 +1451,23 @@
             // Subtle label float
             monitorLabel.position.y = 2.1 + Math.sin(animTime * 1.5) * 0.03;
             shelfLabel.position.y = 2.8 + Math.sin(animTime * 1.2 + 1) * 0.03;
+
+            // Multiplayer interpolation
+            interpolatePlayers(dt);
+
+            // Pet AI + visuals
+            updatePetAI(dt);
+            updatePetParticles(dt);
+            checkPetProximity();
+
+            // Pet emote timer
+            if (petEmoteTimer > 0) {
+                petEmoteTimer -= dt;
+                if (petEmoteTimer <= 0 && emoteSprite) {
+                    petGroup.remove(emoteSprite);
+                    emoteSprite = null;
+                }
+            }
 
             renderer.render(scene, camera);
         }
