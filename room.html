@@ -1067,82 +1067,87 @@
         // ==============================================
         const petGroup = new THREE.Group();
         let petState = { hunger: 80, happiness: 80, energy: 80, totalInteractions: 0 };
-        let petTargetPos = new THREE.Vector3(1, 0, 1);
-        let petWanderTimer = 0;
+        let petTargetPos = new THREE.Vector3(0, 0, 2);
+        let petWanderTimer = 5;
         let nearPet = false;
         let petBounce = 0;
         let petEmote = null;
         let petEmoteTimer = 0;
+        let petAnimTime = 0;
 
-        // Build the pet model — a cute mini robot
+        // Build the pet model — a cute mini robot (scaled up 1.8x for visibility)
         (function buildPet() {
+            const S = 1.8; // scale factor
+
             // Body
-            const bodyGeo = new THREE.BoxGeometry(0.35, 0.3, 0.3);
+            const bodyGeo = new THREE.BoxGeometry(0.35 * S, 0.3 * S, 0.3 * S);
             const bodyMat = new THREE.MeshStandardMaterial({
-                color: 0x7aa2ff, roughness: 0.3, metalness: 0.5
+                color: 0x7aa2ff, emissive: 0x7aa2ff, emissiveIntensity: 0.15,
+                roughness: 0.3, metalness: 0.5
             });
             const body = new THREE.Mesh(bodyGeo, bodyMat);
-            body.position.y = 0.3;
+            body.position.y = 0.3 * S;
             body.castShadow = true;
             petGroup.add(body);
 
             // Head
-            const headGeo = new THREE.BoxGeometry(0.3, 0.25, 0.25);
+            const headGeo = new THREE.BoxGeometry(0.3 * S, 0.25 * S, 0.25 * S);
             const headMat = new THREE.MeshStandardMaterial({
-                color: 0x8ab2ff, roughness: 0.3, metalness: 0.4
+                color: 0x8ab2ff, emissive: 0x8ab2ff, emissiveIntensity: 0.1,
+                roughness: 0.3, metalness: 0.4
             });
             const head = new THREE.Mesh(headGeo, headMat);
-            head.position.y = 0.55;
+            head.position.y = 0.55 * S;
             head.castShadow = true;
             petGroup.add(head);
 
             // Eyes (two glowing dots)
-            const eyeGeo = new THREE.SphereGeometry(0.035, 8, 8);
+            const eyeGeo = new THREE.SphereGeometry(0.045 * S, 8, 8);
             const eyeMat = new THREE.MeshStandardMaterial({
-                color: 0x44ff88, emissive: 0x44ff88, emissiveIntensity: 2.0
+                color: 0x44ff88, emissive: 0x44ff88, emissiveIntensity: 3.0
             });
             const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeL.position.set(-0.07, 0.57, 0.13);
+            eyeL.position.set(-0.08 * S, 0.57 * S, 0.13 * S);
             petGroup.add(eyeL);
             const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
-            eyeR.position.set(0.07, 0.57, 0.13);
+            eyeR.position.set(0.08 * S, 0.57 * S, 0.13 * S);
             petGroup.add(eyeR);
 
             // Antenna
-            const antennaGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.12, 6);
-            const antennaMat = new THREE.MeshStandardMaterial({ color: 0xaaaaaa, metalness: 0.8 });
+            const antennaGeo = new THREE.CylinderGeometry(0.015 * S, 0.015 * S, 0.15 * S, 6);
+            const antennaMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, metalness: 0.8 });
             const antenna = new THREE.Mesh(antennaGeo, antennaMat);
-            antenna.position.set(0, 0.72, 0);
+            antenna.position.set(0, 0.75 * S, 0);
             petGroup.add(antenna);
 
             // Antenna tip (glowing)
-            const tipGeo = new THREE.SphereGeometry(0.025, 8, 8);
+            const tipGeo = new THREE.SphereGeometry(0.035 * S, 8, 8);
             const tipMat = new THREE.MeshStandardMaterial({
-                color: 0xff6b6b, emissive: 0xff6b6b, emissiveIntensity: 2.0
+                color: 0xff6b6b, emissive: 0xff6b6b, emissiveIntensity: 3.0
             });
             const tip = new THREE.Mesh(tipGeo, tipMat);
-            tip.position.set(0, 0.79, 0);
+            tip.position.set(0, 0.84 * S, 0);
             petGroup.add(tip);
 
             // Legs (two little cubes)
-            const legGeo = new THREE.BoxGeometry(0.08, 0.15, 0.1);
+            const legGeo = new THREE.BoxGeometry(0.1 * S, 0.15 * S, 0.12 * S);
             const legMat = new THREE.MeshStandardMaterial({ color: 0x5580cc, metalness: 0.5 });
             const legL = new THREE.Mesh(legGeo, legMat);
-            legL.position.set(-0.1, 0.08, 0);
+            legL.position.set(-0.1 * S, 0.08 * S, 0);
             petGroup.add(legL);
             const legR = new THREE.Mesh(legGeo, legMat);
-            legR.position.set(0.1, 0.08, 0);
+            legR.position.set(0.1 * S, 0.08 * S, 0);
             petGroup.add(legR);
 
-            // Pet glow
-            const petGlow = new THREE.PointLight(0x7aa2ff, 0.5, 2.5);
-            petGlow.position.y = 0.4;
+            // Pet glow (brighter, wider radius)
+            const petGlow = new THREE.PointLight(0x7aa2ff, 1.0, 4);
+            petGlow.position.y = 0.5 * S;
             petGroup.add(petGlow);
 
             // Name tag
-            const nameTag = createTextSprite('Byte', '#7aa2ff', 32);
-            nameTag.position.y = 1.0;
-            nameTag.scale.set(0.8, 0.2, 1);
+            const nameTag = createTextSprite('Byte', '#7aa2ff', 36);
+            nameTag.position.y = 1.2 * S;
+            nameTag.scale.set(1.2, 0.3, 1);
             petGroup.add(nameTag);
 
             petGroup.userData.interactive = true;
@@ -1154,7 +1159,8 @@
             });
         })();
 
-        petGroup.position.set(1, 0, 1);
+        // Start pet in center of room where player can easily see it
+        petGroup.position.set(0, 0, 2);
         scene.add(petGroup);
 
         // Pet emote sprite system
@@ -1256,7 +1262,7 @@
                 petGroup.position.y = Math.abs(Math.sin(petBounce)) * 0.06;
             } else {
                 // Idle bobbing
-                petGroup.position.y = Math.sin(animTime * 2) * 0.02;
+                petGroup.position.y = Math.sin(petAnimTime * 2) * 0.03;
             }
 
             // Clamp to room bounds
@@ -1292,7 +1298,7 @@
 
             // Antenna tip pulses faster when unhappy
             const pulseSpeed = avg > 50 ? 1.5 : 4;
-            tip.material.emissiveIntensity = 1.5 + Math.sin(animTime * pulseSpeed) * 1.0;
+            tip.material.emissiveIntensity = 1.5 + Math.sin(petAnimTime * pulseSpeed) * 1.0;
 
             // Update HUD
             document.getElementById('pet-mood').textContent = moodText;
@@ -1456,6 +1462,7 @@
             interpolatePlayers(dt);
 
             // Pet AI + visuals
+            petAnimTime += dt;
             updatePetAI(dt);
             updatePetParticles(dt);
             checkPetProximity();
