@@ -1,11 +1,11 @@
 <?php
+require_once __DIR__ . '/config.php';
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST');
-header('Access-Control-Allow-Headers: Content-Type');
+setCorsHeaders();
+enforceRateLimit('cursors', 120, 60); // high limit since cursors update frequently
 
 $file = __DIR__ . '/cursor_data.json';
-if (!file_exists($file)) file_put_contents($file, '{}');
+if (!file_exists($file)) writeJsonFile($file, (object)[]);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
@@ -15,16 +15,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $color = preg_replace('/[^a-zA-Z0-9#(),. ]/', '', $input['color'] ?? '#ff6666');
 
     if ($id) {
-        $data = json_decode(file_get_contents($file), true) ?: [];
+        $data = readJsonFile($file, []);
         $data[$id] = ['x' => $x, 'y' => $y, 'color' => $color, 'time' => time()];
         foreach ($data as $k => $v) {
             if (time() - $v['time'] > 5) unset($data[$k]);
         }
-        file_put_contents($file, json_encode($data));
+        writeJsonFile($file, $data);
     }
     echo json_encode(['ok' => true]);
 } else {
-    $data = json_decode(file_get_contents($file), true) ?: [];
+    $data = readJsonFile($file, []);
     foreach ($data as $k => $v) {
         if (time() - $v['time'] > 5) unset($data[$k]);
     }

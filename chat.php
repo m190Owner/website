@@ -1,18 +1,19 @@
 <?php
+require_once __DIR__ . '/config.php';
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST');
-header('Access-Control-Allow-Headers: Content-Type');
+setCorsHeaders();
 
 $chatFile = __DIR__ . '/chat_messages.json';
 
 if (!file_exists($chatFile)) {
-    file_put_contents($chatFile, '[]');
+    writeJsonFile($chatFile, []);
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
 
 if ($method === 'POST') {
+    enforceRateLimit('chat_post', 5, 60); // 5 messages per minute
+
     $input = json_decode(file_get_contents('php://input'), true);
     $msg = isset($input['message']) ? trim($input['message']) : '';
 
@@ -23,7 +24,7 @@ if ($method === 'POST') {
 
     $msg = htmlspecialchars($msg, ENT_QUOTES, 'UTF-8');
 
-    $messages = json_decode(file_get_contents($chatFile), true) ?: [];
+    $messages = readJsonFile($chatFile, []);
     $messages[] = [
         'text' => $msg,
         'time' => time(),
@@ -35,10 +36,12 @@ if ($method === 'POST') {
         $messages = array_slice($messages, -50);
     }
 
-    file_put_contents($chatFile, json_encode($messages));
+    writeJsonFile($chatFile, $messages);
     echo json_encode(['success' => true]);
 } else {
-    $messages = json_decode(file_get_contents($chatFile), true) ?: [];
+    enforceRateLimit('chat_get', 30, 60);
+
+    $messages = readJsonFile($chatFile, []);
     // Only return messages from last 24 hours
     $cutoff = time() - 86400;
     $messages = array_values(array_filter($messages, function($m) use ($cutoff) {

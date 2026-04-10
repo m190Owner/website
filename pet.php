@@ -1,8 +1,8 @@
 <?php
+require_once __DIR__ . '/config.php';
 header('Content-Type: application/json');
-header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: GET, POST');
-header('Access-Control-Allow-Headers: Content-Type');
+setCorsHeaders();
+enforceRateLimit('pet', 30, 60);
 
 $file = __DIR__ . '/pet_data.json';
 
@@ -23,10 +23,10 @@ function getDefaultPet() {
 }
 
 if (!file_exists($file)) {
-    file_put_contents($file, json_encode(getDefaultPet()));
+    writeJsonFile($file, getDefaultPet());
 }
 
-$pet = json_decode(file_get_contents($file), true);
+$pet = readJsonFile($file, null);
 if (!$pet || !isset($pet['hunger'])) {
     $pet = getDefaultPet();
 }
@@ -82,9 +82,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 
     $pet['lastUpdate'] = $now;
-    file_put_contents($file, json_encode($pet));
+    writeJsonFile($file, $pet);
     echo json_encode(['ok' => true, 'pet' => $pet]);
 } else {
-    file_put_contents($file, json_encode($pet));
+    writeJsonFile($file, $pet);
     echo json_encode($pet);
 }
