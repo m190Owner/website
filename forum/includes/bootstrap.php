@@ -532,10 +532,11 @@ function initializeForumData(): void {
     }
 
     if (!file_exists(USERS_FILE)) {
+        $password = bin2hex(random_bytes(8));
         $users = [
             'logansandivar' => [
                 'username' => 'LoganSandivar',
-                'password_hash' => password_hash('ohW6de9ROAuUUTFt', PASSWORD_DEFAULT),
+                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
                 'role' => 'admin',
                 'created' => date('c'),
                 'banned' => false,
@@ -543,6 +544,11 @@ function initializeForumData(): void {
             ]
         ];
         writeJsonFile(USERS_FILE, $users);
+        file_put_contents(
+            DATA_DIR . '/.admin_credentials',
+            "Username: LoganSandivar\nPassword: $password\n",
+            LOCK_EX
+        );
     }
 
     if (!file_exists(INVITES_FILE)) {
