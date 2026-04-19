@@ -1,0 +1,10 @@
+# Protect data directory from direct access
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteRule ^data/ - [F,L]
+</IfModule>
+
+# Fallback for servers without mod_rewrite
+<FilesMatch "\.json$">
+    Deny from all
+</FilesMatch>
