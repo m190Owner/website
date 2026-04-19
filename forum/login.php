@@ -1,8 +1,12 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 
-if (isLoggedIn()) {
+if (isLoggedIn() && !needsPassword()) {
     header('Location: /forum/');
+    exit;
+}
+if (isLoggedIn() && needsPassword()) {
+    header('Location: /forum/setup.php');
     exit;
 }
 
@@ -14,7 +18,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         enforceRateLimit('forum_login', 10, 60);
         $result = doLogin($_POST['username'] ?? '', $_POST['password'] ?? '');
         if ($result['ok']) {
-            header('Location: /forum/');
+            if ($result['needs_password'] ?? false) {
+                header('Location: /forum/setup.php');
+            } else {
+                header('Location: /forum/');
+            }
             exit;
         }
         $error = $result['error'];
@@ -43,7 +51,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             <div class="form-group">
                 <label class="form-label" for="password">Password</label>
-                <input class="form-input" type="password" id="password" name="password" required>
+                <input class="form-input" type="password" id="password" name="password">
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Login</button>
         </form>

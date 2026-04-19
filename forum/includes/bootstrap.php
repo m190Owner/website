@@ -17,6 +17,13 @@ foreach ([DATA_DIR, THREADS_DIR] as $dir) {
 
 initializeForumData();
 
+// Force password setup before accessing any other page
+$_currentScript = basename($_SERVER['SCRIPT_FILENAME'] ?? '');
+if (isset($_SESSION['needs_password']) && $_SESSION['needs_password'] && !in_array($_currentScript, ['setup.php', 'logout.php'])) {
+    header('Location: /forum/setup.php');
+    exit;
+}
+
 // ==============================================
 // CSRF
 // ==============================================
@@ -66,6 +73,15 @@ function doLogin(string $username, string $password): array {
     }
 
     $user = $users[$key];
+
+    if ($user['needs_password'] ?? false) {
+        // First login — no password required, redirect to setup
+        session_regenerate_id(true);
+        $_SESSION['forum_user'] = $user['username'];
+        $_SESSION['needs_password'] = true;
+        return ['ok' => true, 'needs_password' => true];
+    }
+
     if (!password_verify($password, $user['password_hash'])) {
         return ['ok' => false, 'error' => 'Invalid username or password.'];
     }
@@ -76,6 +92,25 @@ function doLogin(string $username, string $password): array {
 
     session_regenerate_id(true);
     $_SESSION['forum_user'] = $user['username'];
+    return ['ok' => true];
+}
+
+function needsPassword(): bool {
+    return $_SESSION['needs_password'] ?? false;
+}
+
+function setPassword(string $password): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    if (strlen($password) < 8) return ['ok' => false, 'error' => 'Password must be at least 8 characters.'];
+
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower(currentUser());
+    if (!isset($users[$key])) return ['ok' => false, 'error' => 'User not found.'];
+
+    $users[$key]['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
+    unset($users[$key]['needs_password']);
+    writeJsonFile(USERS_FILE, $users);
+    unset($_SESSION['needs_password']);
     return ['ok' => true];
 }
 
@@ -532,23 +567,18 @@ function initializeForumData(): void {
     }
 
     if (!file_exists(USERS_FILE)) {
-        $password = bin2hex(random_bytes(8));
         $users = [
             'logansandivar' => [
                 'username' => 'LoganSandivar',
-                'password_hash' => password_hash($password, PASSWORD_DEFAULT),
+                'password_hash' => '',
                 'role' => 'admin',
                 'created' => date('c'),
                 'banned' => false,
-                'bio' => 'Developer, Creator, ServerLagger'
+                'bio' => 'Developer, Creator, ServerLagger',
+                'needs_password' => true
             ]
         ];
         writeJsonFile(USERS_FILE, $users);
-        file_put_contents(
-            DATA_DIR . '/.admin_credentials',
-            "Username: LoganSandivar\nPassword: $password\n",
-            LOCK_EX
-        );
     }
 
     if (!file_exists(INVITES_FILE)) {
