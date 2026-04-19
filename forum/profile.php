@@ -13,14 +13,37 @@ if (!$profile) {
     exit;
 }
 
-// Handle bio update
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf()) {
-    if (currentUser() === $profile['username'] && isset($_POST['bio'])) {
+// Handle profile updates
+$avatarError = '';
+$avatarSuccess = '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf() && currentUser() === $profile['username']) {
+    $action = $_POST['action'] ?? '';
+
+    if ($action === 'update_bio') {
         $users = readJsonFile(USERS_FILE, []);
         $key = strtolower($profile['username']);
-        $users[$key]['bio'] = mb_substr(trim($_POST['bio']), 0, 200);
+        $users[$key]['bio'] = mb_substr(trim($_POST['bio'] ?? ''), 0, 200);
         writeJsonFile(USERS_FILE, $users);
         $profile = getUserProfile($username);
+    }
+
+    if ($action === 'upload_avatar' && isset($_FILES['avatar'])) {
+        enforceRateLimit('forum_avatar', 5, 60);
+        $result = uploadAvatar($_FILES['avatar']);
+        if ($result['ok']) {
+            $avatarSuccess = 'Profile picture updated.';
+        } else {
+            $avatarError = $result['error'];
+        }
+    }
+
+    if ($action === 'remove_avatar') {
+        $key = strtolower(currentUser());
+        foreach (['jpg', 'jpeg', 'png', 'gif', 'webp'] as $ext) {
+            $old = AVATARS_DIR . '/' . $key . '.' . $ext;
+            if (file_exists($old)) unlink($old);
+        }
+        $avatarSuccess = 'Profile picture removed.';
     }
 }
 
@@ -75,15 +98,47 @@ require_once __DIR__ . '/includes/header.php';
 
         <?php if (isLoggedIn() && currentUser() === $profile['username']): ?>
         <div style="padding:0 24px 20px;">
-            <form method="POST">
-                <?= csrfField() ?>
-                <div class="form-group" style="margin-bottom:8px;">
-                    <label class="form-label" for="bio">Bio</label>
-                    <input class="form-input" type="text" id="bio" name="bio" maxlength="200"
-                           value="<?= e($profile['bio'] ?? '') ?>" placeholder="Tell us about yourself...">
-                </div>
-                <button type="submit" class="btn btn-secondary btn-sm">Update Bio</button>
-            </form>
+            <?php if ($avatarError): ?>
+                <div class="alert alert-error"><?= e($avatarError) ?></div>
+            <?php endif; ?>
+            <?php if ($avatarSuccess): ?>
+                <div class="alert alert-success"><?= e($avatarSuccess) ?></div>
+            <?php endif; ?>
+
+            <div style="display:flex; gap:20px; flex-wrap:wrap;">
+                <form method="POST" enctype="multipart/form-data" style="flex:1; min-width:200px;">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="upload_avatar">
+                    <div class="form-group" style="margin-bottom:8px;">
+                        <label class="form-label" for="avatar">Profile Picture</label>
+                        <input class="form-input" type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp" required
+                               style="padding:7px;">
+                        <p class="form-hint">JPG, PNG, GIF, or WebP. Max 2MB.</p>
+                    </div>
+                    <div style="display:flex; gap:6px;">
+                        <button type="submit" class="btn btn-secondary btn-sm">Upload</button>
+                        <?php if (getAvatarPath($profile['username'])): ?>
+                            <button type="submit" form="remove-avatar-form" class="btn btn-danger btn-sm">Remove</button>
+                        <?php endif; ?>
+                    </div>
+                </form>
+
+                <form method="POST" id="remove-avatar-form" style="display:none;">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="remove_avatar">
+                </form>
+
+                <form method="POST" style="flex:2; min-width:250px;">
+                    <?= csrfField() ?>
+                    <input type="hidden" name="action" value="update_bio">
+                    <div class="form-group" style="margin-bottom:8px;">
+                        <label class="form-label" for="bio">Bio</label>
+                        <input class="form-input" type="text" id="bio" name="bio" maxlength="200"
+                               value="<?= e($profile['bio'] ?? '') ?>" placeholder="Tell us about yourself...">
+                    </div>
+                    <button type="submit" class="btn btn-secondary btn-sm">Update Bio</button>
+                </form>
+            </div>
         </div>
         <?php endif; ?>
     </div>

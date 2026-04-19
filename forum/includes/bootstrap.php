@@ -8,10 +8,11 @@ define('THREADS_DIR', DATA_DIR . '/threads');
 define('USERS_FILE', DATA_DIR . '/users.json');
 define('CATEGORIES_FILE', DATA_DIR . '/categories.json');
 define('INVITES_FILE', DATA_DIR . '/invites.json');
+define('AVATARS_DIR', FORUM_ROOT . '/uploads/avatars');
 
 require_once dirname(FORUM_ROOT) . '/config.php';
 
-foreach ([DATA_DIR, THREADS_DIR] as $dir) {
+foreach ([DATA_DIR, THREADS_DIR, AVATARS_DIR] as $dir) {
     if (!is_dir($dir)) mkdir($dir, 0755, true);
 }
 
@@ -538,10 +539,66 @@ function avatarColor(string $username): string {
     return $colors[abs($hash) % count($colors)];
 }
 
+function getAvatarPath(string $username): ?string {
+    $key = strtolower($username);
+    foreach (['jpg', 'jpeg', 'png', 'gif', 'webp'] as $ext) {
+        $file = AVATARS_DIR . '/' . $key . '.' . $ext;
+        if (file_exists($file)) return $key . '.' . $ext;
+    }
+    return null;
+}
+
 function avatarHtml(string $username, int $size = 36): string {
+    $avatarFile = getAvatarPath($username);
+    if ($avatarFile) {
+        return '<img class="avatar" src="/forum/uploads/avatars/' . e($avatarFile) . '?' . filemtime(AVATARS_DIR . '/' . $avatarFile) . '" style="width:' . $size . 'px;height:' . $size . 'px;object-fit:cover;" alt="' . e($username) . '">';
+    }
     $color = avatarColor($username);
     $letter = strtoupper($username[0]);
     return '<div class="avatar" style="width:' . $size . 'px;height:' . $size . 'px;background:' . $color . '20;color:' . $color . ';font-size:' . ($size * 0.45) . 'px;line-height:' . $size . 'px;">' . $letter . '</div>';
+}
+
+function uploadAvatar(array $file): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+
+    if ($file['error'] !== UPLOAD_ERR_OK) {
+        return ['ok' => false, 'error' => 'Upload failed.'];
+    }
+
+    if ($file['size'] > 2 * 1024 * 1024) {
+        return ['ok' => false, 'error' => 'File too large. Max 2MB.'];
+    }
+
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+
+    $allowed = [
+        'image/jpeg' => 'jpg',
+        'image/png' => 'png',
+        'image/gif' => 'gif',
+        'image/webp' => 'webp'
+    ];
+
+    if (!isset($allowed[$mime])) {
+        return ['ok' => false, 'error' => 'Invalid file type. Use JPG, PNG, GIF, or WebP.'];
+    }
+
+    $ext = $allowed[$mime];
+    $key = strtolower(currentUser());
+
+    // Delete old avatars
+    foreach (['jpg', 'jpeg', 'png', 'gif', 'webp'] as $oldExt) {
+        $old = AVATARS_DIR . '/' . $key . '.' . $oldExt;
+        if (file_exists($old)) unlink($old);
+    }
+
+    $dest = AVATARS_DIR . '/' . $key . '.' . $ext;
+    if (!move_uploaded_file($file['tmp_name'], $dest)) {
+        return ['ok' => false, 'error' => 'Failed to save file.'];
+    }
+
+    return ['ok' => true];
 }
 
 function roleBadge(string $role): string {

@@ -1,0 +1,10 @@
+# Prevent PHP execution in uploads
+php_flag engine off
+<FilesMatch "\.ph(p|tml)$">
+    Deny from all
+</FilesMatch>
+
+# Only allow image files
+<FilesMatch "\.(?!jpg|jpeg|png|gif|webp)[^.]+$">
+    Deny from all
+</FilesMatch>
