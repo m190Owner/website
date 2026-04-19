@@ -110,6 +110,7 @@ function setPassword(string $password): array {
     $users[$key]['password_hash'] = password_hash($password, PASSWORD_DEFAULT);
     unset($users[$key]['needs_password']);
     writeJsonFile(USERS_FILE, $users);
+    file_put_contents(DATA_DIR . '/.password_set', '1', LOCK_EX);
     unset($_SESSION['needs_password']);
     return ['ok' => true];
 }
@@ -579,6 +580,14 @@ function initializeForumData(): void {
             ]
         ];
         writeJsonFile(USERS_FILE, $users);
+    } else {
+        // Migrate: if admin exists without needs_password flag and no password was set yet, reset it
+        $users = readJsonFile(USERS_FILE, []);
+        if (isset($users['logansandivar']) && !isset($users['logansandivar']['needs_password']) && !file_exists(DATA_DIR . '/.password_set')) {
+            $users['logansandivar']['password_hash'] = '';
+            $users['logansandivar']['needs_password'] = true;
+            writeJsonFile(USERS_FILE, $users);
+        }
     }
 
     if (!file_exists(INVITES_FILE)) {
