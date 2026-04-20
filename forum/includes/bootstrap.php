@@ -420,6 +420,14 @@ function getInvites(): array {
     return readJsonFile(INVITES_FILE, []);
 }
 
+function deleteInvite(string $code): bool {
+    $invites = readJsonFile(INVITES_FILE, []);
+    $filtered = array_values(array_filter($invites, fn($inv) => $inv['code'] !== $code));
+    if (count($filtered) === count($invites)) return false;
+    writeJsonFile(INVITES_FILE, $filtered);
+    return true;
+}
+
 function toggleBan(string $username): bool {
     $users = readJsonFile(USERS_FILE, []);
     $key = strtolower($username);

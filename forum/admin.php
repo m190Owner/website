@@ -17,6 +17,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCsrf()) {
     $action = $_POST['action'] ?? '';
 
     if ($action === 'generate_invite') { $code = generateInvite(); $success = "Invite code generated: <strong>$code</strong>"; }
+    if ($action === 'delete_invite') { if (deleteInvite($_POST['invite_code'] ?? '')) $success = "Invite code deleted."; else $error = "Invite not found."; }
     if ($action === 'toggle_ban') { $t = $_POST['username'] ?? ''; if (toggleBan($t)) $success = "Toggled ban for $t."; else $error = 'Cannot ban this user.'; }
     if ($action === 'set_role') { $t = $_POST['username'] ?? ''; $r = $_POST['role'] ?? ''; if (setUserRole($t, $r)) $success = "Updated role for $t."; else $error = 'Failed.'; }
     if ($action === 'add_category') { $n = $_POST['cat_name'] ?? ''; $d = $_POST['cat_desc'] ?? ''; if ($n && addCategory($n, $d)) $success = "Category created."; else $error = 'Failed (may already exist).'; }
@@ -65,7 +66,9 @@ require_once __DIR__ . '/includes/header.php';
                         <?php foreach (array_reverse($invites) as $inv): ?>
                         <tr>
                             <td><code style="color:#7aa2ff; letter-spacing:1px;"><?= e($inv['code']) ?></code>
-                                <?php if (!$inv['used']): ?><button class="copy-btn" onclick="navigator.clipboard.writeText('<?= e($inv['code']) ?>')">copy</button><?php endif; ?></td>
+                                <?php if (!$inv['used']): ?><button class="copy-btn" onclick="navigator.clipboard.writeText('<?= e($inv['code']) ?>')">copy</button>
+                                <form method="POST" class="inline-form" onsubmit="return confirm('Delete this invite code?')" style="display:inline;"><?= csrfField() ?><input type="hidden" name="action" value="delete_invite"><input type="hidden" name="invite_code" value="<?= e($inv['code']) ?>"><button class="copy-btn" style="color:#ff6b6b;border-color:rgba(255,107,107,0.2);">delete</button></form>
+                                <?php endif; ?></td>
                             <td><?= e($inv['created_by']) ?></td>
                             <td class="text-muted"><?= timeAgo($inv['created']) ?></td>
                             <td><?php if ($inv['used']): ?><span style="color:#6bffb8;font-size:0.75rem;">Used by <?= e($inv['used_by']) ?></span>
