@@ -4,8 +4,9 @@ $navActive = 'forum';
 $pageTitle = 'Forum';
 require_once __DIR__ . '/includes/header.php';
 
-$categories = getCategories();
+$categories = getTopLevelCategories();
 $recentThreads = getRecentThreads(5);
+$globalStickies = getGlobalStickies();
 $stats = getForumStats();
 $onlineUsers = getOnlineUsers();
 $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off-topic' => '🌀'];
@@ -41,6 +42,33 @@ $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off
         <?php endif; ?>
     </div>
 
+    <?php if (!empty($globalStickies)): ?>
+    <div class="card mb-4">
+        <div class="card-header"><h2>Announcements</h2></div>
+        <div class="card-body">
+            <?php foreach ($globalStickies as $gs): ?>
+            <div class="thread-row">
+                <span class="sticky-global-tag">ANNOUNCEMENT</span>
+                <?= avatarHtml($gs['author'], 28) ?>
+                <div class="thread-info">
+                    <div class="thread-title-row">
+                        <?php if (!empty($gs['prefix'])): ?><?= prefixHtml($gs['prefix']) ?><?php endif; ?>
+                        <a href="/forum/thread.php?id=<?= e($gs['id']) ?>" class="thread-title"><?= e($gs['title']) ?></a>
+                    </div>
+                    <div class="thread-meta">
+                        by <a href="/forum/profile.php?user=<?= e($gs['author']) ?>"><?= e($gs['author']) ?></a>
+                        &middot; <?= timeAgo($gs['created']) ?>
+                    </div>
+                </div>
+                <div class="thread-stats">
+                    <div><span class="cat-stat-num"><?= $gs['reply_count'] ?></span><span class="cat-stat-label">Replies</span></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="card mb-4">
         <div class="card-body">
             <?php if (empty($categories)): ?>
@@ -51,12 +79,20 @@ $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off
                     $postCount = getPostCountForCategory($cat['id']);
                     $lastPost = getLastPostForCategory($cat['id']);
                     $icon = $catIcons[$cat['id']] ?? '📁';
+                    $subCats = getSubCategories($cat['id']);
                 ?>
                 <div class="cat-row">
                     <div class="cat-icon"><?= $icon ?></div>
                     <div class="cat-info">
                         <a href="/forum/category.php?id=<?= e($cat['id']) ?>" class="cat-name"><?= e($cat['name']) ?></a>
                         <div class="cat-desc"><?= e($cat['description']) ?></div>
+                        <?php if (!empty($subCats)): ?>
+                        <div style="margin-top:4px; display:flex; gap:8px; flex-wrap:wrap;">
+                            <?php foreach ($subCats as $sc): ?>
+                            <a href="/forum/category.php?id=<?= e($sc['id']) ?>" style="font-size:0.7rem; color:#7aa2ff; text-decoration:none; opacity:0.7;">&#8627; <?= e($sc['name']) ?></a>
+                            <?php endforeach; ?>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="cat-stats">
                         <div><span class="cat-stat-num"><?= $threadCount ?></span><span class="cat-stat-label">Threads</span></div>
@@ -88,6 +124,7 @@ $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off
                     <div class="thread-title-row">
                         <?php if ($thread['pinned'] ?? false): ?><span class="pin-tag">PIN</span><?php endif; ?>
                         <?php if ($thread['locked'] ?? false): ?><span class="lock-tag">LOCKED</span><?php endif; ?>
+                        <?php if (!empty($thread['prefix'])): ?><?= prefixHtml($thread['prefix']) ?><?php endif; ?>
                         <?php foreach ($thread['tags'] ?? [] as $tagId): ?><?= tagHtml($tagId) ?><?php endforeach; ?>
                         <a href="/forum/thread.php?id=<?= e($thread['id']) ?>" class="thread-title"><?= e($thread['title']) ?></a>
                     </div>
@@ -109,6 +146,29 @@ $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off
         </div>
     </div>
     <?php endif; ?>
+
+    <!-- Shoutbox -->
+    <div class="shoutbox mb-4">
+        <div class="shoutbox-header">
+            <h3>Shoutbox</h3>
+            <span class="text-muted text-sm" style="cursor:pointer;" onclick="loadShoutbox()">refresh</span>
+        </div>
+        <div class="shoutbox-messages" id="shoutbox-messages">
+            <?php foreach (getShoutboxMessages() as $sm): ?>
+            <div class="shoutbox-msg">
+                <a href="/forum/profile.php?user=<?= e($sm['author']) ?>" class="sb-author"><?= e($sm['author']) ?></a>
+                <span class="sb-text"><?= e($sm['content']) ?></span>
+                <span class="sb-time"><?= timeAgo($sm['created']) ?></span>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php if (isLoggedIn()): ?>
+        <div class="shoutbox-input">
+            <input type="text" id="shoutbox-input" placeholder="Say something..." maxlength="300" onkeypress="if(event.key==='Enter')sendShout()">
+            <button onclick="sendShout()">Send</button>
+        </div>
+        <?php endif; ?>
+    </div>
 
     <!-- Online users -->
     <?php if (!empty($onlineUsers)): ?>
@@ -133,4 +193,41 @@ $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off
     <?php endif; ?>
 </div>
 
+<script>
+function sendShout() {
+    var inp = document.getElementById('shoutbox-input');
+    var msg = inp.value.trim();
+    if (!msg) return;
+    var fd = new FormData();
+    fd.append('action', 'shoutbox_send');
+    fd.append('content', msg);
+    fd.append('csrf_token', '<?= csrfToken() ?>');
+    inp.value = '';
+    fetch('/forum/api.php', {method:'POST', body:fd})
+        .then(function(r){return r.json()})
+        .then(function(data){ if(data.ok) loadShoutbox(); else if(data.error) alert(data.error); });
+}
+
+function loadShoutbox() {
+    fetch('/forum/api.php?action=shoutbox_fetch')
+        .then(function(r){return r.json()})
+        .then(function(data) {
+            if (!data.ok) return;
+            var el = document.getElementById('shoutbox-messages');
+            el.innerHTML = '';
+            data.messages.forEach(function(m) {
+                var d = document.createElement('div');
+                d.className = 'shoutbox-msg';
+                d.innerHTML = '<a href="/forum/profile.php?user=' + encodeURIComponent(m.author) + '" class="sb-author">' + escHtml(m.author) + '</a><span class="sb-text">' + escHtml(m.content) + '</span>';
+                el.appendChild(d);
+            });
+            el.scrollTop = el.scrollHeight;
+        });
+}
+
+function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+var sbEl = document.getElementById('shoutbox-messages');
+if (sbEl) sbEl.scrollTop = sbEl.scrollHeight;
+</script>
 <?php require_once __DIR__ . '/includes/footer.php'; ?>

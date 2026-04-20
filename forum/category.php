@@ -35,6 +35,26 @@ require_once __DIR__ . '/includes/header.php';
         <?php endif; ?>
     </div>
 
+    <?php $subCats = getSubCategories($catId); if (!empty($subCats)): ?>
+    <div class="card mb-4">
+        <div class="card-header"><h2>Sub-Categories</h2></div>
+        <div class="card-body">
+            <?php foreach ($subCats as $sc): ?>
+            <div class="sub-cat-row">
+                <span style="color:#5a6480;">&#8627;</span>
+                <div class="cat-info">
+                    <a href="/forum/category.php?id=<?= e($sc['id']) ?>" class="cat-name"><?= e($sc['name']) ?></a>
+                    <div class="cat-desc"><?= e($sc['description']) ?></div>
+                </div>
+                <div class="cat-stats">
+                    <div><span class="cat-stat-num"><?= getThreadCountForCategory($sc['id']) ?></span><span class="cat-stat-label">Threads</span></div>
+                </div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+    </div>
+    <?php endif; ?>
+
     <div class="card">
         <div class="card-body">
             <?php if (empty($result['threads'])): ?>
@@ -50,8 +70,10 @@ require_once __DIR__ . '/includes/header.php';
                     <?= avatarHtml($thread['author'], 32) ?>
                     <div class="thread-info">
                         <div class="thread-title-row">
+                            <?php if ($thread['sticky_global'] ?? false): ?><span class="sticky-global-tag">ANN</span><?php endif; ?>
                             <?php if ($thread['pinned'] ?? false): ?><span class="pin-tag">PIN</span><?php endif; ?>
                             <?php if ($thread['locked'] ?? false): ?><span class="lock-tag">LOCKED</span><?php endif; ?>
+                            <?php if (!empty($thread['prefix'])): ?><?= prefixHtml($thread['prefix']) ?><?php endif; ?>
                             <?php foreach ($thread['tags'] ?? [] as $tagId): ?><?= tagHtml($tagId) ?><?php endforeach; ?>
                             <a href="/forum/thread.php?id=<?= e($thread['id']) ?>" class="thread-title"><?= e($thread['title']) ?></a>
                         </div>

@@ -26,6 +26,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf() && cur
         $profile = getUserProfile($username);
     }
 
+    if ($action === 'update_signature') {
+        setUserSignature($_POST['signature'] ?? '');
+    }
+
     if ($action === 'upload_avatar' && isset($_FILES['avatar'])) {
         enforceRateLimit('forum_avatar', 5, 60);
         $result = uploadAvatar($_FILES['avatar']);
@@ -62,6 +66,11 @@ $recentPosts = array_slice($recentPosts, 0, 10);
 
 $rank = getUserRank($profile['post_count']);
 $online = isUserOnline($profile['username']);
+$reputation = getUserReputation($profile['username']);
+$achievements = getUserAchievements($profile['username']);
+$allAchievements = getAchievementDefs();
+$customTitle = getUserTitle($profile['username']);
+$signature = getUserSignature($profile['username']);
 
 $navActive = 'profile';
 $pageTitle = $profile['username'];
@@ -86,8 +95,9 @@ require_once __DIR__ . '/includes/header.php';
                 <?php if ($profile['banned'] ?? false): ?>
                     <span class="badge" style="background:rgba(255,107,107,0.12); color:#ff6b6b;">BANNED</span>
                 <?php endif; ?>
-                <div style="margin-top:3px;">
+                <div style="margin-top:3px; display:flex; align-items:center; gap:8px;">
                     <span class="post-rank" style="color:<?= getRankColor($rank) ?>;font-size:0.72rem;"><?= $rank ?></span>
+                    <?php if ($customTitle): ?><span style="color:#7aa2ff; font-size:0.72rem; font-style:italic;">&middot; <?= e($customTitle) ?></span><?php endif; ?>
                 </div>
                 <?php if ($profile['bio'] ?? ''): ?>
                     <p style="color:#8a96b8; font-size:0.82rem; margin-top:4px;"><?= e($profile['bio']) ?></p>
@@ -95,6 +105,10 @@ require_once __DIR__ . '/includes/header.php';
                 <div class="profile-stats">
                     <div><span class="profile-stat-val"><?= $profile['post_count'] ?></span> <span class="text-muted text-sm">posts</span></div>
                     <div><span class="profile-stat-val"><?= $profile['thread_count'] ?></span> <span class="text-muted text-sm">threads</span></div>
+                    <div>
+                        <span class="profile-stat-val" style="color:<?= $reputation >= 0 ? '#6bffb8' : '#ff6b6b' ?>"><?= $reputation > 0 ? '+' : '' ?><?= $reputation ?></span>
+                        <span class="text-muted text-sm">reputation</span>
+                    </div>
                     <div><span class="text-muted text-sm">joined</span> <span style="color:#8a96b8; font-size:0.78rem;"><?= date('M j, Y', strtotime($profile['created'])) ?></span></div>
                 </div>
             </div>
@@ -138,6 +152,41 @@ require_once __DIR__ . '/includes/header.php';
         </div>
         <?php endif; ?>
     </div>
+
+    <!-- Achievements -->
+    <div class="card mb-4">
+        <div class="card-header"><h2>Achievements (<?= count($achievements) ?>/<?= count($allAchievements) ?>)</h2></div>
+        <div style="padding:16px 20px;">
+            <div class="achievements-grid">
+                <?php foreach ($allAchievements as $achId => $ach):
+                    $earned = in_array($achId, $achievements);
+                ?>
+                <div class="achievement <?= $earned ? '' : 'achievement-locked' ?>" title="<?= e($ach['desc']) ?>">
+                    <span class="ach-icon"><?= $ach['icon'] ?></span>
+                    <span class="ach-name"><?= e($ach['name']) ?></span>
+                </div>
+                <?php endforeach; ?>
+            </div>
+        </div>
+    </div>
+
+    <?php if (isLoggedIn() && currentUser() === $profile['username']): ?>
+    <!-- Signature -->
+    <div class="card mb-4">
+        <div class="card-header"><h2>Signature</h2></div>
+        <div style="padding:16px 20px;">
+            <form method="POST">
+                <?= csrfField() ?>
+                <input type="hidden" name="action" value="update_signature">
+                <div class="form-group" style="margin-bottom:8px;">
+                    <textarea class="form-textarea" name="signature" maxlength="300" rows="2" placeholder="Your signature appears below your posts..."><?= e($signature) ?></textarea>
+                    <p class="form-hint">Max 300 characters. Appears below all your posts.</p>
+                </div>
+                <button type="submit" class="btn btn-secondary btn-sm">Update Signature</button>
+            </form>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <?php if (!empty($recentPosts)): ?>
     <div class="card">

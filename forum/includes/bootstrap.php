@@ -15,7 +15,7 @@ define('POST_IMAGES_DIR', FORUM_ROOT . '/uploads/posts');
 
 require_once dirname(FORUM_ROOT) . '/config.php';
 
-foreach ([DATA_DIR, THREADS_DIR, AVATARS_DIR, MESSAGES_DIR, POST_IMAGES_DIR] as $dir) {
+foreach ([DATA_DIR, THREADS_DIR, AVATARS_DIR, MESSAGES_DIR, POST_IMAGES_DIR, DATA_DIR . '/notifications'] as $dir) {
     if (!is_dir($dir)) mkdir($dir, 0755, true);
 }
 
@@ -194,6 +194,14 @@ function getCategories(): array {
     return $cats;
 }
 
+function getTopLevelCategories(): array {
+    return array_values(array_filter(getCategories(), fn($c) => empty($c['parent'])));
+}
+
+function getSubCategories(string $parentId): array {
+    return array_values(array_filter(getCategories(), fn($c) => ($c['parent'] ?? '') === $parentId));
+}
+
 function getCategoryById(string $id): ?array {
     foreach (getCategories() as $cat) {
         if ($cat['id'] === $id) return $cat;
@@ -242,7 +250,7 @@ function saveThread(array $thread): void {
     writeJsonFile($file, $thread);
 }
 
-function createThread(string $catId, string $title, string $content, array $tags = [], ?array $poll = null): array {
+function createThread(string $catId, string $title, string $content, array $tags = [], ?array $poll = null, string $prefix = ''): array {
     if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
     $title = trim($title);
     $content = trim($content);
@@ -258,14 +266,16 @@ function createThread(string $catId, string $title, string $content, array $tags
 
     $id = bin2hex(random_bytes(8));
     $now = date('c');
+    $firstPostId = bin2hex(random_bytes(6));
     $thread = [
         'id' => $id, 'category' => $catId, 'title' => $title,
         'author' => currentUser(), 'created' => $now,
-        'pinned' => false, 'locked' => false, 'tags' => $tags,
+        'pinned' => false, 'locked' => false, 'sticky_global' => false,
+        'tags' => $tags, 'prefix' => $prefix ?? '',
         'posts' => [[
-            'id' => bin2hex(random_bytes(6)),
+            'id' => $firstPostId,
             'author' => currentUser(), 'content' => $content,
-            'created' => $now, 'reactions' => []
+            'created' => $now, 'reactions' => [], 'votes' => ['up' => [], 'down' => []]
         ]]
     ];
 
@@ -281,6 +291,8 @@ function createThread(string $catId, string $title, string $content, array $tags
     }
 
     saveThread($thread);
+    processPostMentions($content, $id, $firstPostId, $title);
+    checkAndAwardAchievements(currentUser());
     return ['ok' => true, 'id' => $id];
 }
 
@@ -295,13 +307,17 @@ function addReply(string $threadId, string $content): array {
     if (!$thread) return ['ok' => false, 'error' => 'Thread not found.'];
     if ($thread['locked'] ?? false) return ['ok' => false, 'error' => 'Thread is locked.'];
 
+    $newPostId = bin2hex(random_bytes(6));
     $thread['posts'][] = [
-        'id' => bin2hex(random_bytes(6)),
+        'id' => $newPostId,
         'author' => currentUser(),
         'content' => $content,
-        'created' => date('c')
+        'created' => date('c'),
+        'reactions' => [], 'votes' => ['up' => [], 'down' => []]
     ];
     saveThread($thread);
+    processPostMentions($content, $threadId, $newPostId, $thread['title']);
+    checkAndAwardAchievements(currentUser());
     return ['ok' => true];
 }
 
@@ -482,7 +498,7 @@ function deletePost(string $threadId, string $postId): bool {
     return true;
 }
 
-function addCategory(string $name, string $description): bool {
+function addCategory(string $name, string $description, string $parent = ''): bool {
     $cats = readJsonFile(CATEGORIES_FILE, []);
     $id = preg_replace('/[^a-z0-9]/', '-', strtolower(trim($name)));
     $id = preg_replace('/-+/', '-', trim($id, '-'));
@@ -494,12 +510,12 @@ function addCategory(string $name, string $description): bool {
     foreach ($cats as $c) {
         if (($c['order'] ?? 0) > $maxOrder) $maxOrder = $c['order'];
     }
-    $cats[] = [
-        'id' => $id,
-        'name' => trim($name),
-        'description' => trim($description),
-        'order' => $maxOrder + 1
+    $cat = [
+        'id' => $id, 'name' => trim($name),
+        'description' => trim($description), 'order' => $maxOrder + 1
     ];
+    if ($parent && getCategoryById($parent)) $cat['parent'] = $parent;
+    $cats[] = $cat;
     writeJsonFile(CATEGORIES_FILE, $cats);
     return true;
 }
@@ -929,6 +945,342 @@ function getForumStats(): array {
 }
 
 // ==============================================
+// REPUTATION / VOTING
+// ==============================================
+function votePost(string $threadId, string $postId, string $dir): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    if (!in_array($dir, ['up', 'down'])) return ['ok' => false, 'error' => 'Invalid.'];
+    $thread = getThread($threadId);
+    if (!$thread) return ['ok' => false, 'error' => 'Thread not found.'];
+    foreach ($thread['posts'] as &$post) {
+        if ($post['id'] === $postId) {
+            if ($post['author'] === currentUser()) return ['ok' => false, 'error' => 'Cannot vote on your own post.'];
+            if (!isset($post['votes'])) $post['votes'] = ['up' => [], 'down' => []];
+            $user = currentUser();
+            $other = $dir === 'up' ? 'down' : 'up';
+            // Remove from other direction
+            $idx = array_search($user, $post['votes'][$other]);
+            if ($idx !== false) array_splice($post['votes'][$other], $idx, 1);
+            // Toggle current direction
+            $idx = array_search($user, $post['votes'][$dir]);
+            if ($idx !== false) { array_splice($post['votes'][$dir], $idx, 1); }
+            else { $post['votes'][$dir][] = $user; }
+            saveThread($thread);
+            checkAndAwardAchievements($post['author']);
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'Post not found.'];
+}
+
+function getPostScore(array $post): int {
+    $v = $post['votes'] ?? ['up' => [], 'down' => []];
+    return count($v['up'] ?? []) - count($v['down'] ?? []);
+}
+
+function getUserReputation(string $username): int {
+    $rep = 0;
+    foreach (getAllThreadFiles() as $file) {
+        $thread = readJsonFile($file);
+        foreach ($thread['posts'] ?? [] as $post) {
+            if ($post['author'] === $username) $rep += getPostScore($post);
+        }
+    }
+    return $rep;
+}
+
+// ==============================================
+// ACHIEVEMENTS
+// ==============================================
+function getAchievementDefs(): array {
+    return [
+        'first_post' => ['name' => 'First Steps', 'desc' => 'Made your first post', 'icon' => '✍️'],
+        'first_thread' => ['name' => 'Starter', 'desc' => 'Created your first thread', 'icon' => '💡'],
+        '10_posts' => ['name' => 'Getting Chatty', 'desc' => '10 posts', 'icon' => '💬'],
+        '50_posts' => ['name' => 'Regular', 'desc' => '50 posts', 'icon' => '⭐'],
+        '100_posts' => ['name' => 'Century Club', 'desc' => '100 posts', 'icon' => '💯'],
+        '500_posts' => ['name' => 'Prolific', 'desc' => '500 posts', 'icon' => '🏆'],
+        'popular_thread' => ['name' => 'Popular', 'desc' => 'Thread with 10+ replies', 'icon' => '🔥'],
+        'viral_thread' => ['name' => 'Viral', 'desc' => 'Thread with 50+ replies', 'icon' => '🚀'],
+        'rep_10' => ['name' => 'Trusted', 'desc' => '10+ reputation', 'icon' => '🛡️'],
+        'rep_50' => ['name' => 'Respected', 'desc' => '50+ reputation', 'icon' => '👑'],
+        'rep_100' => ['name' => 'Famous', 'desc' => '100+ reputation', 'icon' => '🌟'],
+    ];
+}
+
+function checkAndAwardAchievements(string $username): void {
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower($username);
+    if (!isset($users[$key])) return;
+    $earned = $users[$key]['achievements'] ?? [];
+    $pc = getUserPostCount($username);
+    $tc = getUserThreadCount($username);
+    $rep = getUserReputation($username);
+
+    $checks = [
+        'first_post' => $pc >= 1,
+        'first_thread' => $tc >= 1,
+        '10_posts' => $pc >= 10,
+        '50_posts' => $pc >= 50,
+        '100_posts' => $pc >= 100,
+        '500_posts' => $pc >= 500,
+        'rep_10' => $rep >= 10,
+        'rep_50' => $rep >= 50,
+        'rep_100' => $rep >= 100,
+    ];
+    // Check popular/viral threads
+    foreach (getAllThreadFiles() as $file) {
+        $thread = readJsonFile($file);
+        if (($thread['author'] ?? '') !== $username) continue;
+        $replies = max(0, count($thread['posts'] ?? []) - 1);
+        if ($replies >= 10) $checks['popular_thread'] = true;
+        if ($replies >= 50) $checks['viral_thread'] = true;
+    }
+
+    $changed = false;
+    foreach ($checks as $id => $met) {
+        if ($met && !in_array($id, $earned)) { $earned[] = $id; $changed = true; }
+    }
+    if ($changed) {
+        $users[$key]['achievements'] = $earned;
+        writeJsonFile(USERS_FILE, $users);
+    }
+}
+
+function getUserAchievements(string $username): array {
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower($username);
+    return $users[$key]['achievements'] ?? [];
+}
+
+// ==============================================
+// SIGNATURES & CUSTOM TITLES
+// ==============================================
+function getUserSignature(string $username): string {
+    $users = readJsonFile(USERS_FILE, []);
+    return $users[strtolower($username)]['signature'] ?? '';
+}
+
+function setUserSignature(string $signature): bool {
+    if (!isLoggedIn()) return false;
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower(currentUser());
+    $users[$key]['signature'] = mb_substr(trim($signature), 0, 300);
+    writeJsonFile(USERS_FILE, $users);
+    return true;
+}
+
+function getUserTitle(string $username): string {
+    $users = readJsonFile(USERS_FILE, []);
+    return $users[strtolower($username)]['custom_title'] ?? '';
+}
+
+function setUserTitle(string $username, string $title): bool {
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower($username);
+    if (!isset($users[$key])) return false;
+    $users[$key]['custom_title'] = mb_substr(trim($title), 0, 50);
+    writeJsonFile(USERS_FILE, $users);
+    return true;
+}
+
+// ==============================================
+// THREAD PREFIXES
+// ==============================================
+function getAvailablePrefixes(): array {
+    return [
+        ['id' => 'discussion', 'name' => 'Discussion', 'color' => '#7aa2ff'],
+        ['id' => 'solved', 'name' => 'Solved', 'color' => '#6bffb8'],
+        ['id' => 'wip', 'name' => 'WIP', 'color' => '#ffb86b'],
+        ['id' => 'closed', 'name' => 'Closed', 'color' => '#ff6b6b'],
+        ['id' => 'open', 'name' => 'Open', 'color' => '#6bddff'],
+        ['id' => 'help', 'name' => 'Help Needed', 'color' => '#b86bff'],
+    ];
+}
+
+function getPrefixById(string $id): ?array {
+    foreach (getAvailablePrefixes() as $p) { if ($p['id'] === $id) return $p; }
+    return null;
+}
+
+function prefixHtml(string $prefixId): string {
+    $p = getPrefixById($prefixId);
+    if (!$p) return '';
+    return '<span class="thread-prefix" style="background:' . $p['color'] . '18;color:' . $p['color'] . ';border-color:' . $p['color'] . '30">' . e($p['name']) . '</span>';
+}
+
+function setThreadPrefix(string $threadId, string $prefix): bool {
+    $thread = getThread($threadId);
+    if (!$thread) return false;
+    $thread['prefix'] = $prefix;
+    saveThread($thread);
+    return true;
+}
+
+// ==============================================
+// GLOBAL STICKIES & THREAD MOVE
+// ==============================================
+function getGlobalStickies(): array {
+    $stickies = [];
+    foreach (getAllThreadFiles() as $file) {
+        $thread = readJsonFile($file);
+        if ($thread['sticky_global'] ?? false) {
+            $posts = $thread['posts'] ?? [];
+            $lastPost = end($posts);
+            $thread['reply_count'] = max(0, count($posts) - 1);
+            $thread['last_post_time'] = $lastPost['created'] ?? $thread['created'];
+            $thread['last_post_author'] = $lastPost['author'] ?? $thread['author'];
+            $stickies[] = $thread;
+        }
+    }
+    return $stickies;
+}
+
+function toggleGlobalSticky(string $threadId): bool {
+    $thread = getThread($threadId);
+    if (!$thread) return false;
+    $thread['sticky_global'] = !($thread['sticky_global'] ?? false);
+    saveThread($thread);
+    return true;
+}
+
+function moveThread(string $threadId, string $newCatId): bool {
+    if (!getCategoryById($newCatId)) return false;
+    $thread = getThread($threadId);
+    if (!$thread) return false;
+    $oldCat = $thread['category'];
+    $thread['category'] = $newCatId;
+    saveThread($thread);
+    logModAction('move_thread', "Moved \"{$thread['title']}\" from $oldCat to $newCatId");
+    return true;
+}
+
+// ==============================================
+// MOD LOG
+// ==============================================
+define('MODLOG_FILE', DATA_DIR . '/modlog.json');
+
+function logModAction(string $action, string $details): void {
+    $log = readJsonFile(MODLOG_FILE, []);
+    $log[] = [
+        'id' => bin2hex(random_bytes(6)),
+        'action' => $action, 'details' => $details,
+        'actor' => currentUser() ?? 'system',
+        'created' => date('c')
+    ];
+    if (count($log) > 500) $log = array_slice($log, -500);
+    writeJsonFile(MODLOG_FILE, $log);
+}
+
+function getModLog(int $limit = 50): array {
+    $log = readJsonFile(MODLOG_FILE, []);
+    usort($log, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
+    return array_slice($log, 0, $limit);
+}
+
+// ==============================================
+// @MENTIONS & NOTIFICATIONS
+// ==============================================
+define('NOTIFICATIONS_DIR', DATA_DIR . '/notifications');
+
+function processPostMentions(string $content, string $threadId, string $postId, string $threadTitle): void {
+    if (!isLoggedIn()) return;
+    preg_match_all('/@([a-zA-Z0-9_]+)/', $content, $matches);
+    $mentioned = array_unique($matches[1]);
+    $users = readJsonFile(USERS_FILE, []);
+    foreach ($mentioned as $uname) {
+        $key = strtolower($uname);
+        if (isset($users[$key]) && strtolower($users[$key]['username']) !== strtolower(currentUser())) {
+            addNotification($users[$key]['username'], 'mention', [
+                'from' => currentUser(), 'thread_id' => $threadId,
+                'post_id' => $postId, 'thread_title' => $threadTitle
+            ]);
+        }
+    }
+}
+
+function addNotification(string $username, string $type, array $data): void {
+    if (!is_dir(NOTIFICATIONS_DIR)) mkdir(NOTIFICATIONS_DIR, 0755, true);
+    $file = NOTIFICATIONS_DIR . '/' . strtolower($username) . '.json';
+    $notifs = readJsonFile($file, []);
+    $notifs[] = array_merge([
+        'id' => bin2hex(random_bytes(6)), 'type' => $type,
+        'created' => date('c'), 'read' => false
+    ], $data);
+    if (count($notifs) > 100) $notifs = array_slice($notifs, -100);
+    writeJsonFile($file, $notifs);
+}
+
+function getNotifications(int $limit = 20): array {
+    if (!isLoggedIn()) return [];
+    $file = NOTIFICATIONS_DIR . '/' . strtolower(currentUser()) . '.json';
+    $notifs = readJsonFile($file, []);
+    usort($notifs, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
+    return array_slice($notifs, 0, $limit);
+}
+
+function getUnreadNotificationCount(): int {
+    if (!isLoggedIn()) return 0;
+    $file = NOTIFICATIONS_DIR . '/' . strtolower(currentUser()) . '.json';
+    $notifs = readJsonFile($file, []);
+    return count(array_filter($notifs, fn($n) => !$n['read']));
+}
+
+function markNotificationsRead(): void {
+    if (!isLoggedIn()) return;
+    $file = NOTIFICATIONS_DIR . '/' . strtolower(currentUser()) . '.json';
+    $notifs = readJsonFile($file, []);
+    $changed = false;
+    foreach ($notifs as &$n) {
+        if (!$n['read']) { $n['read'] = true; $changed = true; }
+    }
+    if ($changed) writeJsonFile($file, $notifs);
+}
+
+// ==============================================
+// LEADERBOARD
+// ==============================================
+function getLeaderboard(): array {
+    $users = readJsonFile(USERS_FILE, []);
+    $board = [];
+    foreach ($users as $key => $user) {
+        $pc = getUserPostCount($user['username']);
+        $rep = getUserReputation($user['username']);
+        $board[] = [
+            'username' => $user['username'], 'role' => $user['role'],
+            'post_count' => $pc, 'reputation' => $rep,
+            'achievements' => count($user['achievements'] ?? [])
+        ];
+    }
+    return $board;
+}
+
+// ==============================================
+// SHOUTBOX
+// ==============================================
+define('SHOUTBOX_FILE', DATA_DIR . '/shoutbox.json');
+
+function getShoutboxMessages(int $limit = 30): array {
+    $msgs = readJsonFile(SHOUTBOX_FILE, []);
+    return array_slice($msgs, -$limit);
+}
+
+function addShoutboxMessage(string $content): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $content = trim($content);
+    if (strlen($content) < 1 || strlen($content) > 300)
+        return ['ok' => false, 'error' => 'Message must be 1-300 characters.'];
+    $msgs = readJsonFile(SHOUTBOX_FILE, []);
+    $msgs[] = [
+        'id' => bin2hex(random_bytes(4)), 'author' => currentUser(),
+        'content' => $content, 'created' => date('c')
+    ];
+    if (count($msgs) > 100) $msgs = array_slice($msgs, -100);
+    writeJsonFile(SHOUTBOX_FILE, $msgs);
+    return ['ok' => true];
+}
+
+// ==============================================
 // FORMATTING
 // ==============================================
 function formatContent(string $text): string {
@@ -978,6 +1330,9 @@ function formatContent(string $text): string {
     }
     if ($inQuote) $out[] = '</blockquote>';
     $text = implode("\n", $out);
+
+    // @mentions
+    $text = preg_replace('/@([a-zA-Z0-9_]+)/', '<a href="/forum/profile.php?user=$1" class="mention">@$1</a>', $text);
 
     $text = nl2br($text);
     return $text;

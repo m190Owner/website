@@ -275,6 +275,88 @@
         /* COPY BUTTON */
         .copy-btn { background: rgba(122,162,255,0.1); border: 1px solid rgba(122,162,255,0.2); color: #7aa2ff; padding: 3px 8px; border-radius: 4px; font-size: 0.68rem; cursor: pointer; transition: all 0.15s; }
         .copy-btn:hover { background: rgba(122,162,255,0.2); }
+        /* THREAD PREFIX */
+        .thread-prefix { font-size: 0.6rem; padding: 2px 7px; border-radius: 4px; font-weight: 700; letter-spacing: 0.5px; border: 1px solid; flex-shrink: 0; text-transform: uppercase; }
+        /* VOTE BUTTONS */
+        .vote-wrap { display: flex; flex-direction: column; align-items: center; gap: 2px; margin-right: 4px; flex-shrink: 0; }
+        .vote-btn { background: none; border: 1px solid rgba(122,162,255,0.1); color: #5a6480; width: 26px; height: 22px; border-radius: 4px; cursor: pointer; font-size: 0.7rem; display: flex; align-items: center; justify-content: center; transition: all 0.15s; padding: 0; }
+        .vote-btn:hover { background: rgba(122,162,255,0.1); color: #7aa2ff; border-color: rgba(122,162,255,0.25); }
+        .vote-btn.voted-up { background: rgba(107,255,184,0.12); color: #6bffb8; border-color: rgba(107,255,184,0.3); }
+        .vote-btn.voted-down { background: rgba(255,107,107,0.12); color: #ff6b6b; border-color: rgba(255,107,107,0.3); }
+        .vote-score { font-size: 0.72rem; font-weight: 700; color: #8a96b8; }
+        .vote-score.positive { color: #6bffb8; }
+        .vote-score.negative { color: #ff6b6b; }
+        /* SIGNATURE */
+        .post-signature { margin-top: 12px; padding-top: 10px; border-top: 1px dashed rgba(122,162,255,0.08); font-size: 0.72rem; color: #5a6480; font-style: italic; max-height: 60px; overflow: hidden; }
+        /* CUSTOM TITLE */
+        .post-custom-title { font-size: 0.62rem; color: #7aa2ff; margin-top: 1px; font-style: italic; }
+        /* @MENTION */
+        .mention { color: #7aa2ff; font-weight: 600; text-decoration: none; background: rgba(122,162,255,0.08); padding: 0 3px; border-radius: 3px; }
+        .mention:hover { background: rgba(122,162,255,0.15); text-decoration: underline; }
+        /* NOTIFICATION BELL */
+        .notif-bell { position: relative; color: #8a96b8; text-decoration: none; font-size: 1rem; padding: 4px; transition: color 0.15s; }
+        .notif-bell:hover { color: #7aa2ff; }
+        .notif-bell .notif-count { position: absolute; top: -4px; right: -6px; background: #ff6b6b; color: #fff; font-size: 0.5rem; padding: 1px 4px; border-radius: 8px; font-weight: 700; }
+        .notif-dropdown { display: none; position: absolute; top: 100%; right: 0; width: 320px; background: rgba(17,17,24,0.97); border: 1px solid rgba(122,162,255,0.15); border-radius: 10px; backdrop-filter: blur(12px); z-index: 150; max-height: 400px; overflow-y: auto; }
+        .notif-dropdown.show { display: block; }
+        .notif-item { padding: 10px 14px; border-bottom: 1px solid rgba(122,162,255,0.04); font-size: 0.75rem; }
+        .notif-item:last-child { border-bottom: none; }
+        .notif-item.unread { background: rgba(122,162,255,0.04); }
+        .notif-item a { color: #7aa2ff; text-decoration: none; }
+        .notif-item a:hover { text-decoration: underline; }
+        .notif-item .notif-time { color: #5a6480; font-size: 0.65rem; margin-top: 2px; }
+        /* ACHIEVEMENTS */
+        .achievement { display: inline-flex; align-items: center; gap: 4px; background: rgba(122,162,255,0.06); border: 1px solid rgba(122,162,255,0.1); border-radius: 6px; padding: 4px 10px; font-size: 0.72rem; color: #8a96b8; }
+        .achievement .ach-icon { font-size: 0.9rem; }
+        .achievement .ach-name { font-weight: 600; color: #e5e5e5; }
+        .achievements-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+        .achievement-locked { opacity: 0.35; }
+        /* SHOUTBOX */
+        .shoutbox { border: 1px solid rgba(122,162,255,0.08); border-radius: 10px; background: rgba(17,17,24,0.75); overflow: hidden; }
+        .shoutbox-header { padding: 10px 16px; border-bottom: 1px solid rgba(122,162,255,0.06); display: flex; justify-content: space-between; align-items: center; }
+        .shoutbox-header h3 { font-size: 0.78rem; font-weight: 700; color: #7aa2ff; letter-spacing: 1px; text-transform: uppercase; }
+        .shoutbox-messages { height: 200px; overflow-y: auto; padding: 8px 14px; display: flex; flex-direction: column; gap: 4px; }
+        .shoutbox-msg { font-size: 0.75rem; line-height: 1.4; }
+        .shoutbox-msg .sb-author { font-weight: 700; color: #7aa2ff; margin-right: 6px; text-decoration: none; font-size: 0.72rem; }
+        .shoutbox-msg .sb-author:hover { text-decoration: underline; }
+        .shoutbox-msg .sb-text { color: #c8ccd4; }
+        .shoutbox-msg .sb-time { color: #3a4060; font-size: 0.6rem; margin-left: 6px; }
+        .shoutbox-input { display: flex; gap: 6px; padding: 8px 14px; border-top: 1px solid rgba(122,162,255,0.06); }
+        .shoutbox-input input { flex: 1; background: rgba(10,10,18,0.8); border: 1px solid rgba(122,162,255,0.12); border-radius: 6px; color: #e5e5e5; padding: 6px 10px; font-size: 0.78rem; font-family: inherit; }
+        .shoutbox-input input:focus { outline: none; border-color: rgba(122,162,255,0.4); }
+        .shoutbox-input button { background: linear-gradient(135deg, #7aa2ff, #5a80cc); color: #fff; border: none; padding: 6px 14px; border-radius: 6px; font-size: 0.72rem; cursor: pointer; font-weight: 600; }
+        /* LEADERBOARD */
+        .lb-row { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-bottom: 1px solid rgba(122,162,255,0.04); }
+        .lb-row:last-child { border-bottom: none; }
+        .lb-rank { width: 30px; text-align: center; font-weight: 800; font-size: 0.9rem; }
+        .lb-rank.gold { color: #ffb86b; }
+        .lb-rank.silver { color: #c8ccd4; }
+        .lb-rank.bronze { color: #cd7f32; }
+        .lb-user { flex: 1; display: flex; align-items: center; gap: 10px; }
+        .lb-user a { color: #e5e5e5; text-decoration: none; font-weight: 600; font-size: 0.85rem; }
+        .lb-user a:hover { color: #7aa2ff; }
+        .lb-stat { text-align: center; min-width: 70px; }
+        .lb-stat-val { font-weight: 700; color: #7aa2ff; font-size: 0.9rem; display: block; }
+        .lb-stat-label { font-size: 0.62rem; color: #5a6480; text-transform: uppercase; }
+        /* GLOBAL STICKY TAG */
+        .sticky-global-tag { font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.5px; background: rgba(255,184,107,0.12); color: #ffb86b; flex-shrink: 0; }
+        /* REP DISPLAY */
+        .rep-badge { display: inline-flex; align-items: center; gap: 3px; font-size: 0.65rem; font-weight: 600; padding: 1px 6px; border-radius: 4px; }
+        .rep-badge.positive { background: rgba(107,255,184,0.1); color: #6bffb8; }
+        .rep-badge.negative { background: rgba(255,107,107,0.1); color: #ff6b6b; }
+        .rep-badge.neutral { background: rgba(138,150,184,0.1); color: #8a96b8; }
+        /* MOD LOG */
+        .modlog-entry { padding: 10px 16px; border-bottom: 1px solid rgba(122,162,255,0.04); font-size: 0.78rem; }
+        .modlog-entry:last-child { border-bottom: none; }
+        .modlog-action { font-weight: 600; color: #7aa2ff; text-transform: uppercase; font-size: 0.68rem; letter-spacing: 0.5px; }
+        .modlog-details { color: #8a96b8; margin-top: 2px; }
+        .modlog-meta { color: #5a6480; font-size: 0.68rem; margin-top: 2px; }
+        /* SUB-CATEGORY */
+        .sub-cat-list { padding-left: 56px; }
+        .sub-cat-row { display: flex; align-items: center; gap: 10px; padding: 8px 20px; border-bottom: 1px solid rgba(122,162,255,0.03); font-size: 0.82rem; }
+        .sub-cat-row:last-child { border-bottom: none; }
+        .sub-cat-row .cat-name { font-size: 0.82rem; }
+        .sub-cat-row .cat-desc { font-size: 0.68rem; }
         /* MISC */
         .text-muted { color: #5a6480; }
         .text-sm { font-size: 0.75rem; }
@@ -313,6 +395,7 @@
                 <a href="/forum/" class="<?= ($navActive ?? '') === 'forum' ? 'active' : '' ?>">Categories</a>
                 <a href="/forum/members.php" class="<?= ($navActive ?? '') === 'members' ? 'active' : '' ?>">Members</a>
                 <a href="/forum/search.php" class="<?= ($navActive ?? '') === 'search' ? 'active' : '' ?>">Search</a>
+                <a href="/forum/leaderboard.php" class="<?= ($navActive ?? '') === 'leaderboard' ? 'active' : '' ?>">Leaderboard</a>
                 <?php if (isLoggedIn()): ?>
                     <?php $__unread = getUnreadCount(); ?>
                     <a href="/forum/messages.php" class="<?= ($navActive ?? '') === 'messages' ? 'active' : '' ?>">
@@ -330,6 +413,12 @@
         </div>
         <div class="forum-nav-right">
             <?php if (isLoggedIn()): ?>
+                <div style="position:relative;">
+                    <a href="#" class="notif-bell" onclick="toggleNotifs(event)" title="Notifications">
+                        &#128276;<?php $__notifCount = getUnreadNotificationCount(); if ($__notifCount > 0): ?><span class="notif-count"><?= $__notifCount ?></span><?php endif; ?>
+                    </a>
+                    <div class="notif-dropdown" id="notif-dropdown"></div>
+                </div>
                 <span class="forum-nav-user"><?= e(currentUser()) ?></span>
                 <a href="/forum/logout.php" class="nav-btn">Logout</a>
             <?php else: ?>

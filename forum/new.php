@@ -21,12 +21,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
         }
 
+        $prefix = $_POST['prefix'] ?? '';
+
         $result = createThread(
             $_POST['category'] ?? '',
             $_POST['title'] ?? '',
             $_POST['content'] ?? '',
             $tags,
-            $poll
+            $poll,
+            $prefix
         );
         if ($result['ok']) {
             header('Location: /forum/thread.php?id=' . $result['id']);
@@ -38,6 +41,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 $categories = getCategories();
 $availableTags = getAvailableTags();
+$availablePrefixes = getAvailablePrefixes();
 $navActive = 'forum';
 $pageTitle = 'New Thread';
 require_once __DIR__ . '/includes/header.php';
@@ -61,7 +65,16 @@ require_once __DIR__ . '/includes/header.php';
                         <select class="form-select" id="category" name="category" required>
                             <option value="">Select...</option>
                             <?php foreach ($categories as $cat): ?>
-                                <option value="<?= e($cat['id']) ?>" <?= $selectedCategory === $cat['id'] ? 'selected' : '' ?>><?= e($cat['name']) ?></option>
+                                <option value="<?= e($cat['id']) ?>" <?= $selectedCategory === $cat['id'] ? 'selected' : '' ?>><?= e((!empty($cat['parent']) ? '-- ' : '') . $cat['name']) ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="form-group" style="flex:1;">
+                        <label class="form-label" for="prefix">Prefix</label>
+                        <select class="form-select" id="prefix" name="prefix">
+                            <option value="">None</option>
+                            <?php foreach ($availablePrefixes as $pfx): ?>
+                                <option value="<?= e($pfx['id']) ?>" <?= ($_POST['prefix'] ?? '') === $pfx['id'] ? 'selected' : '' ?>><?= e($pfx['name']) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>

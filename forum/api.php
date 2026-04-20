@@ -23,4 +23,34 @@ if ($action === 'reaction') {
     exit;
 }
 
+if ($action === 'vote') {
+    if (!verifyCsrf()) { echo json_encode(['ok' => false, 'error' => 'Invalid token.']); exit; }
+    enforceRateLimit('forum_vote', 30, 60);
+    echo json_encode(votePost($_POST['thread_id'] ?? '', $_POST['post_id'] ?? '', $_POST['direction'] ?? ''));
+    exit;
+}
+
+if ($action === 'shoutbox_send') {
+    if (!verifyCsrf()) { echo json_encode(['ok' => false, 'error' => 'Invalid token.']); exit; }
+    enforceRateLimit('forum_shoutbox', 15, 60);
+    echo json_encode(addShoutboxMessage($_POST['content'] ?? ''));
+    exit;
+}
+
+if ($action === 'shoutbox_fetch') {
+    echo json_encode(['ok' => true, 'messages' => getShoutboxMessages()]);
+    exit;
+}
+
+if ($action === 'notifications_fetch') {
+    echo json_encode(['ok' => true, 'notifications' => getNotifications(), 'unread' => getUnreadNotificationCount()]);
+    exit;
+}
+
+if ($action === 'notifications_read') {
+    markNotificationsRead();
+    echo json_encode(['ok' => true]);
+    exit;
+}
+
 echo json_encode(['ok' => false, 'error' => 'Unknown action.']);

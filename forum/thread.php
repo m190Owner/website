@@ -61,11 +61,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf()) {
     }
 
     if (isAdmin()) {
-        if ($action === 'pin') { togglePin($threadId); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
-        if ($action === 'lock') { toggleLock($threadId); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
-        if ($action === 'delete_thread') { deleteThread($threadId); header('Location: /forum/'); exit; }
-        if ($action === 'delete_post') { deletePost($threadId, $_POST['post_id'] ?? ''); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
+        if ($action === 'pin') { togglePin($threadId); logModAction('pin', ($thread['pinned'] ?? false) ? "Unpinned \"{$thread['title']}\"" : "Pinned \"{$thread['title']}\""); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
+        if ($action === 'lock') { toggleLock($threadId); logModAction('lock', ($thread['locked'] ?? false) ? "Unlocked \"{$thread['title']}\"" : "Locked \"{$thread['title']}\""); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
+        if ($action === 'delete_thread') { logModAction('delete_thread', "Deleted \"{$thread['title']}\""); deleteThread($threadId); header('Location: /forum/'); exit; }
+        if ($action === 'delete_post') { logModAction('delete_post', "Deleted post in \"{$thread['title']}\""); deletePost($threadId, $_POST['post_id'] ?? ''); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
         if ($action === 'close_poll') { closePoll($threadId); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
+        if ($action === 'global_sticky') { toggleGlobalSticky($threadId); logModAction('global_sticky', "Toggled global sticky on \"{$thread['title']}\""); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
+        if ($action === 'move_thread') { $newCat = $_POST['new_category'] ?? ''; if ($newCat) moveThread($threadId, $newCat); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
+        if ($action === 'set_prefix') { setThreadPrefix($threadId, $_POST['prefix'] ?? ''); header('Location: /forum/thread.php?id=' . e($threadId)); exit; }
     }
 
     $thread = getThread($threadId);
@@ -92,8 +95,10 @@ require_once __DIR__ . '/includes/header.php';
     <div class="flex-between mb-4">
         <div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <?php if ($thread['sticky_global'] ?? false): ?><span class="sticky-global-tag">ANNOUNCEMENT</span><?php endif; ?>
                 <?php if ($thread['pinned'] ?? false): ?><span class="pin-tag">PINNED</span><?php endif; ?>
                 <?php if ($thread['locked'] ?? false): ?><span class="lock-tag">LOCKED</span><?php endif; ?>
+                <?php if (!empty($thread['prefix'])): ?><?= prefixHtml($thread['prefix']) ?><?php endif; ?>
                 <?php foreach ($thread['tags'] ?? [] as $tagId): ?><?= tagHtml($tagId) ?><?php endforeach; ?>
                 <h1 style="font-size:1.1rem; color:#e5e5e5; font-weight:700;"><?= e($thread['title']) ?></h1>
             </div>
@@ -103,9 +108,26 @@ require_once __DIR__ . '/includes/header.php';
             </p>
         </div>
         <?php if (isAdmin()): ?>
-        <div style="display:flex; gap:6px; flex-wrap:wrap;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
             <form method="POST" class="inline-form"><?= csrfField() ?><input type="hidden" name="action" value="pin"><button class="btn btn-secondary btn-sm"><?= ($thread['pinned'] ?? false) ? 'Unpin' : 'Pin' ?></button></form>
             <form method="POST" class="inline-form"><?= csrfField() ?><input type="hidden" name="action" value="lock"><button class="btn btn-secondary btn-sm"><?= ($thread['locked'] ?? false) ? 'Unlock' : 'Lock' ?></button></form>
+            <form method="POST" class="inline-form"><?= csrfField() ?><input type="hidden" name="action" value="global_sticky"><button class="btn btn-secondary btn-sm"><?= ($thread['sticky_global'] ?? false) ? 'Unannounce' : 'Announce' ?></button></form>
+            <form method="POST" class="inline-form"><?= csrfField() ?><input type="hidden" name="action" value="set_prefix">
+                <select name="prefix" onchange="this.form.submit()" style="background:rgba(10,10,18,0.8);border:1px solid rgba(122,162,255,0.12);color:#8a96b8;padding:4px 8px;border-radius:5px;font-size:0.68rem;">
+                    <option value="">No Prefix</option>
+                    <?php foreach (getAvailablePrefixes() as $pfx): ?>
+                        <option value="<?= e($pfx['id']) ?>" <?= ($thread['prefix'] ?? '') === $pfx['id'] ? 'selected' : '' ?>><?= e($pfx['name']) ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+            <form method="POST" class="inline-form"><?= csrfField() ?><input type="hidden" name="action" value="move_thread">
+                <select name="new_category" onchange="if(this.value)this.form.submit()" style="background:rgba(10,10,18,0.8);border:1px solid rgba(122,162,255,0.12);color:#8a96b8;padding:4px 8px;border-radius:5px;font-size:0.68rem;">
+                    <option value="">Move to...</option>
+                    <?php foreach (getCategories() as $mc): if ($mc['id'] !== $thread['category']): ?>
+                        <option value="<?= e($mc['id']) ?>"><?= e($mc['name']) ?></option>
+                    <?php endif; endforeach; ?>
+                </select>
+            </form>
             <form method="POST" class="inline-form" onsubmit="return confirm('Delete this entire thread?')"><?= csrfField() ?><input type="hidden" name="action" value="delete_thread"><button class="btn btn-danger btn-sm">Delete</button></form>
         </div>
         <?php endif; ?>
@@ -162,6 +184,11 @@ require_once __DIR__ . '/includes/header.php';
                 $role = $profile['role'] ?? 'member';
                 $pc = $profile['post_count'] ?? 0;
                 $rank = getUserRank($pc);
+                $customTitle = getUserTitle($post['author']);
+                $postScore = getPostScore($post);
+                $userVotedUp = isLoggedIn() && in_array(currentUser(), $post['votes']['up'] ?? []);
+                $userVotedDown = isLoggedIn() && in_array(currentUser(), $post['votes']['down'] ?? []);
+                $signature = getUserSignature($post['author']);
                 $isEditing = isset($_GET['edit']) && $_GET['edit'] === $post['id'] && isLoggedIn() && ($post['author'] === currentUser() || isAdmin());
             ?>
             <div class="post" id="post-<?= e($post['id']) ?>">
@@ -169,12 +196,27 @@ require_once __DIR__ . '/includes/header.php';
                     <?= avatarHtml($post['author'], 48) ?>
                     <a href="/forum/profile.php?user=<?= e($post['author']) ?>" class="post-author-link"><?= e($post['author']) ?></a>
                     <div class="post-role"><?= roleBadge($role) ?></div>
+                    <?php if ($customTitle): ?><div class="post-custom-title"><?= e($customTitle) ?></div><?php endif; ?>
                     <div class="post-rank" style="color:<?= getRankColor($rank) ?>"><?= $rank ?></div>
                     <div style="margin-top:2px;">
                         <span class="online-dot <?= isUserOnline($post['author']) ? 'on' : 'off' ?>"></span>
                     </div>
+                    <?php $postRep = getUserReputation($post['author']); ?>
+                    <div class="rep-badge <?= $postRep > 0 ? 'positive' : ($postRep < 0 ? 'negative' : 'neutral') ?>" title="Reputation"><?= $postRep > 0 ? '+' : '' ?><?= $postRep ?> rep</div>
                 </div>
-                <div class="post-body">
+                <div class="post-body" style="display:flex;gap:10px;">
+                    <?php if (isLoggedIn() && $post['author'] !== currentUser()): ?>
+                    <div class="vote-wrap">
+                        <button class="vote-btn <?= $userVotedUp ? 'voted-up' : '' ?>" onclick="votePost('<?= e($threadId) ?>','<?= e($post['id']) ?>','up')" title="Upvote">&#9650;</button>
+                        <span class="vote-score <?= $postScore > 0 ? 'positive' : ($postScore < 0 ? 'negative' : '') ?>"><?= $postScore ?></span>
+                        <button class="vote-btn <?= $userVotedDown ? 'voted-down' : '' ?>" onclick="votePost('<?= e($threadId) ?>','<?= e($post['id']) ?>','down')" title="Downvote">&#9660;</button>
+                    </div>
+                    <?php elseif ($postScore != 0): ?>
+                    <div class="vote-wrap">
+                        <span class="vote-score <?= $postScore > 0 ? 'positive' : ($postScore < 0 ? 'negative' : '') ?>" style="margin-top:22px;"><?= $postScore > 0 ? '+' : '' ?><?= $postScore ?></span>
+                    </div>
+                    <?php endif; ?>
+                    <div style="flex:1;min-width:0;">
                     <?php if ($isEditing): ?>
                         <?php if ($editError): ?><div class="alert alert-error"><?= e($editError) ?></div><?php endif; ?>
                         <form method="POST" class="edit-form-inline">
@@ -252,6 +294,10 @@ require_once __DIR__ . '/includes/header.php';
                             </div>
                         </div>
                     <?php endif; ?>
+                    <?php if ($signature && !$isEditing): ?>
+                        <div class="post-signature"><?= e($signature) ?></div>
+                    <?php endif; ?>
+                    </div><!-- /flex inner -->
                 </div>
             </div>
             <?php endforeach; ?>
@@ -388,6 +434,18 @@ document.querySelectorAll('.reaction-form').forEach(function(f) {
             .then(function(){location.reload()});
     });
 });
+
+function votePost(threadId, postId, direction) {
+    var fd = new FormData();
+    fd.append('action', 'vote');
+    fd.append('thread_id', threadId);
+    fd.append('post_id', postId);
+    fd.append('direction', direction);
+    fd.append('csrf_token', '<?= csrfToken() ?>');
+    fetch('/forum/api.php', {method:'POST', body:fd})
+        .then(function(r){return r.json()})
+        .then(function(data){ if(data.ok) location.reload(); else if(data.error) alert(data.error); });
+}
 </script>
 
 <?php require_once __DIR__ . '/includes/footer.php'; ?>
