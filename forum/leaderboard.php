@@ -19,7 +19,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="forum-wrap" style="max-width:700px;">
     <div class="breadcrumbs">
-        <a href="/forum/">Forum</a><span class="sep">/</span><span>Leaderboard</span>
+        <a href="/forum/">m190</a><span class="sep">/</span><span>Leaderboard</span>
     </div>
 
     <div class="flex-between mb-4">

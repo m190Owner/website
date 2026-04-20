@@ -14,6 +14,9 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf()) {
         $error = 'Invalid request. Please try again.';
+    } elseif (!empty($_POST['website_url'])) {
+        // Honeypot triggered — silent reject
+        $error = 'Invalid username or password.';
     } else {
         enforceRateLimit('forum_login', 10, 60);
         $result = doLogin($_POST['username'] ?? '', $_POST['password'] ?? '');
@@ -52,6 +55,10 @@ require_once __DIR__ . '/includes/header.php';
             <div class="form-group">
                 <label class="form-label" for="password">Password</label>
                 <input class="form-input" type="password" id="password" name="password">
+            </div>
+            <!-- Honeypot -->
+            <div style="position:absolute;left:-9999px;" aria-hidden="true">
+                <input type="text" name="website_url" tabindex="-1" autocomplete="off">
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Login</button>
         </form>

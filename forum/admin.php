@@ -14,6 +14,7 @@ $success = '';
 $error = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && verifyCsrf()) {
+    enforceRateLimit('admin_action', 30, 60);
     $action = $_POST['action'] ?? '';
 
     if ($action === 'generate_invite') { $code = generateInvite(); logModAction('invite', "Generated invite code $code"); $success = "Invite code generated: <strong>$code</strong>"; }
@@ -215,7 +216,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="modlog-entry">
                         <span class="modlog-action"><?= e($entry['action']) ?></span>
                         <div class="modlog-details"><?= e($entry['details']) ?></div>
-                        <div class="modlog-meta">by <?= e($entry['actor']) ?> &middot; <?= timeAgo($entry['created']) ?></div>
+                        <div class="modlog-meta">by <?= e($entry['actor']) ?><?php if ($entry['ip'] ?? ''): ?> <span style="color:#3a4060;">(<?= e($entry['ip']) ?>)</span><?php endif; ?> &middot; <?= timeAgo($entry['created']) ?></div>
                     </div>
                     <?php endforeach; ?>
                 <?php endif; ?>

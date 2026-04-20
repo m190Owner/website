@@ -1,6 +1,19 @@
     <div style="text-align:center; padding:30px 0 20px; font-size:0.68rem; color:#3a4060; border-top:1px solid rgba(122,162,255,0.04); margin-top:40px;">
-        &copy; <?= date('Y') ?> Logan Sandivar &middot; Invite Only
+        &copy; <?= date('Y') ?> m190 &middot; Invite Only
     </div>
+<script>
+// Delegated event handlers — no inline onclick needed
+document.addEventListener('click', function(e) {
+    // Spoiler reveal
+    if (e.target.closest('[data-spoiler]')) {
+        e.target.closest('[data-spoiler]').classList.toggle('revealed');
+    }
+    // Image expand
+    if (e.target.matches('[data-expandable]')) {
+        window.open(e.target.src);
+    }
+});
+</script>
 <?php if (isLoggedIn()): ?>
 <script>
 function toggleNotifs(e) {

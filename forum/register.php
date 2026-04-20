@@ -10,6 +10,8 @@ $error = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!verifyCsrf()) {
         $error = 'Invalid request. Please try again.';
+    } elseif (!empty($_POST['website_url'])) {
+        $error = 'Registration failed.';
     } else {
         enforceRateLimit('forum_register', 5, 60);
         $result = doRegister(
@@ -31,7 +33,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="auth-wrap">
     <div class="card auth-card">
-        <h1>Join the forum</h1>
+        <h1>Join m190</h1>
         <p class="subtitle">You need an invite code to register</p>
 
         <?php if ($error): ?>
@@ -57,6 +59,9 @@ require_once __DIR__ . '/includes/header.php';
                 <label class="form-label" for="password">Password</label>
                 <input class="form-input" type="password" id="password" name="password" required minlength="8">
                 <p class="form-hint">Minimum 8 characters</p>
+            </div>
+            <div style="position:absolute;left:-9999px;" aria-hidden="true">
+                <input type="text" name="website_url" tabindex="-1" autocomplete="off">
             </div>
             <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">Create Account</button>
         </form>

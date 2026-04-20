@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/includes/bootstrap.php';
 $navActive = 'forum';
-$pageTitle = 'Forum';
+$pageTitle = 'm190';
 require_once __DIR__ . '/includes/header.php';
 
 $categories = getTopLevelCategories();
@@ -186,7 +186,7 @@ $catIcons = ['general' => '💬', 'projects' => '🔧', 'gaming' => '🎮', 'off
 
     <?php if (!isLoggedIn()): ?>
     <div style="text-align:center; margin-top:30px;">
-        <p style="color:#5a6480; font-size:0.85rem; margin-bottom:12px;">This forum is invite-only. Have an invite code?</p>
+        <p style="color:#5a6480; font-size:0.85rem; margin-bottom:12px;">m190 is invite-only. Have an invite code?</p>
         <a href="/forum/register.php" class="btn btn-primary">Register</a>
         <a href="/forum/login.php" class="btn btn-secondary" style="margin-left:8px;">Login</a>
     </div>

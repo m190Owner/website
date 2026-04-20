@@ -1,5 +1,21 @@
 <?php
+// ---- Session Hardening ----
+ini_set('session.cookie_httponly', '1');
+ini_set('session.cookie_secure', '1');
+ini_set('session.cookie_samesite', 'Strict');
+ini_set('session.use_strict_mode', '1');
+ini_set('session.use_only_cookies', '1');
+ini_set('session.gc_maxlifetime', '3600');
 session_start();
+
+// ---- Security Headers ----
+header('X-Frame-Options: DENY');
+header('X-Content-Type-Options: nosniff');
+header('X-XSS-Protection: 1; mode=block');
+header('Referrer-Policy: strict-origin-when-cross-origin');
+header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
+header('Strict-Transport-Security: max-age=31536000; includeSubDomains; preload');
+header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://www.youtube-nocookie.com; connect-src 'self'; font-src 'self'; base-uri 'self'; form-action 'self'");
 
 // ---- Paths ----
 define('FORUM_ROOT', dirname(__DIR__));
@@ -69,25 +85,72 @@ function isAdmin(): bool {
     return $data && ($data['role'] ?? '') === 'admin';
 }
 
+function getLoginAttemptsFile(string $key): string {
+    return DATA_DIR . '/login_attempts_' . md5($key) . '.json';
+}
+
+function isAccountLocked(string $key): bool {
+    $file = getLoginAttemptsFile($key);
+    $data = readJsonFile($file, ['attempts' => 0, 'last_attempt' => 0, 'locked_until' => 0]);
+    if ($data['locked_until'] > time()) return true;
+    return false;
+}
+
+function recordFailedLogin(string $key): void {
+    $file = getLoginAttemptsFile($key);
+    $data = readJsonFile($file, ['attempts' => 0, 'last_attempt' => 0, 'locked_until' => 0]);
+    // Reset if last attempt was > 15 minutes ago
+    if (time() - $data['last_attempt'] > 900) $data['attempts'] = 0;
+    $data['attempts']++;
+    $data['last_attempt'] = time();
+    // Progressive lockout: 5 fails = 30s, 10 = 2min, 15 = 5min, 20+ = 15min
+    if ($data['attempts'] >= 20) $data['locked_until'] = time() + 900;
+    elseif ($data['attempts'] >= 15) $data['locked_until'] = time() + 300;
+    elseif ($data['attempts'] >= 10) $data['locked_until'] = time() + 120;
+    elseif ($data['attempts'] >= 5) $data['locked_until'] = time() + 30;
+    writeJsonFile($file, $data);
+}
+
+function clearLoginAttempts(string $key): void {
+    $file = getLoginAttemptsFile($key);
+    if (file_exists($file)) @unlink($file);
+}
+
 function doLogin(string $username, string $password): array {
     $users = readJsonFile(USERS_FILE, []);
     $key = strtolower(trim($username));
 
+    // Check account lockout (use both IP and username)
+    $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+    $lockKey = $key ?: $ip;
+    if (isAccountLocked($lockKey)) {
+        return ['ok' => false, 'error' => 'Too many failed attempts. Please try again later.'];
+    }
+    if (isAccountLocked('ip_' . md5($ip))) {
+        return ['ok' => false, 'error' => 'Too many failed attempts. Please try again later.'];
+    }
+
     if (!isset($users[$key])) {
+        // Constant-time: always hash something to prevent timing attacks
+        password_verify($password, '$2y$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012');
+        recordFailedLogin($lockKey);
+        recordFailedLogin('ip_' . md5($ip));
         return ['ok' => false, 'error' => 'Invalid username or password.'];
     }
 
     $user = $users[$key];
 
     if ($user['needs_password'] ?? false) {
-        // First login — no password required, redirect to setup
         session_regenerate_id(true);
         $_SESSION['forum_user'] = $user['username'];
         $_SESSION['needs_password'] = true;
+        clearLoginAttempts($lockKey);
         return ['ok' => true, 'needs_password' => true];
     }
 
     if (!password_verify($password, $user['password_hash'])) {
+        recordFailedLogin($lockKey);
+        recordFailedLogin('ip_' . md5($ip));
         return ['ok' => false, 'error' => 'Invalid username or password.'];
     }
 
@@ -95,6 +158,8 @@ function doLogin(string $username, string $password): array {
         return ['ok' => false, 'error' => 'This account has been banned.'];
     }
 
+    clearLoginAttempts($lockKey);
+    clearLoginAttempts('ip_' . md5($ip));
     session_regenerate_id(true);
     $_SESSION['forum_user'] = $user['username'];
     return ['ok' => true];
@@ -130,6 +195,10 @@ function doRegister(string $username, string $password, string $inviteCode): arr
     if (!preg_match('/^[a-zA-Z0-9_]+$/', $username)) {
         return ['ok' => false, 'error' => 'Username may only contain letters, numbers, and underscores.'];
     }
+    $reserved = ['admin', 'administrator', 'system', 'root', 'mod', 'moderator', 'staff', 'support', 'help', 'null', 'undefined', 'anonymous', 'bot', 'm190', 'forum'];
+    if (in_array($key, $reserved)) {
+        return ['ok' => false, 'error' => 'This username is reserved.'];
+    }
     if (strlen($password) < 8) {
         return ['ok' => false, 'error' => 'Password must be at least 8 characters.'];
     }
@@ -140,7 +209,7 @@ function doRegister(string $username, string $password, string $inviteCode): arr
     $inviteIndex = -1;
 
     foreach ($invites as $i => $inv) {
-        if ($inv['code'] === $inviteCode && !$inv['used']) {
+        if (hash_equals($inv['code'], $inviteCode) && !$inv['used']) {
             $validInvite = true;
             $inviteIndex = $i;
             break;
@@ -1166,6 +1235,7 @@ function logModAction(string $action, string $details): void {
         'id' => bin2hex(random_bytes(6)),
         'action' => $action, 'details' => $details,
         'actor' => currentUser() ?? 'system',
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
         'created' => date('c')
     ];
     if (count($log) > 500) $log = array_slice($log, -500);
@@ -1295,7 +1365,7 @@ function formatContent(string $text): string {
     // Italic
     $text = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $text);
     // Spoilers
-    $text = preg_replace('/\|\|(.+?)\|\|/s', '<span class="spoiler" onclick="this.classList.toggle(\'revealed\')">$1</span>', $text);
+    $text = preg_replace('/\|\|(.+?)\|\|/s', '<span class="spoiler" data-spoiler>$1</span>', $text);
 
     // YouTube embeds (before general URL linking)
     $text = preg_replace(
@@ -1309,8 +1379,15 @@ function formatContent(string $text): string {
         $text
     );
 
-    // Image embeds ![alt](url)
-    $text = preg_replace('/!\[([^\]]*)\]\(([^)]+)\)/', '<img class="post-image" src="$2" alt="$1" loading="lazy" onclick="window.open(this.src)">', $text);
+    // Image embeds ![alt](url) — only allow http/https and relative paths, block data:/javascript:
+    $text = preg_replace_callback('/!\[([^\]]*)\]\(([^)]+)\)/', function($m) {
+        $alt = $m[1];
+        $url = trim($m[2]);
+        if (preg_match('/^(https?:\/\/|\/forum\/uploads\/)/', $url)) {
+            return '<img class="post-image" src="' . $url . '" alt="' . $alt . '" loading="lazy" data-expandable>';
+        }
+        return $m[0]; // Leave as-is if URL is suspicious
+    }, $text);
 
     // URLs (not already in href/src)
     $text = preg_replace('/(?<!["\'=>\/])(https?:\/\/[^\s<]+)/', '<a href="$1" target="_blank" rel="noopener">$1</a>', $text);

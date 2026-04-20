@@ -83,7 +83,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="forum-wrap">
     <div class="breadcrumbs">
-        <a href="/forum/">Forum</a><span class="sep">/</span>
+        <a href="/forum/">m190</a><span class="sep">/</span>
         <a href="/forum/category.php?id=<?= e($thread['category']) ?>"><?= e($category['name'] ?? $thread['category']) ?></a>
         <span class="sep">/</span>
         <span><?= e(mb_strimwidth($thread['title'], 0, 40, '...')) ?></span>

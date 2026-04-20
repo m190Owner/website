@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= e($pageTitle ?? 'Forum') ?> | Logan Sandivar</title>
+    <title><?= e($pageTitle ?? 'm190') ?> | m190</title>
     <link rel="icon" type="image/svg+xml" href="../favicon.svg">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -389,7 +389,7 @@
 <body>
     <nav class="forum-nav">
         <div class="forum-nav-left">
-            <a href="/forum/" class="forum-nav-brand">Forum</a>
+            <a href="/forum/" class="forum-nav-brand">m190</a>
             <div class="forum-nav-links">
                 <a href="/" class="<?= ($navActive ?? '') === 'home' ? 'active' : '' ?>">Main Site</a>
                 <a href="/forum/" class="<?= ($navActive ?? '') === 'forum' ? 'active' : '' ?>">Categories</a>
