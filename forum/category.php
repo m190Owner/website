@@ -22,9 +22,7 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="forum-wrap">
     <div class="breadcrumbs">
-        <a href="/forum/">Forum</a>
-        <span class="sep">/</span>
-        <span><?= e($category['name']) ?></span>
+        <a href="/forum/">Forum</a><span class="sep">/</span><span><?= e($category['name']) ?></span>
     </div>
 
     <div class="flex-between mb-4">
@@ -54,18 +52,17 @@ require_once __DIR__ . '/includes/header.php';
                         <div class="thread-title-row">
                             <?php if ($thread['pinned'] ?? false): ?><span class="pin-tag">PIN</span><?php endif; ?>
                             <?php if ($thread['locked'] ?? false): ?><span class="lock-tag">LOCKED</span><?php endif; ?>
+                            <?php foreach ($thread['tags'] ?? [] as $tagId): ?><?= tagHtml($tagId) ?><?php endforeach; ?>
                             <a href="/forum/thread.php?id=<?= e($thread['id']) ?>" class="thread-title"><?= e($thread['title']) ?></a>
                         </div>
                         <div class="thread-meta">
                             by <a href="/forum/profile.php?user=<?= e($thread['author']) ?>"><?= e($thread['author']) ?></a>
                             &middot; <?= timeAgo($thread['created']) ?>
+                            <?php if (isset($thread['poll'])): ?> &middot; <span style="color:#7aa2ff;">📊 Poll</span><?php endif; ?>
                         </div>
                     </div>
                     <div class="thread-stats">
-                        <div>
-                            <span class="cat-stat-num"><?= $thread['reply_count'] ?></span>
-                            <span class="cat-stat-label">Replies</span>
-                        </div>
+                        <div><span class="cat-stat-num"><?= $thread['reply_count'] ?></span><span class="cat-stat-label">Replies</span></div>
                     </div>
                     <div class="thread-last">
                         <a href="/forum/profile.php?user=<?= e($thread['last_post_author']) ?>"><?= e($thread['last_post_author']) ?></a><br>

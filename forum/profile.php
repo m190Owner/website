@@ -13,7 +13,6 @@ if (!$profile) {
     exit;
 }
 
-// Handle profile updates
 $avatarError = '';
 $avatarSuccess = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf() && currentUser() === $profile['username']) {
@@ -30,16 +29,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf() && cur
     if ($action === 'upload_avatar' && isset($_FILES['avatar'])) {
         enforceRateLimit('forum_avatar', 5, 60);
         $result = uploadAvatar($_FILES['avatar']);
-        if ($result['ok']) {
-            $avatarSuccess = 'Profile picture updated.';
-        } else {
-            $avatarError = $result['error'];
-        }
+        if ($result['ok']) $avatarSuccess = 'Profile picture updated.';
+        else $avatarError = $result['error'];
     }
 
     if ($action === 'remove_avatar') {
         $key = strtolower(currentUser());
-        foreach (['jpg', 'jpeg', 'png', 'gif', 'webp'] as $ext) {
+        foreach (['jpg','jpeg','png','gif','webp'] as $ext) {
             $old = AVATARS_DIR . '/' . $key . '.' . $ext;
             if (file_exists($old)) unlink($old);
         }
@@ -47,7 +43,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isLoggedIn() && verifyCsrf() && cur
     }
 }
 
-// Get recent posts by user
 $recentPosts = [];
 foreach (getAllThreadFiles() as $file) {
     $thread = readJsonFile($file);
@@ -65,6 +60,9 @@ foreach (getAllThreadFiles() as $file) {
 usort($recentPosts, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
 $recentPosts = array_slice($recentPosts, 0, 10);
 
+$rank = getUserRank($profile['post_count']);
+$online = isUserOnline($profile['username']);
+
 $navActive = 'profile';
 $pageTitle = $profile['username'];
 require_once __DIR__ . '/includes/header.php';
@@ -72,8 +70,8 @@ require_once __DIR__ . '/includes/header.php';
 
 <div class="forum-wrap" style="max-width:700px;">
     <div class="breadcrumbs">
-        <a href="/forum/">Forum</a>
-        <span class="sep">/</span>
+        <a href="/forum/">Forum</a><span class="sep">/</span>
+        <a href="/forum/members.php">Members</a><span class="sep">/</span>
         <span><?= e($profile['username']) ?></span>
     </div>
 
@@ -81,10 +79,16 @@ require_once __DIR__ . '/includes/header.php';
         <div class="profile-header">
             <?= avatarHtml($profile['username'], 64) ?>
             <div class="profile-info">
-                <h1><?= e($profile['username']) ?><?= roleBadge($profile['role']) ?></h1>
+                <h1>
+                    <span class="online-dot <?= $online ? 'on' : 'off' ?>"></span>
+                    <?= e($profile['username']) ?><?= roleBadge($profile['role']) ?>
+                </h1>
                 <?php if ($profile['banned'] ?? false): ?>
                     <span class="badge" style="background:rgba(255,107,107,0.12); color:#ff6b6b;">BANNED</span>
                 <?php endif; ?>
+                <div style="margin-top:3px;">
+                    <span class="post-rank" style="color:<?= getRankColor($rank) ?>;font-size:0.72rem;"><?= $rank ?></span>
+                </div>
                 <?php if ($profile['bio'] ?? ''): ?>
                     <p style="color:#8a96b8; font-size:0.82rem; margin-top:4px;"><?= e($profile['bio']) ?></p>
                 <?php endif; ?>
@@ -94,16 +98,15 @@ require_once __DIR__ . '/includes/header.php';
                     <div><span class="text-muted text-sm">joined</span> <span style="color:#8a96b8; font-size:0.78rem;"><?= date('M j, Y', strtotime($profile['created'])) ?></span></div>
                 </div>
             </div>
+            <?php if (isLoggedIn() && currentUser() !== $profile['username']): ?>
+                <a href="/forum/messages.php?to=<?= e($profile['username']) ?>" class="btn btn-secondary btn-sm" style="align-self:flex-start;">Message</a>
+            <?php endif; ?>
         </div>
 
         <?php if (isLoggedIn() && currentUser() === $profile['username']): ?>
         <div style="padding:0 24px 20px;">
-            <?php if ($avatarError): ?>
-                <div class="alert alert-error"><?= e($avatarError) ?></div>
-            <?php endif; ?>
-            <?php if ($avatarSuccess): ?>
-                <div class="alert alert-success"><?= e($avatarSuccess) ?></div>
-            <?php endif; ?>
+            <?php if ($avatarError): ?><div class="alert alert-error"><?= e($avatarError) ?></div><?php endif; ?>
+            <?php if ($avatarSuccess): ?><div class="alert alert-success"><?= e($avatarSuccess) ?></div><?php endif; ?>
 
             <div style="display:flex; gap:20px; flex-wrap:wrap;">
                 <form method="POST" enctype="multipart/form-data" style="flex:1; min-width:200px;">
@@ -111,8 +114,7 @@ require_once __DIR__ . '/includes/header.php';
                     <input type="hidden" name="action" value="upload_avatar">
                     <div class="form-group" style="margin-bottom:8px;">
                         <label class="form-label" for="avatar">Profile Picture</label>
-                        <input class="form-input" type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp" required
-                               style="padding:7px;">
+                        <input class="form-input" type="file" id="avatar" name="avatar" accept="image/jpeg,image/png,image/gif,image/webp" required style="padding:7px;">
                         <p class="form-hint">JPG, PNG, GIF, or WebP. Max 2MB.</p>
                     </div>
                     <div style="display:flex; gap:6px;">
@@ -122,19 +124,13 @@ require_once __DIR__ . '/includes/header.php';
                         <?php endif; ?>
                     </div>
                 </form>
-
-                <form method="POST" id="remove-avatar-form" style="display:none;">
-                    <?= csrfField() ?>
-                    <input type="hidden" name="action" value="remove_avatar">
-                </form>
-
+                <form method="POST" id="remove-avatar-form" style="display:none;"><?= csrfField() ?><input type="hidden" name="action" value="remove_avatar"></form>
                 <form method="POST" style="flex:2; min-width:250px;">
                     <?= csrfField() ?>
                     <input type="hidden" name="action" value="update_bio">
                     <div class="form-group" style="margin-bottom:8px;">
                         <label class="form-label" for="bio">Bio</label>
-                        <input class="form-input" type="text" id="bio" name="bio" maxlength="200"
-                               value="<?= e($profile['bio'] ?? '') ?>" placeholder="Tell us about yourself...">
+                        <input class="form-input" type="text" id="bio" name="bio" maxlength="200" value="<?= e($profile['bio'] ?? '') ?>" placeholder="Tell us about yourself...">
                     </div>
                     <button type="submit" class="btn btn-secondary btn-sm">Update Bio</button>
                 </form>
@@ -145,9 +141,7 @@ require_once __DIR__ . '/includes/header.php';
 
     <?php if (!empty($recentPosts)): ?>
     <div class="card">
-        <div class="card-header">
-            <h2>Recent Posts</h2>
-        </div>
+        <div class="card-header"><h2>Recent Posts</h2></div>
         <div class="card-body">
             <?php foreach ($recentPosts as $rp): ?>
             <div class="thread-row">

@@ -9,14 +9,18 @@ define('USERS_FILE', DATA_DIR . '/users.json');
 define('CATEGORIES_FILE', DATA_DIR . '/categories.json');
 define('INVITES_FILE', DATA_DIR . '/invites.json');
 define('AVATARS_DIR', FORUM_ROOT . '/uploads/avatars');
+define('MESSAGES_DIR', DATA_DIR . '/messages');
+define('REPORTS_FILE', DATA_DIR . '/reports.json');
+define('POST_IMAGES_DIR', FORUM_ROOT . '/uploads/posts');
 
 require_once dirname(FORUM_ROOT) . '/config.php';
 
-foreach ([DATA_DIR, THREADS_DIR, AVATARS_DIR] as $dir) {
+foreach ([DATA_DIR, THREADS_DIR, AVATARS_DIR, MESSAGES_DIR, POST_IMAGES_DIR] as $dir) {
     if (!is_dir($dir)) mkdir($dir, 0755, true);
 }
 
 initializeForumData();
+trackOnline();
 
 // Force password setup before accessing any other page
 $_currentScript = basename($_SERVER['SCRIPT_FILENAME'] ?? '');
@@ -238,39 +242,44 @@ function saveThread(array $thread): void {
     writeJsonFile($file, $thread);
 }
 
-function createThread(string $catId, string $title, string $content): array {
+function createThread(string $catId, string $title, string $content, array $tags = [], ?array $poll = null): array {
     if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
     $title = trim($title);
     $content = trim($content);
-    if (strlen($title) < 3 || strlen($title) > 120) {
+    if (strlen($title) < 3 || strlen($title) > 120)
         return ['ok' => false, 'error' => 'Title must be 3-120 characters.'];
-    }
-    if (strlen($content) < 1 || strlen($content) > 10000) {
+    if (strlen($content) < 1 || strlen($content) > 10000)
         return ['ok' => false, 'error' => 'Content must be 1-10000 characters.'];
-    }
-    if (!getCategoryById($catId)) {
+    if (!getCategoryById($catId))
         return ['ok' => false, 'error' => 'Invalid category.'];
-    }
+
+    $validTags = array_column(getAvailableTags(), 'id');
+    $tags = array_values(array_intersect($tags, $validTags));
 
     $id = bin2hex(random_bytes(8));
     $now = date('c');
     $thread = [
-        'id' => $id,
-        'category' => $catId,
-        'title' => $title,
-        'author' => currentUser(),
-        'created' => $now,
-        'pinned' => false,
-        'locked' => false,
-        'posts' => [
-            [
-                'id' => bin2hex(random_bytes(6)),
-                'author' => currentUser(),
-                'content' => $content,
-                'created' => $now
-            ]
-        ]
+        'id' => $id, 'category' => $catId, 'title' => $title,
+        'author' => currentUser(), 'created' => $now,
+        'pinned' => false, 'locked' => false, 'tags' => $tags,
+        'posts' => [[
+            'id' => bin2hex(random_bytes(6)),
+            'author' => currentUser(), 'content' => $content,
+            'created' => $now, 'reactions' => []
+        ]]
     ];
+
+    if ($poll && !empty($poll['question']) && !empty($poll['options'])) {
+        $opts = array_values(array_filter(array_map('trim', $poll['options']), fn($o) => $o !== ''));
+        if (count($opts) >= 2 && count($opts) <= 10) {
+            $thread['poll'] = [
+                'question' => trim($poll['question']),
+                'options' => array_map(fn($o) => ['text' => $o, 'votes' => []], $opts),
+                'closed' => false
+            ];
+        }
+    }
+
     saveThread($thread);
     return ['ok' => true, 'id' => $id];
 }
@@ -502,12 +511,422 @@ function deleteCategory(string $id): bool {
 }
 
 // ==============================================
+// ONLINE TRACKING
+// ==============================================
+function trackOnline(): void {
+    if (!isLoggedIn()) return;
+    $file = DATA_DIR . '/online.json';
+    $online = readJsonFile($file, []);
+    $online[strtolower(currentUser())] = time();
+    $online = array_filter($online, fn($t) => time() - $t < 300);
+    writeJsonFile($file, $online);
+}
+
+function isUserOnline(string $username): bool {
+    $online = readJsonFile(DATA_DIR . '/online.json', []);
+    return (time() - ($online[strtolower($username)] ?? 0)) < 300;
+}
+
+function getOnlineUsers(): array {
+    $online = readJsonFile(DATA_DIR . '/online.json', []);
+    $result = [];
+    $users = readJsonFile(USERS_FILE, []);
+    foreach ($online as $key => $time) {
+        if (time() - $time < 300 && isset($users[$key])) {
+            $result[] = $users[$key]['username'];
+        }
+    }
+    return $result;
+}
+
+function getOnlineCount(): int { return count(getOnlineUsers()); }
+
+// ==============================================
+// USER RANKS
+// ==============================================
+function getUserRank(int $postCount): string {
+    if ($postCount >= 500) return 'Legend';
+    if ($postCount >= 200) return 'Veteran';
+    if ($postCount >= 100) return 'Regular';
+    if ($postCount >= 50) return 'Active';
+    if ($postCount >= 10) return 'Member';
+    return 'Newbie';
+}
+
+function getRankColor(string $rank): string {
+    return match($rank) {
+        'Legend' => '#ffb86b',
+        'Veteran' => '#b86bff',
+        'Regular' => '#6bffb8',
+        'Active' => '#6bddff',
+        'Member' => '#7aa2ff',
+        default => '#5a6480'
+    };
+}
+
+// ==============================================
+// SEARCH
+// ==============================================
+function searchForum(string $query, int $page = 1, int $perPage = 20): array {
+    $query = trim($query);
+    if (strlen($query) < 2) return ['results' => [], 'total' => 0, 'pages' => 1];
+    $results = [];
+
+    foreach (getAllThreadFiles() as $file) {
+        $thread = readJsonFile($file);
+        $titleMatch = stripos($thread['title'], $query) !== false;
+
+        if ($titleMatch) {
+            $results[] = [
+                'type' => 'thread', 'thread_id' => $thread['id'],
+                'thread_title' => $thread['title'], 'category' => $thread['category'],
+                'author' => $thread['author'], 'created' => $thread['created'],
+                'excerpt' => mb_strimwidth($thread['posts'][0]['content'] ?? '', 0, 150, '...')
+            ];
+        }
+
+        foreach ($thread['posts'] as $post) {
+            if (stripos($post['content'], $query) !== false) {
+                $results[] = [
+                    'type' => 'post', 'thread_id' => $thread['id'],
+                    'thread_title' => $thread['title'], 'post_id' => $post['id'],
+                    'category' => $thread['category'], 'author' => $post['author'],
+                    'created' => $post['created'],
+                    'excerpt' => getSearchExcerpt($post['content'], $query)
+                ];
+            }
+        }
+    }
+
+    $seen = [];
+    $results = array_values(array_filter($results, function($r) use (&$seen) {
+        $key = $r['thread_id'] . '_' . ($r['post_id'] ?? 'title');
+        if (isset($seen[$key])) return false;
+        $seen[$key] = true;
+        return true;
+    }));
+    usort($results, function($a, $b) {
+        if ($a['type'] !== $b['type']) return $a['type'] === 'thread' ? -1 : 1;
+        return strtotime($b['created']) - strtotime($a['created']);
+    });
+
+    $total = count($results);
+    return ['results' => array_slice($results, ($page - 1) * $perPage, $perPage), 'total' => $total, 'pages' => max(1, (int)ceil($total / $perPage))];
+}
+
+function getSearchExcerpt(string $content, string $query): string {
+    $pos = stripos($content, $query);
+    if ($pos === false) return mb_strimwidth($content, 0, 150, '...');
+    $start = max(0, $pos - 60);
+    $excerpt = mb_substr($content, $start, 150);
+    if ($start > 0) $excerpt = '...' . $excerpt;
+    if ($start + 150 < mb_strlen($content)) $excerpt .= '...';
+    return $excerpt;
+}
+
+// ==============================================
+// POST EDITING
+// ==============================================
+function editPost(string $threadId, string $postId, string $content): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $content = trim($content);
+    if (strlen($content) < 1 || strlen($content) > 10000)
+        return ['ok' => false, 'error' => 'Content must be 1-10000 characters.'];
+    $thread = getThread($threadId);
+    if (!$thread) return ['ok' => false, 'error' => 'Thread not found.'];
+    foreach ($thread['posts'] as &$post) {
+        if ($post['id'] === $postId) {
+            if ($post['author'] !== currentUser() && !isAdmin())
+                return ['ok' => false, 'error' => 'You can only edit your own posts.'];
+            $post['content'] = $content;
+            $post['edited'] = date('c');
+            saveThread($thread);
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'Post not found.'];
+}
+
+// ==============================================
+// REACTIONS
+// ==============================================
+function getReactionEmojis(): array {
+    return ['👍', '❤️', '😂', '🔥', '👀', '💯'];
+}
+
+function toggleReaction(string $threadId, string $postId, string $emoji): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    if (!in_array($emoji, getReactionEmojis())) return ['ok' => false, 'error' => 'Invalid reaction.'];
+    $thread = getThread($threadId);
+    if (!$thread) return ['ok' => false, 'error' => 'Thread not found.'];
+    foreach ($thread['posts'] as &$post) {
+        if ($post['id'] === $postId) {
+            if (!isset($post['reactions'])) $post['reactions'] = [];
+            if (!isset($post['reactions'][$emoji])) $post['reactions'][$emoji] = [];
+            $user = currentUser();
+            $idx = array_search($user, $post['reactions'][$emoji]);
+            if ($idx !== false) {
+                array_splice($post['reactions'][$emoji], $idx, 1);
+                if (empty($post['reactions'][$emoji])) unset($post['reactions'][$emoji]);
+            } else {
+                $post['reactions'][$emoji][] = $user;
+            }
+            saveThread($thread);
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'Post not found.'];
+}
+
+// ==============================================
+// PRIVATE MESSAGES
+// ==============================================
+function getConversationFile(string $user1, string $user2): string {
+    $users = [strtolower($user1), strtolower($user2)];
+    sort($users);
+    return MESSAGES_DIR . '/' . implode('_', $users) . '.json';
+}
+
+function sendMessage(string $to, string $content): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $content = trim($content);
+    if (strlen($content) < 1 || strlen($content) > 5000)
+        return ['ok' => false, 'error' => 'Message must be 1-5000 characters.'];
+    $users = readJsonFile(USERS_FILE, []);
+    $toKey = strtolower(trim($to));
+    if (!isset($users[$toKey])) return ['ok' => false, 'error' => 'User not found.'];
+    $to = $users[$toKey]['username'];
+    if (strtolower($to) === strtolower(currentUser()))
+        return ['ok' => false, 'error' => 'Cannot message yourself.'];
+    $file = getConversationFile(currentUser(), $to);
+    $convo = readJsonFile($file, ['users' => [currentUser(), $to], 'messages' => []]);
+    $convo['messages'][] = [
+        'id' => bin2hex(random_bytes(6)), 'from' => currentUser(),
+        'content' => $content, 'created' => date('c'), 'read' => false
+    ];
+    writeJsonFile($file, $convo);
+    return ['ok' => true];
+}
+
+function getConversations(): array {
+    if (!isLoggedIn()) return [];
+    $convos = [];
+    $files = glob(MESSAGES_DIR . '/*.json') ?: [];
+    $me = strtolower(currentUser());
+    foreach ($files as $file) {
+        $key = pathinfo($file, PATHINFO_FILENAME);
+        if (strpos($key, $me) === false) continue;
+        $convo = readJsonFile($file);
+        $messages = $convo['messages'] ?? [];
+        if (empty($messages)) continue;
+        $lastMsg = end($messages);
+        $otherUser = null;
+        foreach ($convo['users'] ?? [] as $u) {
+            if (strtolower($u) !== $me) { $otherUser = $u; break; }
+        }
+        if (!$otherUser) continue;
+        $unread = 0;
+        foreach ($messages as $msg) {
+            if (strtolower($msg['from']) !== $me && !($msg['read'] ?? true)) $unread++;
+        }
+        $convos[] = ['user' => $otherUser, 'last_message' => $lastMsg, 'unread' => $unread];
+    }
+    usort($convos, fn($a, $b) => strtotime($b['last_message']['created']) - strtotime($a['last_message']['created']));
+    return $convos;
+}
+
+function getMessages(string $otherUser): array {
+    if (!isLoggedIn()) return [];
+    $file = getConversationFile(currentUser(), $otherUser);
+    $convo = readJsonFile($file, ['users' => [currentUser(), $otherUser], 'messages' => []]);
+    $me = strtolower(currentUser());
+    $changed = false;
+    foreach ($convo['messages'] as &$msg) {
+        if (strtolower($msg['from']) !== $me && !($msg['read'] ?? true)) {
+            $msg['read'] = true;
+            $changed = true;
+        }
+    }
+    if ($changed) writeJsonFile($file, $convo);
+    return $convo['messages'];
+}
+
+function getUnreadCount(): int {
+    $count = 0;
+    foreach (getConversations() as $c) $count += $c['unread'];
+    return $count;
+}
+
+// ==============================================
+// REPORTS
+// ==============================================
+function reportPost(string $threadId, string $postId, string $reason): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $reason = trim($reason);
+    if (strlen($reason) < 3 || strlen($reason) > 500)
+        return ['ok' => false, 'error' => 'Reason must be 3-500 characters.'];
+    $reports = readJsonFile(REPORTS_FILE, []);
+    foreach ($reports as $r) {
+        if ($r['thread_id'] === $threadId && $r['post_id'] === $postId
+            && $r['reported_by'] === currentUser() && !$r['resolved'])
+            return ['ok' => false, 'error' => 'You already reported this post.'];
+    }
+    $reports[] = [
+        'id' => bin2hex(random_bytes(6)), 'thread_id' => $threadId,
+        'post_id' => $postId, 'reported_by' => currentUser(),
+        'reason' => $reason, 'created' => date('c'),
+        'resolved' => false, 'resolved_by' => null
+    ];
+    writeJsonFile(REPORTS_FILE, $reports);
+    return ['ok' => true];
+}
+
+function getReports(bool $includeResolved = false): array {
+    $reports = readJsonFile(REPORTS_FILE, []);
+    if (!$includeResolved) $reports = array_filter($reports, fn($r) => !$r['resolved']);
+    usort($reports, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
+    return array_values($reports);
+}
+
+function resolveReport(string $reportId): bool {
+    $reports = readJsonFile(REPORTS_FILE, []);
+    foreach ($reports as &$r) {
+        if ($r['id'] === $reportId) {
+            $r['resolved'] = true;
+            $r['resolved_by'] = currentUser();
+            writeJsonFile(REPORTS_FILE, $reports);
+            return true;
+        }
+    }
+    return false;
+}
+
+function getOpenReportCount(): int { return count(getReports(false)); }
+
+// ==============================================
+// POLLS
+// ==============================================
+function createPoll(string $threadId, string $question, array $options): array {
+    $thread = getThread($threadId);
+    if (!$thread) return ['ok' => false, 'error' => 'Thread not found.'];
+    if ($thread['author'] !== currentUser() && !isAdmin())
+        return ['ok' => false, 'error' => 'Only the thread author or admin can add a poll.'];
+    if (isset($thread['poll'])) return ['ok' => false, 'error' => 'Thread already has a poll.'];
+    $options = array_values(array_filter(array_map('trim', $options), fn($o) => $o !== ''));
+    if (count($options) < 2 || count($options) > 10)
+        return ['ok' => false, 'error' => 'Poll needs 2-10 options.'];
+    $thread['poll'] = [
+        'question' => trim($question),
+        'options' => array_map(fn($o) => ['text' => $o, 'votes' => []], $options),
+        'closed' => false
+    ];
+    saveThread($thread);
+    return ['ok' => true];
+}
+
+function votePoll(string $threadId, int $optionIndex): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $thread = getThread($threadId);
+    if (!$thread || !isset($thread['poll'])) return ['ok' => false, 'error' => 'Poll not found.'];
+    if ($thread['poll']['closed']) return ['ok' => false, 'error' => 'Poll is closed.'];
+    if ($optionIndex < 0 || $optionIndex >= count($thread['poll']['options']))
+        return ['ok' => false, 'error' => 'Invalid option.'];
+    $user = currentUser();
+    foreach ($thread['poll']['options'] as &$opt) {
+        $idx = array_search($user, $opt['votes']);
+        if ($idx !== false) array_splice($opt['votes'], $idx, 1);
+    }
+    $thread['poll']['options'][$optionIndex]['votes'][] = $user;
+    saveThread($thread);
+    return ['ok' => true];
+}
+
+function closePoll(string $threadId): bool {
+    $thread = getThread($threadId);
+    if (!$thread || !isset($thread['poll'])) return false;
+    $thread['poll']['closed'] = !$thread['poll']['closed'];
+    saveThread($thread);
+    return true;
+}
+
+// ==============================================
+// TAGS
+// ==============================================
+function getAvailableTags(): array {
+    return [
+        ['id' => 'discussion', 'name' => 'Discussion', 'color' => '#7aa2ff'],
+        ['id' => 'help', 'name' => 'Help', 'color' => '#6bffb8'],
+        ['id' => 'showcase', 'name' => 'Showcase', 'color' => '#ffb86b'],
+        ['id' => 'question', 'name' => 'Question', 'color' => '#b86bff'],
+        ['id' => 'guide', 'name' => 'Guide', 'color' => '#6bddff'],
+        ['id' => 'news', 'name' => 'News', 'color' => '#ff6b6b'],
+        ['id' => 'meme', 'name' => 'Meme', 'color' => '#ff6bb8'],
+        ['id' => 'bug', 'name' => 'Bug Report', 'color' => '#ff6b6b'],
+    ];
+}
+
+function getTagById(string $id): ?array {
+    foreach (getAvailableTags() as $tag) {
+        if ($tag['id'] === $id) return $tag;
+    }
+    return null;
+}
+
+function tagHtml(string $tagId): string {
+    $tag = getTagById($tagId);
+    if (!$tag) return '';
+    return '<span class="thread-tag" style="background:' . $tag['color'] . '18;color:' . $tag['color'] . ';border-color:' . $tag['color'] . '30">' . e($tag['name']) . '</span>';
+}
+
+// ==============================================
+// POST IMAGE UPLOADS
+// ==============================================
+function uploadPostImage(array $file): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    if ($file['error'] !== UPLOAD_ERR_OK) return ['ok' => false, 'error' => 'Upload failed.'];
+    if ($file['size'] > 5 * 1024 * 1024) return ['ok' => false, 'error' => 'Max 5MB.'];
+    $finfo = finfo_open(FILEINFO_MIME_TYPE);
+    $mime = finfo_file($finfo, $file['tmp_name']);
+    finfo_close($finfo);
+    $allowed = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/gif' => 'gif', 'image/webp' => 'webp'];
+    if (!isset($allowed[$mime])) return ['ok' => false, 'error' => 'Use JPG, PNG, GIF, or WebP.'];
+    $name = bin2hex(random_bytes(8)) . '.' . $allowed[$mime];
+    $dest = POST_IMAGES_DIR . '/' . $name;
+    if (!move_uploaded_file($file['tmp_name'], $dest))
+        return ['ok' => false, 'error' => 'Failed to save.'];
+    return ['ok' => true, 'url' => '/forum/uploads/posts/' . $name];
+}
+
+// ==============================================
+// FORUM STATS
+// ==============================================
+function getForumStats(): array {
+    $users = readJsonFile(USERS_FILE, []);
+    $threadCount = count(getAllThreadFiles());
+    $postCount = 0;
+    foreach (getAllThreadFiles() as $file) {
+        $thread = readJsonFile($file);
+        $postCount += count($thread['posts'] ?? []);
+    }
+    $newest = null; $newestTime = 0;
+    foreach ($users as $user) {
+        $t = strtotime($user['created']);
+        if ($t > $newestTime) { $newestTime = $t; $newest = $user['username']; }
+    }
+    return [
+        'members' => count($users), 'threads' => $threadCount,
+        'posts' => $postCount, 'newest_member' => $newest,
+        'online' => getOnlineCount()
+    ];
+}
+
+// ==============================================
 // FORMATTING
 // ==============================================
 function formatContent(string $text): string {
     $text = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
 
-    // Code blocks ``` ... ```
+    // Code blocks
     $text = preg_replace('/```(.*?)```/s', '<pre class="code-block">$1</pre>', $text);
     // Inline code
     $text = preg_replace('/`([^`]+)`/', '<code>$1</code>', $text);
@@ -515,11 +934,44 @@ function formatContent(string $text): string {
     $text = preg_replace('/\*\*(.+?)\*\*/', '<strong>$1</strong>', $text);
     // Italic
     $text = preg_replace('/\*(.+?)\*/', '<em>$1</em>', $text);
-    // URLs
-    $text = preg_replace('/(https?:\/\/[^\s<]+)/', '<a href="$1" target="_blank" rel="noopener">$1</a>', $text);
-    // Line breaks
-    $text = nl2br($text);
+    // Spoilers
+    $text = preg_replace('/\|\|(.+?)\|\|/s', '<span class="spoiler" onclick="this.classList.toggle(\'revealed\')">$1</span>', $text);
 
+    // YouTube embeds (before general URL linking)
+    $text = preg_replace(
+        '/(?:https?:\/\/)?(?:www\.)?youtube\.com\/watch\?v=([\w-]{11})(?:[^\s<]*)/',
+        '<div class="yt-embed"><iframe src="https://www.youtube-nocookie.com/embed/$1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>',
+        $text
+    );
+    $text = preg_replace(
+        '/(?:https?:\/\/)?youtu\.be\/([\w-]{11})(?:[^\s<]*)/',
+        '<div class="yt-embed"><iframe src="https://www.youtube-nocookie.com/embed/$1" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe></div>',
+        $text
+    );
+
+    // Image embeds ![alt](url)
+    $text = preg_replace('/!\[([^\]]*)\]\(([^)]+)\)/', '<img class="post-image" src="$2" alt="$1" loading="lazy" onclick="window.open(this.src)">', $text);
+
+    // URLs (not already in href/src)
+    $text = preg_replace('/(?<!["\'=>\/])(https?:\/\/[^\s<]+)/', '<a href="$1" target="_blank" rel="noopener">$1</a>', $text);
+
+    // Block quotes (lines starting with >)
+    $lines = explode("\n", $text);
+    $inQuote = false;
+    $out = [];
+    foreach ($lines as $line) {
+        if (preg_match('/^&gt;\s?(.*)$/', $line, $m)) {
+            if (!$inQuote) { $out[] = '<blockquote class="quote-block">'; $inQuote = true; }
+            $out[] = $m[1];
+        } else {
+            if ($inQuote) { $out[] = '</blockquote>'; $inQuote = false; }
+            $out[] = $line;
+        }
+    }
+    if ($inQuote) $out[] = '</blockquote>';
+    $text = implode("\n", $out);
+
+    $text = nl2br($text);
     return $text;
 }
 
