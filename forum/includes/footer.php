@@ -34,7 +34,10 @@ function toggleNotifs(e) {
                 var cls = n.read ? '' : ' unread';
                 var msg = '';
                 if (n.type === 'mention') msg = '<strong style="color:#e5e5e5;">' + escH(n.from) + '</strong> mentioned you in <a href="/forum/thread.php?id=' + encodeURIComponent(n.thread_id) + '#post-' + encodeURIComponent(n.post_id) + '">' + escH(n.thread_title) + '</a>';
-                else msg = n.type;
+                else if (n.type === 'bounty_submission') msg = '<strong style="color:#e5e5e5;">' + escH(n.from) + '</strong> submitted to your bounty <a href="/forum/bounty.php?id=' + encodeURIComponent(n.bounty_id) + '">' + escH(n.bounty_title || 'bounty') + '</a>';
+                else if (n.type === 'bounty_awarded') msg = '<span style="color:#ffb86b;">+' + escH(n.reward) + ' rep</span> &mdash; bounty won: <a href="/forum/bounty.php?id=' + encodeURIComponent(n.bounty_id) + '">' + escH(n.bounty_title || '') + '</a>';
+                else if (n.type === 'dead_drop') msg = '<span style="color:#ff6b6b;">&#128274; classified drop</span> &mdash; <a href="/forum/deaddrops.php">check inbox</a>';
+                else msg = escH(n.type);
                 html += '<div class="notif-item' + cls + '">' + msg + '<div class="notif-time">' + escH(n.created) + '</div></div>';
             });
             dd.innerHTML = html;

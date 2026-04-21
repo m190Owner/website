@@ -1055,6 +1055,7 @@ function getUserReputation(string $username): int {
             if ($post['author'] === $username) $rep += getPostScore($post);
         }
     }
+    $rep += getUserBountyRep($username);
     return $rep;
 }
 
@@ -1348,6 +1349,277 @@ function addShoutboxMessage(string $content): array {
     if (count($msgs) > 100) $msgs = array_slice($msgs, -100);
     writeJsonFile(SHOUTBOX_FILE, $msgs);
     return ['ok' => true];
+}
+
+// ==============================================
+// BOUNTY BOARD
+// ==============================================
+define('BOUNTIES_FILE', DATA_DIR . '/bounties.json');
+
+function getBountyCategories(): array {
+    return [
+        ['id' => 'code', 'name' => 'Code', 'icon' => '&#60;/&#62;', 'color' => '#7aa2ff'],
+        ['id' => 'crypto', 'name' => 'Crypto/CTF', 'icon' => '&#128274;', 'color' => '#6bffb8'],
+        ['id' => 'bug', 'name' => 'Bug Hunt', 'icon' => '&#128027;', 'color' => '#ff6b6b'],
+        ['id' => 'design', 'name' => 'Design', 'icon' => '&#127912;', 'color' => '#b86bff'],
+        ['id' => 'research', 'name' => 'Research', 'icon' => '&#128269;', 'color' => '#6bddff'],
+        ['id' => 'general', 'name' => 'General', 'icon' => '&#9889;', 'color' => '#ffb86b'],
+    ];
+}
+
+function getBountyCategoryById(string $id): ?array {
+    foreach (getBountyCategories() as $c) { if ($c['id'] === $id) return $c; }
+    return null;
+}
+
+function getBounties(string $filter = 'open'): array {
+    $bounties = readJsonFile(BOUNTIES_FILE, []);
+    // Expire overdue bounties
+    $changed = false;
+    foreach ($bounties as &$b) {
+        if ($b['status'] === 'open' && !empty($b['deadline']) && strtotime($b['deadline']) < time()) {
+            $b['status'] = 'expired';
+            $changed = true;
+        }
+    }
+    unset($b);
+    if ($changed) writeJsonFile(BOUNTIES_FILE, $bounties);
+    if ($filter !== 'all') {
+        $bounties = array_filter($bounties, fn($b) => $b['status'] === $filter);
+    }
+    usort($bounties, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
+    return array_values($bounties);
+}
+
+function getBountyById(string $id): ?array {
+    foreach (readJsonFile(BOUNTIES_FILE, []) as $b) {
+        if ($b['id'] === $id) return $b;
+    }
+    return null;
+}
+
+function createBounty(string $title, string $description, int $repReward, string $category, string $deadline = ''): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $title = trim($title);
+    $description = trim($description);
+    if (strlen($title) < 5 || strlen($title) > 120) return ['ok' => false, 'error' => 'Title must be 5-120 characters.'];
+    if (strlen($description) < 10 || strlen($description) > 5000) return ['ok' => false, 'error' => 'Description must be 10-5000 characters.'];
+    if ($repReward < 1 || $repReward > 500) return ['ok' => false, 'error' => 'Reward must be 1-500 rep.'];
+    if (!getBountyCategoryById($category)) return ['ok' => false, 'error' => 'Invalid category.'];
+    $userRep = getUserReputation(currentUser());
+    if ($repReward > $userRep + 50) return ['ok' => false, 'error' => 'Reward exceeds your available reputation.'];
+
+    $bounties = readJsonFile(BOUNTIES_FILE, []);
+    $id = bin2hex(random_bytes(8));
+    $bounties[] = [
+        'id' => $id, 'title' => $title, 'description' => $description,
+        'reward' => $repReward, 'category' => $category,
+        'author' => currentUser(), 'created' => date('c'),
+        'deadline' => $deadline ?: null,
+        'status' => 'open', // open, completed, expired, cancelled
+        'submissions' => [], 'winner' => null
+    ];
+    writeJsonFile(BOUNTIES_FILE, $bounties);
+    checkAndAwardAchievements(currentUser());
+    return ['ok' => true, 'id' => $id];
+}
+
+function submitBountySolution(string $bountyId, string $content): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $content = trim($content);
+    if (strlen($content) < 5 || strlen($content) > 5000) return ['ok' => false, 'error' => 'Solution must be 5-5000 characters.'];
+    $bounties = readJsonFile(BOUNTIES_FILE, []);
+    foreach ($bounties as &$b) {
+        if ($b['id'] === $bountyId) {
+            if ($b['status'] !== 'open') return ['ok' => false, 'error' => 'Bounty is no longer open.'];
+            if ($b['author'] === currentUser()) return ['ok' => false, 'error' => 'Cannot submit to your own bounty.'];
+            foreach ($b['submissions'] as $s) {
+                if ($s['author'] === currentUser()) return ['ok' => false, 'error' => 'You already submitted a solution.'];
+            }
+            $b['submissions'][] = [
+                'id' => bin2hex(random_bytes(6)),
+                'author' => currentUser(),
+                'content' => $content,
+                'created' => date('c')
+            ];
+            writeJsonFile(BOUNTIES_FILE, $bounties);
+            addNotification($b['author'], 'bounty_submission', [
+                'from' => currentUser(), 'bounty_id' => $bountyId, 'bounty_title' => $b['title']
+            ]);
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'Bounty not found.'];
+}
+
+function awardBounty(string $bountyId, string $submissionId): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $bounties = readJsonFile(BOUNTIES_FILE, []);
+    foreach ($bounties as &$b) {
+        if ($b['id'] === $bountyId) {
+            if ($b['author'] !== currentUser() && !isAdmin()) return ['ok' => false, 'error' => 'Only the bounty author can award.'];
+            if ($b['status'] !== 'open') return ['ok' => false, 'error' => 'Bounty is no longer open.'];
+            $winner = null;
+            foreach ($b['submissions'] as $s) {
+                if ($s['id'] === $submissionId) { $winner = $s['author']; break; }
+            }
+            if (!$winner) return ['ok' => false, 'error' => 'Submission not found.'];
+            $b['status'] = 'completed';
+            $b['winner'] = $winner;
+            $b['completed'] = date('c');
+            writeJsonFile(BOUNTIES_FILE, $bounties);
+            // Award rep to winner by giving upvotes conceptually -- store as bounty rep
+            $users = readJsonFile(USERS_FILE, []);
+            $wKey = strtolower($winner);
+            if (isset($users[$wKey])) {
+                $users[$wKey]['bounty_rep'] = ($users[$wKey]['bounty_rep'] ?? 0) + $b['reward'];
+                writeJsonFile(USERS_FILE, $users);
+            }
+            addNotification($winner, 'bounty_awarded', [
+                'from' => currentUser(), 'bounty_id' => $bountyId,
+                'bounty_title' => $b['title'], 'reward' => $b['reward']
+            ]);
+            logModAction('bounty', "Awarded bounty \"{$b['title']}\" ({$b['reward']} rep) to $winner");
+            checkAndAwardAchievements($winner);
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'Bounty not found.'];
+}
+
+function cancelBounty(string $bountyId): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    $bounties = readJsonFile(BOUNTIES_FILE, []);
+    foreach ($bounties as &$b) {
+        if ($b['id'] === $bountyId) {
+            if ($b['author'] !== currentUser() && !isAdmin()) return ['ok' => false, 'error' => 'Permission denied.'];
+            if ($b['status'] !== 'open') return ['ok' => false, 'error' => 'Cannot cancel.'];
+            $b['status'] = 'cancelled';
+            writeJsonFile(BOUNTIES_FILE, $bounties);
+            return ['ok' => true];
+        }
+    }
+    return ['ok' => false, 'error' => 'Not found.'];
+}
+
+function getUserBountyRep(string $username): int {
+    $users = readJsonFile(USERS_FILE, []);
+    return $users[strtolower($username)]['bounty_rep'] ?? 0;
+}
+
+// ==============================================
+// DEAD DROPS
+// ==============================================
+define('DEADDROPS_FILE', DATA_DIR . '/deaddrops.json');
+
+function createDeadDrop(string $recipient, string $encryptedContent, string $publicNonce, bool $isPublic = false, ?string $expiresHours = null): array {
+    if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
+    if (strlen($encryptedContent) < 1 || strlen($encryptedContent) > 20000) return ['ok' => false, 'error' => 'Content too long.'];
+    if (!$isPublic) {
+        $users = readJsonFile(USERS_FILE, []);
+        if (!isset($users[strtolower($recipient)])) return ['ok' => false, 'error' => 'Recipient not found.'];
+    }
+
+    $drops = readJsonFile(DEADDROPS_FILE, []);
+    $id = bin2hex(random_bytes(8));
+    $drop = [
+        'id' => $id,
+        'encrypted_content' => $encryptedContent,
+        'nonce' => $publicNonce,
+        'recipient' => $isPublic ? '*' : $recipient,
+        'is_public' => $isPublic,
+        'created' => date('c'),
+        'expires' => $expiresHours ? date('c', time() + ((int)$expiresHours * 3600)) : null,
+        'read' => false,
+        'read_at' => null,
+        'burned' => false // self-destruct after read
+    ];
+    $drops[] = $drop;
+    // Cap at 500 drops
+    if (count($drops) > 500) $drops = array_slice($drops, -500);
+    writeJsonFile(DEADDROPS_FILE, $drops);
+
+    if (!$isPublic) {
+        addNotification($recipient, 'dead_drop', [
+            'drop_id' => $id
+        ]);
+    }
+    return ['ok' => true, 'id' => $id];
+}
+
+function getDeadDropsForUser(): array {
+    if (!isLoggedIn()) return [];
+    $drops = readJsonFile(DEADDROPS_FILE, []);
+    $me = currentUser();
+    $now = time();
+    $result = [];
+    foreach ($drops as $d) {
+        if ($d['burned'] ?? false) continue;
+        if ($d['expires'] && strtotime($d['expires']) < $now) continue;
+        if ($d['recipient'] === $me || $d['is_public']) {
+            $result[] = $d;
+        }
+    }
+    usort($result, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
+    return $result;
+}
+
+function getSentDeadDrops(): array {
+    if (!isLoggedIn()) return [];
+    // We don't store sender - drops are anonymous. Return nothing.
+    return [];
+}
+
+function readDeadDrop(string $dropId): ?array {
+    if (!isLoggedIn()) return null;
+    $drops = readJsonFile(DEADDROPS_FILE, []);
+    $changed = false;
+    $result = null;
+    foreach ($drops as &$d) {
+        if ($d['id'] === $dropId) {
+            if ($d['burned'] ?? false) return null;
+            if (!$d['is_public'] && $d['recipient'] !== currentUser()) return null;
+            if ($d['expires'] && strtotime($d['expires']) < time()) return null;
+            $result = $d;
+            if (!$d['read']) {
+                $d['read'] = true;
+                $d['read_at'] = date('c');
+                $changed = true;
+            }
+            break;
+        }
+    }
+    unset($d);
+    if ($changed) writeJsonFile(DEADDROPS_FILE, $drops);
+    return $result;
+}
+
+function burnDeadDrop(string $dropId): bool {
+    $drops = readJsonFile(DEADDROPS_FILE, []);
+    foreach ($drops as &$d) {
+        if ($d['id'] === $dropId) {
+            if (!$d['is_public'] && $d['recipient'] !== currentUser() && !isAdmin()) return false;
+            $d['burned'] = true;
+            writeJsonFile(DEADDROPS_FILE, $drops);
+            return true;
+        }
+    }
+    return false;
+}
+
+function registerPublicKey(string $publicKeyJwk): bool {
+    if (!isLoggedIn()) return false;
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower(currentUser());
+    if (!isset($users[$key])) return false;
+    $users[$key]['public_key'] = $publicKeyJwk;
+    writeJsonFile(USERS_FILE, $users);
+    return true;
+}
+
+function getUserPublicKey(string $username): ?string {
+    $users = readJsonFile(USERS_FILE, []);
+    return $users[strtolower($username)]['public_key'] ?? null;
 }
 
 // ==============================================

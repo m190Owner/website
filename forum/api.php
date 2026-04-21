@@ -53,4 +53,46 @@ if ($action === 'notifications_read') {
     exit;
 }
 
+if ($action === 'pubkey_register') {
+    if (!isLoggedIn()) { echo json_encode(['ok' => false, 'error' => 'Not logged in.']); exit; }
+    if (!verifyCsrf()) { echo json_encode(['ok' => false, 'error' => 'Invalid token.']); exit; }
+    $pk = $_POST['public_key'] ?? '';
+    if (strlen($pk) < 10 || strlen($pk) > 2000) { echo json_encode(['ok' => false, 'error' => 'Invalid key.']); exit; }
+    json_decode($pk);
+    if (json_last_error() !== JSON_ERROR_NONE) { echo json_encode(['ok' => false, 'error' => 'Not valid JWK.']); exit; }
+    echo json_encode(['ok' => registerPublicKey($pk)]);
+    exit;
+}
+
+if ($action === 'pubkey_get') {
+    if (!isLoggedIn()) { echo json_encode(['ok' => false, 'error' => 'Not logged in.']); exit; }
+    $u = $_POST['username'] ?? $_GET['username'] ?? '';
+    $pk = getUserPublicKey($u);
+    if (!$pk) { echo json_encode(['ok' => false, 'error' => 'User has no registered key.']); exit; }
+    echo json_encode(['ok' => true, 'public_key' => $pk]);
+    exit;
+}
+
+if ($action === 'deaddrop_send') {
+    if (!isLoggedIn()) { echo json_encode(['ok' => false, 'error' => 'Not logged in.']); exit; }
+    if (!verifyCsrf()) { echo json_encode(['ok' => false, 'error' => 'Invalid token.']); exit; }
+    enforceRateLimit('forum_deaddrop', 10, 60);
+    $isPublic = !empty($_POST['is_public']);
+    echo json_encode(createDeadDrop(
+        $_POST['recipient'] ?? '',
+        $_POST['encrypted_content'] ?? '',
+        $_POST['nonce'] ?? '',
+        $isPublic,
+        $_POST['expires_hours'] ?? null
+    ));
+    exit;
+}
+
+if ($action === 'deaddrop_burn') {
+    if (!isLoggedIn()) { echo json_encode(['ok' => false, 'error' => 'Not logged in.']); exit; }
+    if (!verifyCsrf()) { echo json_encode(['ok' => false, 'error' => 'Invalid token.']); exit; }
+    echo json_encode(['ok' => burnDeadDrop($_POST['drop_id'] ?? '')]);
+    exit;
+}
+
 echo json_encode(['ok' => false, 'error' => 'Unknown action.']);

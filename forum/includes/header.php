@@ -357,6 +357,40 @@
         .sub-cat-row:last-child { border-bottom: none; }
         .sub-cat-row .cat-name { font-size: 0.82rem; }
         .sub-cat-row .cat-desc { font-size: 0.68rem; }
+        /* BOUNTY BOARD */
+        .bounty-row { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid rgba(122,162,255,0.04); text-decoration: none; transition: background 0.15s; }
+        .bounty-row:last-child { border-bottom: none; }
+        .bounty-row:hover { background: rgba(122,162,255,0.03); }
+        .bounty-reward-badge { flex-shrink: 0; width: 64px; text-align: center; background: linear-gradient(135deg, rgba(255,184,107,0.15), rgba(255,107,107,0.1)); border: 1px solid rgba(255,184,107,0.25); border-radius: 8px; padding: 8px 4px; }
+        .bounty-reward-val { display: block; color: #ffb86b; font-weight: 800; font-size: 1.05rem; line-height: 1; }
+        .bounty-reward-unit { display: block; color: #8a96b8; font-size: 0.55rem; letter-spacing: 1px; margin-top: 2px; }
+        .bounty-info { flex: 1; min-width: 0; }
+        .bounty-title { color: #e5e5e5; font-weight: 600; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .bounty-status { font-size: 0.58rem; padding: 2px 7px; border-radius: 4px; font-weight: 700; letter-spacing: 0.6px; flex-shrink: 0; }
+        .bounty-open { background: rgba(107,255,184,0.12); color: #6bffb8; }
+        .bounty-completed { background: rgba(122,162,255,0.12); color: #7aa2ff; }
+        .bounty-expired { background: rgba(255,107,107,0.12); color: #ff6b6b; }
+        .bounty-cancelled { background: rgba(138,150,184,0.12); color: #8a96b8; }
+        .bounty-cat { font-size: 0.6rem; padding: 2px 7px; border-radius: 4px; font-weight: 600; border: 1px solid; flex-shrink: 0; }
+        .bounty-reward-big { text-align: center; background: linear-gradient(135deg, rgba(255,184,107,0.15), rgba(255,107,107,0.08)); border: 1px solid rgba(255,184,107,0.3); border-radius: 10px; padding: 10px 18px; flex-shrink: 0; }
+        .bounty-reward-big .bounty-reward-num { display: block; color: #ffb86b; font-weight: 800; font-size: 1.6rem; line-height: 1; }
+        .bounty-reward-big .bounty-reward-label { display: block; color: #8a96b8; font-size: 0.6rem; letter-spacing: 1.2px; margin-top: 4px; }
+        /* DEAD DROPS */
+        .dd-icon { font-size: 1.1rem; }
+        .dd-classified { font-size: 0.58rem; padding: 2px 7px; border-radius: 4px; font-weight: 700; letter-spacing: 1px; background: rgba(255,107,107,0.12); color: #ff6b6b; border: 1px solid rgba(255,107,107,0.25); }
+        .dd-keystatus { margin-top: 10px; font-size: 0.7rem; }
+        .dd-ok { color: #6bffb8; font-family: Consolas, monospace; letter-spacing: 0.5px; }
+        .dd-row { display: flex; align-items: center; gap: 14px; padding: 14px 20px; border-bottom: 1px solid rgba(122,162,255,0.04); }
+        .dd-row:last-child { border-bottom: none; }
+        .dd-row-icon { font-size: 1.2rem; width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: rgba(10,10,18,0.8); border: 1px solid rgba(122,162,255,0.1); border-radius: 8px; flex-shrink: 0; }
+        .dd-row-main { flex: 1; min-width: 0; }
+        .dd-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .dd-row-type { font-size: 0.58rem; padding: 2px 6px; border-radius: 4px; font-weight: 700; letter-spacing: 0.8px; background: rgba(122,162,255,0.12); color: #7aa2ff; }
+        .dd-row-time { font-size: 0.7rem; color: #5a6480; }
+        .dd-row-read { font-size: 0.58rem; padding: 1px 5px; border-radius: 3px; background: rgba(138,150,184,0.1); color: #8a96b8; letter-spacing: 0.5px; }
+        .dd-row-expires { font-size: 0.65rem; color: #ffb86b; font-style: italic; }
+        .dd-row-preview { font-family: Consolas, monospace; color: #5a6480; font-size: 0.72rem; margin-top: 4px; font-style: italic; }
+        .dd-row-actions { display: flex; gap: 6px; flex-shrink: 0; }
         /* MISC */
         .text-muted { color: #5a6480; }
         .text-sm { font-size: 0.75rem; }
@@ -396,6 +430,10 @@
                 <a href="/forum/members.php" class="<?= ($navActive ?? '') === 'members' ? 'active' : '' ?>">Members</a>
                 <a href="/forum/search.php" class="<?= ($navActive ?? '') === 'search' ? 'active' : '' ?>">Search</a>
                 <a href="/forum/leaderboard.php" class="<?= ($navActive ?? '') === 'leaderboard' ? 'active' : '' ?>">Leaderboard</a>
+                <a href="/forum/bounty.php" class="<?= ($navActive ?? '') === 'bounty' ? 'active' : '' ?>">Bounty</a>
+                <?php if (isLoggedIn()): ?>
+                    <a href="/forum/deaddrops.php" class="<?= ($navActive ?? '') === 'drops' ? 'active' : '' ?>">Drops</a>
+                <?php endif; ?>
                 <?php if (isLoggedIn()): ?>
                     <?php $__unread = getUnreadCount(); ?>
                     <a href="/forum/messages.php" class="<?= ($navActive ?? '') === 'messages' ? 'active' : '' ?>">
