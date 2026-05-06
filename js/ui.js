@@ -33,6 +33,23 @@ updateDiscordStatus();
 setInterval(updateDiscordStatus, 30000);
 
 // ==============================================
+// ANNOUNCEMENT BANNER
+// ==============================================
+(function () {
+    const banner = document.getElementById('announce-banner');
+    const closeBtn = document.getElementById('announce-close');
+    if (!banner) return;
+    if (localStorage.getItem('announce-m190-dismissed')) {
+        banner.style.display = 'none';
+        return;
+    }
+    closeBtn.addEventListener('click', () => {
+        banner.style.display = 'none';
+        localStorage.setItem('announce-m190-dismissed', '1');
+    });
+}());
+
+// ==============================================
 // LOADER
 // ==============================================
 window.addEventListener('load', () => {

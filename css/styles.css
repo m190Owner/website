@@ -54,6 +54,45 @@ body.loaded #home {
 }
 
 /* Navigation */
+.announce-banner {
+    position: fixed;
+    top: 58px;
+    left: 0;
+    width: 100%;
+    z-index: 9;
+    background: linear-gradient(90deg, #0d0d18 0%, #12122a 50%, #0d0d18 100%);
+    border-bottom: 1px solid #7aa2ff30;
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-size: 0.78rem;
+    color: #c0ccee;
+    text-align: center;
+}
+.announce-banner a {
+    color: #7aa2ff;
+    font-weight: 700;
+    text-decoration: none;
+    border-bottom: 1px solid #7aa2ff50;
+    transition: color 0.2s, border-color 0.2s;
+}
+.announce-banner a:hover { color: #a8c0ff; border-color: #a8c0ff80; }
+.announce-banner .announce-close {
+    position: absolute;
+    right: 16px;
+    background: none;
+    border: none;
+    color: #5a6480;
+    font-size: 1rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0 4px;
+    transition: color 0.2s;
+}
+.announce-banner .announce-close:hover { color: #e5e5e5; }
+
 nav {
     position: fixed;
     top: 0;
