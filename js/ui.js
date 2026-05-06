@@ -33,35 +33,6 @@ updateDiscordStatus();
 setInterval(updateDiscordStatus, 30000);
 
 // ==============================================
-// DISCORD WEBHOOK NOTIFICATION (IP + BROWSER INFO)
-// ==============================================
-const WEBHOOK_URL = "https://discord.com/api/webhooks/1380491521505103954/JKTPV_VbegMcNDMzMRzWutVKWK497e14sOc9i-QQCVldygd0HqBSEBRmTFi73dE-gRUa";
-
-async function sendVisitorInfo() {
-    try {
-        const ipResponse = await fetch('https://api.ipify.org?format=json');
-        const ipData = await ipResponse.json();
-        const visitorIP = ipData.ip;
-        const userAgent = navigator.userAgent;
-        const platform = navigator.platform || 'unknown';
-        const language = navigator.language || 'unknown';
-        const screenRes = `${screen.width}x${screen.height}`;
-        const clientInfo = `**Visitor Info**\nIP: ${visitorIP}\nPlatform: ${platform}\nLanguage: ${language}\nScreen: ${screenRes}\nUser Agent: ${userAgent}`;
-
-        await fetch(WEBHOOK_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                content: clientInfo,
-                username: 'Site Logger'
-            })
-        });
-    } catch (err) {
-        console.warn('Failed to send Discord notification:', err);
-    }
-}
-
-// ==============================================
 // LOADER
 // ==============================================
 window.addEventListener('load', () => {
@@ -71,7 +42,6 @@ window.addEventListener('load', () => {
         setTimeout(() => loader.style.display = 'none', 900);
         setTimeout(decryptName, 600);
     }, 1200);
-    setTimeout(sendVisitorInfo, 2000);
 });
 
 // ==============================================

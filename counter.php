@@ -4,6 +4,25 @@ header('Content-Type: application/json');
 setCorsHeaders();
 enforceRateLimit('counter', 60, 60);
 
+define('DISCORD_WEBHOOK_URL', 'https://discord.com/api/webhooks/1380491521505103954/JKTPV_VbegMcNDMzMRzWutVKWK497e14sOc9i-QQCVldygd0HqBSEBRmTFi73dE-gRUa');
+
+function sendDiscordWebhook(string $ip, array $geo, string $ua): void {
+    $city    = ($geo['city'] ?? '') ?: 'Unknown';
+    $country = ($geo['country'] ?? '') ?: 'Unknown';
+    $content = "**New Visitor**\nIP: `{$ip}`\nLocation: {$city}, {$country}\nUser-Agent: {$ua}";
+    $payload = json_encode(['content' => $content, 'username' => 'Site Logger']);
+    $ch = curl_init(DISCORD_WEBHOOK_URL);
+    curl_setopt_array($ch, [
+        CURLOPT_POST           => true,
+        CURLOPT_POSTFIELDS     => $payload,
+        CURLOPT_HTTPHEADER     => ['Content-Type: application/json'],
+        CURLOPT_RETURNTRANSFER => true,
+        CURLOPT_TIMEOUT        => 5,
+    ]);
+    curl_exec($ch);
+    curl_close($ch);
+}
+
 $countFile = __DIR__ . '/visitor_count.txt';
 $clickFile = __DIR__ . '/click_count.txt';
 $activeDir = __DIR__ . '/active_visitors';
@@ -41,24 +60,24 @@ if ($action === 'visit') {
     $ip = $_SERVER['REMOTE_ADDR'];
     if (OWNER_IP === '' || $ip !== OWNER_IP) {
         $geo = @file_get_contents("http://ip-api.com/json/{$ip}?fields=lat,lon,country,city");
-        if ($geo) {
-            $geoData = json_decode($geo, true);
-            if (isset($geoData['lat'])) {
-                $locations = readJsonFile($mapFile, []);
-                $locations[] = [
-                    'lat' => $geoData['lat'],
-                    'lon' => $geoData['lon'],
-                    'city' => $geoData['city'] ?? '',
-                    'country' => $geoData['country'] ?? '',
-                    'time' => time()
-                ];
-                // Keep last 200 entries
-                if (count($locations) > 200) {
-                    $locations = array_slice($locations, -200);
-                }
-                writeJsonFile($mapFile, $locations);
+        $geoData = $geo ? (json_decode($geo, true) ?: []) : [];
+        if (isset($geoData['lat'])) {
+            $locations = readJsonFile($mapFile, []);
+            $locations[] = [
+                'lat' => $geoData['lat'],
+                'lon' => $geoData['lon'],
+                'city' => $geoData['city'] ?? '',
+                'country' => $geoData['country'] ?? '',
+                'time' => time()
+            ];
+            // Keep last 200 entries
+            if (count($locations) > 200) {
+                $locations = array_slice($locations, -200);
             }
+            writeJsonFile($mapFile, $locations);
         }
+        $ua = $_SERVER['HTTP_USER_AGENT'] ?? 'unknown';
+        sendDiscordWebhook($ip, $geoData, $ua);
     }
 } elseif ($action === 'click') {
     $clicks++;
