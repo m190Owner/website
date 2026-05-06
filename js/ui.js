@@ -33,20 +33,36 @@ updateDiscordStatus();
 setInterval(updateDiscordStatus, 30000);
 
 // ==============================================
-// ANNOUNCEMENT BANNER
+// ANNOUNCEMENT BANNER (latest GitHub project)
 // ==============================================
-(function () {
-    const banner = document.getElementById('announce-banner');
+(async function () {
+    const banner  = document.getElementById('announce-banner');
+    const textEl  = document.getElementById('announce-text');
     const closeBtn = document.getElementById('announce-close');
     if (!banner) return;
-    if (localStorage.getItem('announce-m190-dismissed')) {
-        banner.style.display = 'none';
-        return;
-    }
+
+    let data;
+    try {
+        const res = await fetch('/github_latest.php');
+        data = await res.json();
+    } catch (e) { return; }
+
+    if (!data || !data.ok) return;
+
+    // Dismissed key is per-repo so the banner reappears for new projects
+    const dismissKey = 'announce-dismissed-' + data.full_name;
+    if (localStorage.getItem(dismissKey)) return;
+
+    const desc = data.description ? ` &mdash; ${escHtml(data.description)}` : '';
+    textEl.innerHTML = `&#127381; New project: <a href="${escHtml(data.url)}" target="_blank" rel="noopener">${escHtml(data.name)}</a>${desc} &mdash; leave a &#11088;!`;
+    banner.style.display = 'flex';
+
     closeBtn.addEventListener('click', () => {
         banner.style.display = 'none';
-        localStorage.setItem('announce-m190-dismissed', '1');
+        localStorage.setItem(dismissKey, '1');
     });
+
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 }());
 
 // ==============================================

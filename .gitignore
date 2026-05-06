@@ -2,6 +2,7 @@
 .htaccess
 
 # Runtime data
+github_cache.json
 rate_limits/
 visitor_count.txt
 click_count.txt
