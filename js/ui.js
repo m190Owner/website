@@ -36,33 +36,42 @@ setInterval(updateDiscordStatus, 30000);
 // ANNOUNCEMENT BANNER (latest GitHub project)
 // ==============================================
 (async function () {
-    const banner  = document.getElementById('announce-banner');
-    const textEl  = document.getElementById('announce-text');
+    const banner   = document.getElementById('announce-banner');
+    const textEl   = document.getElementById('announce-text');
     const closeBtn = document.getElementById('announce-close');
     if (!banner) return;
+
+    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+    function showBanner(name, url, description, dismissKey) {
+        if (localStorage.getItem(dismissKey)) return;
+        const desc = description ? ` — ${escHtml(description)}` : '';
+        textEl.innerHTML = `&#127381; New project: <a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(name)}</a>${desc} — leave a &#11088;!`;
+        banner.style.display = 'flex';
+        closeBtn.addEventListener('click', () => {
+            banner.style.display = 'none';
+            localStorage.setItem(dismissKey, '1');
+        });
+    }
+
+    const FALLBACK = {
+        name: 'm190',
+        full_name: 'm190Owner/m190',
+        url: 'https://github.com/m190Owner/m190',
+        description: 'Check it out'
+    };
 
     let data;
     try {
         const res = await fetch('/github_latest.php');
         data = await res.json();
-    } catch (e) { return; }
+    } catch (e) { data = null; }
 
-    if (!data || !data.ok) return;
-
-    // Dismissed key is per-repo so the banner reappears for new projects
-    const dismissKey = 'announce-dismissed-' + data.full_name;
-    if (localStorage.getItem(dismissKey)) return;
-
-    const desc = data.description ? ` &mdash; ${escHtml(data.description)}` : '';
-    textEl.innerHTML = `&#127381; New project: <a href="${escHtml(data.url)}" target="_blank" rel="noopener">${escHtml(data.name)}</a>${desc} &mdash; leave a &#11088;!`;
-    banner.style.display = 'flex';
-
-    closeBtn.addEventListener('click', () => {
-        banner.style.display = 'none';
-        localStorage.setItem(dismissKey, '1');
-    });
-
-    function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+    if (data && data.ok) {
+        showBanner(data.name, data.url, data.description, 'announce-dismissed-' + data.full_name);
+    } else {
+        showBanner(FALLBACK.name, FALLBACK.url, FALLBACK.description, 'announce-dismissed-' + FALLBACK.full_name);
+    }
 }());
 
 // ==============================================

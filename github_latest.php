@@ -5,7 +5,7 @@ setCorsHeaders();
 enforceRateLimit('github_latest', 30, 60);
 
 $cacheFile = __DIR__ . '/github_cache.json';
-$cacheTTL  = 3600; // 1 hour
+$cacheTTL  = 3600;
 
 // Serve cache if fresh
 if (file_exists($cacheFile)) {
@@ -16,20 +16,19 @@ if (file_exists($cacheFile)) {
     }
 }
 
-$ctx = stream_context_create(['http' => [
-    'header'  => "User-Agent: logansandivar-site\r\n",
-    'timeout' => 5,
-]]);
+$ch = curl_init('https://api.github.com/users/m190Owner/repos?sort=created&direction=desc&per_page=10&type=public');
+curl_setopt_array($ch, [
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 5,
+    CURLOPT_HTTPHEADER     => ['User-Agent: logansandivar-site'],
+]);
+$raw  = curl_exec($ch);
+$code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+curl_close($ch);
 
-$raw = @file_get_contents('https://api.github.com/users/m190Owner/repos?sort=created&direction=desc&per_page=10&type=public', false, $ctx);
-
-if (!$raw) {
-    // Return stale cache if available, else error
-    if (file_exists($cacheFile)) {
-        echo file_get_contents($cacheFile);
-    } else {
-        echo json_encode(['ok' => false]);
-    }
+if (!$raw || $code !== 200) {
+    // Return stale cache if available
+    echo file_exists($cacheFile) ? file_get_contents($cacheFile) : json_encode(['ok' => false]);
     exit;
 }
 
@@ -39,13 +38,9 @@ if (!is_array($repos) || empty($repos)) {
     exit;
 }
 
-// Pick the newest non-fork public repo
 $repo = null;
 foreach ($repos as $r) {
-    if (!$r['fork'] && !$r['private']) {
-        $repo = $r;
-        break;
-    }
+    if (!$r['fork'] && !$r['private']) { $repo = $r; break; }
 }
 
 if (!$repo) {
