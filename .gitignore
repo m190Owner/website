@@ -1,0 +1,10 @@
+# Server environment — contains secrets, never commit
+.htaccess
+
+# Runtime data
+rate_limits/
+visitor_count.txt
+click_count.txt
+visitor_locations.json
+active_visitors/
+counter_migrated.txt

@@ -4,14 +4,14 @@ header('Content-Type: application/json');
 setCorsHeaders();
 enforceRateLimit('counter', 60, 60);
 
-define('DISCORD_WEBHOOK_URL', 'https://discord.com/api/webhooks/1380491521505103954/JKTPV_VbegMcNDMzMRzWutVKWK497e14sOc9i-QQCVldygd0HqBSEBRmTFi73dE-gRUa');
-
 function sendDiscordWebhook(string $ip, array $geo, string $ua): void {
+    $url = getenv('DISCORD_WEBHOOK_URL');
+    if (!$url) return;
     $city    = ($geo['city'] ?? '') ?: 'Unknown';
     $country = ($geo['country'] ?? '') ?: 'Unknown';
     $content = "**New Visitor**\nIP: `{$ip}`\nLocation: {$city}, {$country}\nUser-Agent: {$ua}";
     $payload = json_encode(['content' => $content, 'username' => 'Site Logger']);
-    $ch = curl_init(DISCORD_WEBHOOK_URL);
+    $ch = curl_init($url);
     curl_setopt_array($ch, [
         CURLOPT_POST           => true,
         CURLOPT_POSTFIELDS     => $payload,
