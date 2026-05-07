@@ -729,7 +729,7 @@ document.addEventListener('keydown', (e) => {
         case 'd': toggleDJMode(); break;
         case 't': startTimeBomb(); break;
         case 'v': toggleVoiceCommands(); break;
-        case 'f': if (e.key === 'F1') { e.preventDefault(); toggleFlappy(); } else toggleFaceTracking(); break;
+        case 'f': if (e.key === 'F1') { e.preventDefault(); toggleFlappy(); } break;
         case 'x': toggleDestructionMode(); break;
         case 'c': togglePaintMode(); break;
         case 'w': toggleWin95(); break;

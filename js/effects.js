@@ -1,171 +1,3 @@
-// ==============================================
-// FLOATING TEXT PARTICLE SYSTEM
-// ==============================================
-const phrases = [
-    "I always get what I want",
-    "Just kick me out I don't want to play anymore",
-    "I'm so rich it hurts",
-    "I don't watch TV I am intelligent"
-];
-
-const textParticles = [];
-let flashAlpha = 0;
-const shockwaves = [];
-
-function randomColor() {
-    const hue = Math.floor(Math.random() * 360);
-    return {
-        hue,
-        fill: `hsla(${hue}, 80%, 75%, 1)`,
-        glow: `hsla(${hue}, 100%, 70%, 1)`
-    };
-}
-
-function spawnTextParticle(i) {
-    const corner = Math.floor(Math.random() * 4);
-    const margin = 60;
-    let x, y;
-
-    if (corner === 0) { x = margin; y = margin; }
-    else if (corner === 1) { x = w - margin; y = margin; }
-    else if (corner === 2) { x = margin; y = h - margin; }
-    else { x = w - margin; y = h - margin; }
-
-    textParticles[i] = {
-        x, y,
-        vx: (Math.random() - 0.5) * 1.2,
-        vy: (Math.random() - 0.5) * 1.2,
-        phrase: phrases[i],
-        size: 18 + Math.random() * 6,
-        opacity: 0.9,
-        exploding: false,
-        color: randomColor()
-    };
-}
-
-for (let i = 0; i < phrases.length; i++) {
-    spawnTextParticle(i);
-}
-
-function separateParticles() {
-    const minDist = 140;
-    const force = 0.12;
-
-    for (let i = 0; i < textParticles.length; i++) {
-        for (let j = i + 1; j < textParticles.length; j++) {
-            const a = textParticles[i];
-            const b = textParticles[j];
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            const dist = Math.hypot(dx, dy);
-
-            if (dist < minDist) {
-                const push = (minDist - dist) * force;
-                const nx = dx / (dist || 1);
-                const ny = dy / (dist || 1);
-                a.x -= nx * push;
-                a.y -= ny * push;
-                b.x += nx * push;
-                b.y += ny * push;
-            }
-        }
-    }
-}
-
-function addShockwave(x, y, color, beat, scale = 1) {
-    shockwaves.push({
-        x, y,
-        radius: 0,
-        maxRadius: (260 + beat * 1.5) * scale,
-        alpha: 0.9,
-        color: color.glow
-    });
-}
-
-function updateShockwaves() {
-    for (let i = shockwaves.length - 1; i >= 0; i--) {
-        const s = shockwaves[i];
-        s.radius += 8;
-        s.alpha -= 0.02;
-        if (s.radius > s.maxRadius || s.alpha <= 0) {
-            shockwaves.splice(i, 1);
-        }
-    }
-}
-
-function drawShockwaves() {
-    shockwaves.forEach(s => {
-        ctx.save();
-        ctx.globalAlpha = s.alpha;
-        ctx.strokeStyle = s.color;
-        ctx.lineWidth = 5;
-        ctx.shadowColor = s.color;
-        ctx.shadowBlur = 30;
-        ctx.beginPath();
-        ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
-        ctx.stroke();
-        ctx.restore();
-    });
-}
-
-function updateFloatingText(beat) {
-    const centerX = w / 2;
-    const centerY = h / 2;
-    const explodeRadius = 150;
-
-    textParticles.forEach((t, i) => {
-        if (!t.exploding) {
-            t.vx += (Math.random() - 0.5) * 0.05;
-            t.vy += (Math.random() - 0.5) * 0.05;
-            t.vx += (Math.random() - 0.5) * (beat / 200);
-            t.vy += (Math.random() - 0.5) * (beat / 200);
-            t.vx *= 0.99;
-            t.vy *= 0.99;
-            t.x += t.vx;
-            t.y += t.vy;
-            if (t.x < 0) { t.x = 0; t.vx *= -1; }
-            if (t.x > w) { t.x = w; t.vx *= -1; }
-            if (t.y < 0) { t.y = 0; t.vy *= -1; }
-            if (t.y > h) { t.y = h; t.vy *= -1; }
-            const dx = centerX - t.x;
-            const dy = centerY - t.y;
-            const dist = Math.hypot(dx, dy) || 1;
-            if (dist < explodeRadius && !idleActive) {
-                t.exploding = true;
-                const angle = Math.random() * Math.PI * 2;
-                const force = 5 + beat / 15;
-                t.vx = Math.cos(angle) * force;
-                t.vy = Math.sin(angle) * force;
-                addShockwave(t.x, t.y, t.color, beat);
-            }
-        } else {
-            t.x += t.vx;
-            t.y += t.vy;
-            t.opacity -= 0.02;
-            if (t.opacity <= 0) spawnTextParticle(i);
-        }
-    });
-
-    separateParticles();
-    updateShockwaves();
-}
-
-function drawFloatingText(beat) {
-    textParticles.forEach(t => {
-        ctx.save();
-        ctx.translate(t.x, t.y);
-        ctx.font = `${t.size}px Segoe UI`;
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillStyle = `hsla(${t.color.hue}, 80%, 75%, ${Math.max(0, t.opacity)})`;
-        ctx.shadowColor = t.color.glow;
-        ctx.shadowBlur = 14 + beat / 4;
-        ctx.fillText(t.phrase, 0, 0);
-        ctx.restore();
-    });
-    drawShockwaves();
-}
-
 
 // ==============================================
 // LIGHTNING ARCS ON BEAT DROPS
@@ -256,40 +88,6 @@ function drawLightning() {
     });
 }
 
-// ==============================================
-// IDLE ANIMATION (10s no mouse movement)
-// ==============================================
-let lastMouseMove = Date.now();
-let idleActive = false;
-let idleAngle = 0;
-
-document.addEventListener('mousemove', () => {
-    lastMouseMove = Date.now();
-    if (idleActive) {
-        idleActive = false;
-    }
-});
-
-function checkIdle() {
-    if (Date.now() - lastMouseMove > 10000 && !idleActive) {
-        idleActive = true;
-    }
-}
-
-function updateIdle() {
-    if (!idleActive) return;
-    idleAngle += 0.015;
-
-    const cx = w / 2;
-    const cy = h / 2;
-    textParticles.forEach((t, i) => {
-        if (t.exploding) return;
-        const targetX = cx + Math.cos(idleAngle + i * 1.5) * (100 + i * 30);
-        const targetY = cy + Math.sin(idleAngle + i * 1.5) * (60 + i * 20);
-        t.vx += (targetX - t.x) * 0.008;
-        t.vy += (targetY - t.y) * 0.008;
-    });
-}
 
 // ==============================================
 // PORTAL EFFECT (click and hold)
@@ -324,11 +122,6 @@ function draw() {
     const beat = getBeatStrength();
     hueBase = (hueBase + 0.2 + beat / 50) % 360;
 
-    checkIdle();
-    updateIdle();
-
-    updateFloatingText(beat);
-    drawFloatingText(beat);
 
 
     checkLightning();
@@ -361,16 +154,6 @@ function draw() {
         ctx.arc(portalX, portalY, portalRadius * 0.4, 0, Math.PI * 2);
         ctx.fill();
 
-        textParticles.forEach(t => {
-            if (t.exploding) return;
-            const dx = portalX - t.x, dy = portalY - t.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist < portalRadius * 3 && dist > 10) {
-                const f = (portalRadius * 3 - dist) / (portalRadius * 3) * 0.6;
-                t.vx += (dx / dist) * f;
-                t.vy += (dy / dist) * f;
-            }
-        });
     }
 
     requestAnimationFrame(draw);
