@@ -159,7 +159,6 @@ nav {
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
     z-index: var(--z-nav);
-    perspective: 1000px;
 }
 
 /* Sections */
