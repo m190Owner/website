@@ -200,7 +200,6 @@ function applyTilt(el) {
     });
 }
 
-// document.querySelectorAll('.links a').forEach(applyTilt);
 const discordWidget = document.getElementById('discord-widget');
 if (discordWidget) applyTilt(discordWidget);
 

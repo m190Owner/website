@@ -108,34 +108,6 @@ function drawShockwaves() {
     });
 }
 
-let textShapeMode = false;
-let textShapeTargets = [];
-
-function createTextShape(text) {
-    const off = document.createElement("canvas");
-    const offCtx = off.getContext("2d");
-    off.width = 600;
-    off.height = 200;
-    offCtx.fillStyle = "#fff";
-    offCtx.font = "bold 48px Segoe UI";
-    offCtx.textAlign = "center";
-    offCtx.textBaseline = "middle";
-    offCtx.fillText(text, off.width / 2, off.height / 2);
-    const data = offCtx.getImageData(0, 0, off.width, off.height).data;
-    const pts = [];
-    const step = 10;
-    for (let y = 0; y < off.height; y += step) {
-        for (let x = 0; x < off.width; x += step) {
-            const idx = (y * off.width + x) * 4;
-            if (data[idx + 3] > 128) {
-                pts.push({ x: w / 2 - off.width / 2 + x, y: h / 2 - off.height / 2 + y });
-            }
-        }
-    }
-    textShapeTargets = pts;
-    textShapeMode = true;
-}
-
 function updateFloatingText(beat) {
     const centerX = w / 2;
     const centerY = h / 2;
@@ -147,12 +119,6 @@ function updateFloatingText(beat) {
             t.vy += (Math.random() - 0.5) * 0.05;
             t.vx += (Math.random() - 0.5) * (beat / 200);
             t.vy += (Math.random() - 0.5) * (beat / 200);
-            if (textShapeMode && textShapeTargets[i]) {
-                const tx = textShapeTargets[i].x;
-                const ty = textShapeTargets[i].y;
-                t.vx += (tx - t.x) * 0.02;
-                t.vy += (ty - t.y) * 0.02;
-            }
             t.vx *= 0.99;
             t.vy *= 0.99;
             t.x += t.vx;
