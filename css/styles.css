@@ -78,6 +78,8 @@ body.loaded #home {
     opacity: 0;
     transform: translateY(20px);
     transition: opacity 1.2s ease, transform 1.2s ease;
+    padding-top: var(--nav-h);
+    padding-bottom: 64px;
 }
 
 /* Background Video */
@@ -270,7 +272,9 @@ section {
 
 /* Home Content */
 .home-content {
-    transform: translateY(-200px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
 }
 
 .home-content h1 {
@@ -377,7 +381,11 @@ section {
 
 /* Links */
 .links {
-    margin-top: 25px;
+    margin-top: var(--space-6);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: var(--space-3);
 }
 
 /* Unified Button System */
@@ -546,8 +554,9 @@ section {
     left: 0;
     width: 100%;
     display: flex;
-    justify-content: space-between;
+    justify-content: center;
     align-items: center;
+    gap: var(--space-6);
     padding: 10px 30px;
     background: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(8px);
@@ -555,12 +564,6 @@ section {
     z-index: var(--z-nav);
     font-size: 0.75rem;
     color: var(--color-text-muted);
-}
-
-.bar-section {
-    display: flex;
-    align-items: center;
-    gap: 20px;
 }
 
 .bar-item {
@@ -724,20 +727,6 @@ section {
     pointer-events: none;
     z-index: 5;
     font-family: var(--font-sans);
-}
-
-/* Key hints */
-.key-hints {
-    position: fixed;
-    bottom: 75px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 0.55rem;
-    color: rgba(138, 150, 184, 0.2);
-    z-index: 5;
-    pointer-events: none;
-    letter-spacing: 1px;
-    white-space: nowrap;
 }
 
 /* Boss Key Overlay */
