@@ -334,6 +334,32 @@ document.getElementById('music-toggle').addEventListener('click', () => {
 });
 
 // ==============================================
+// MOBILE HAMBURGER NAV
+// ==============================================
+const hamburger = document.getElementById('hamburger');
+const mobileNav = document.getElementById('mobile-nav');
+
+hamburger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    hamburger.classList.toggle('open');
+    mobileNav.classList.toggle('open');
+});
+
+mobileNav.querySelectorAll('.nav-link').forEach(link => {
+    link.addEventListener('click', () => {
+        hamburger.classList.remove('open');
+        mobileNav.classList.remove('open');
+    });
+});
+
+document.addEventListener('click', (e) => {
+    if (!hamburger.contains(e.target) && !mobileNav.contains(e.target)) {
+        hamburger.classList.remove('open');
+        mobileNav.classList.remove('open');
+    }
+});
+
+// ==============================================
 // NEW VISITOR TOAST POLLING
 // ==============================================
 let lastVisitorCount = 0;
