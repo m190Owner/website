@@ -15,7 +15,11 @@ header('X-XSS-Protection: 1; mode=block');
 header('Referrer-Policy: strict-origin-when-cross-origin');
 header('Permissions-Policy: camera=(), microphone=(), geolocation=()');
 header('Strict-Transport-Security: max-age=31536000; includeSubDomains; preload');
-header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://www.youtube-nocookie.com; connect-src 'self'; font-src 'self'; base-uri 'self'; form-action 'self'");
+// NOTE: 'unsafe-inline' was removed from script-src. All scripts must be served
+// from external .js files under /forum/. Style-src still allows 'unsafe-inline'
+// pending migration of inline styles. Inline scripts elsewhere should be moved
+// to external files; do not re-add 'unsafe-inline' to script-src.
+header("Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; frame-src https://www.youtube-nocookie.com; connect-src 'self'; font-src 'self'; base-uri 'self'; form-action 'self'");
 
 // ---- Paths ----
 define('FORUM_ROOT', dirname(__DIR__));
@@ -141,6 +145,12 @@ function doLogin(string $username, string $password): array {
     $user = $users[$key];
 
     if ($user['needs_password'] ?? false) {
+        $setupToken = getenv('FORUM_SETUP_TOKEN');
+        if (!$setupToken || !hash_equals($setupToken, $password)) {
+            recordFailedLogin($lockKey);
+            recordFailedLogin('ip_' . md5($ip));
+            return ['ok' => false, 'error' => 'Invalid username or password.'];
+        }
         session_regenerate_id(true);
         $_SESSION['forum_user'] = $user['username'];
         $_SESSION['needs_password'] = true;
@@ -203,11 +213,24 @@ function doRegister(string $username, string $password, string $inviteCode): arr
         return ['ok' => false, 'error' => 'Password must be at least 8 characters.'];
     }
 
-    $invites = readJsonFile(INVITES_FILE, []);
     $inviteCode = strtoupper(trim($inviteCode));
+
+    // Atomically validate and consume the invite under an exclusive file lock
+    // to prevent race conditions where two concurrent registrations could
+    // both burn the same single-use code.
+    $inviteFile = INVITES_FILE;
+    $fp = @fopen($inviteFile, 'c+');
+    if (!$fp) return ['ok' => false, 'error' => 'Server error'];
+    if (!flock($fp, LOCK_EX)) {
+        fclose($fp);
+        return ['ok' => false, 'error' => 'Server error'];
+    }
+
+    $raw = stream_get_contents($fp);
+    $invites = json_decode($raw, true) ?: [];
+
     $validInvite = false;
     $inviteIndex = -1;
-
     foreach ($invites as $i => $inv) {
         if (hash_equals($inv['code'], $inviteCode) && !$inv['used']) {
             $validInvite = true;
@@ -217,11 +240,15 @@ function doRegister(string $username, string $password, string $inviteCode): arr
     }
 
     if (!$validInvite) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return ['ok' => false, 'error' => 'Invalid or already used invite code.'];
     }
 
     $users = readJsonFile(USERS_FILE, []);
     if (isset($users[$key])) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
         return ['ok' => false, 'error' => 'Username already taken.'];
     }
 
@@ -238,7 +265,13 @@ function doRegister(string $username, string $password, string $inviteCode): arr
     $invites[$inviteIndex]['used'] = true;
     $invites[$inviteIndex]['used_by'] = $username;
     $invites[$inviteIndex]['used_at'] = date('c');
-    writeJsonFile(INVITES_FILE, $invites);
+
+    ftruncate($fp, 0);
+    rewind($fp);
+    fwrite($fp, json_encode($invites));
+    fflush($fp);
+    flock($fp, LOCK_UN);
+    fclose($fp);
 
     session_regenerate_id(true);
     $_SESSION['forum_user'] = $username;
@@ -807,8 +840,8 @@ function getConversations(): array {
     $files = glob(MESSAGES_DIR . '/*.json') ?: [];
     $me = strtolower(currentUser());
     foreach ($files as $file) {
-        $key = pathinfo($file, PATHINFO_FILENAME);
-        if (strpos($key, $me) === false) continue;
+        $parts = explode('_', basename($file, '.json'));
+        if (!in_array(strtolower($me), $parts)) continue;
         $convo = readJsonFile($file);
         $messages = $convo['messages'] ?? [];
         if (empty($messages)) continue;
@@ -1258,6 +1291,8 @@ function processPostMentions(string $content, string $threadId, string $postId, 
     if (!isLoggedIn()) return;
     preg_match_all('/@([a-zA-Z0-9_]+)/', $content, $matches);
     $mentioned = array_unique($matches[1]);
+    // Cap mentions per post to prevent notification flooding / abuse
+    $mentioned = array_slice($mentioned, 0, 10);
     $users = readJsonFile(USERS_FILE, []);
     foreach ($mentioned as $uname) {
         $key = strtolower($uname);
@@ -1527,6 +1562,7 @@ function createDeadDrop(string $recipient, string $encryptedContent, string $pub
         'encrypted_content' => $encryptedContent,
         'nonce' => $publicNonce,
         'recipient' => $isPublic ? '*' : $recipient,
+        'author' => currentUser(),
         'is_public' => $isPublic,
         'created' => date('c'),
         'expires' => $expiresHours ? date('c', time() + ((int)$expiresHours * 3600)) : null,
@@ -1599,6 +1635,12 @@ function burnDeadDrop(string $dropId): bool {
     foreach ($drops as &$d) {
         if ($d['id'] === $dropId) {
             if (!$d['is_public'] && $d['recipient'] !== currentUser() && !isAdmin()) return false;
+            if ($d['is_public']) {
+                $current = currentUser();
+                if ($current !== ($d['author'] ?? null) && !isAdmin()) {
+                    return false;
+                }
+            }
             $d['burned'] = true;
             writeJsonFile(DEADDROPS_FILE, $drops);
             return true;
@@ -1655,8 +1697,8 @@ function formatContent(string $text): string {
     $text = preg_replace_callback('/!\[([^\]]*)\]\(([^)]+)\)/', function($m) {
         $alt = $m[1];
         $url = trim($m[2]);
-        if (preg_match('/^(https?:\/\/|\/forum\/uploads\/)/', $url)) {
-            return '<img class="post-image" src="' . $url . '" alt="' . $alt . '" loading="lazy" data-expandable>';
+        if (preg_match('/^(https?:\/\/|\/forum\/uploads\/)/', $url) && !preg_match('/[\s"\'<>`]/', $url)) {
+            return '<img class="post-image" src="' . htmlspecialchars($url, ENT_QUOTES, 'UTF-8') . '" alt="' . htmlspecialchars($alt, ENT_QUOTES, 'UTF-8') . '" loading="lazy" data-expandable>';
         }
         return $m[0]; // Leave as-is if URL is suspicious
     }, $text);

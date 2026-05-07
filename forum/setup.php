@@ -1,4 +1,10 @@
 <?php
+// NOTE: To bootstrap an account flagged with `needs_password`, the operator
+// must set the FORUM_SETUP_TOKEN environment variable on the server. The
+// user logs in once with that token as their password (see doLogin()
+// in includes/bootstrap.php), is redirected here, and then chooses a
+// permanent password via this form. If FORUM_SETUP_TOKEN is unset, all
+// `needs_password` accounts will be unable to authenticate.
 require_once __DIR__ . '/includes/bootstrap.php';
 
 if (!isLoggedIn() || !needsPassword()) {
