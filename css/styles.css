@@ -770,3 +770,86 @@ section {
 /* Destruction Canvas */
 .destruction-canvas { position:fixed; inset:0; z-index:9996; pointer-events:none; display:none; }
 .destruction-canvas.active { display:block; pointer-events:all; cursor:crosshair; }
+
+/* =============================================
+   RESPONSIVE BREAKPOINTS
+   ============================================= */
+
+/* 1024px — compress nav, hide volume slider */
+@media (max-width: 1024px) {
+    #volume-slider {
+        display: none;
+    }
+    .nav-visualizer canvas {
+        width: 50px;
+    }
+}
+
+/* 768px — hero wraps, nav compresses */
+@media (max-width: 768px) {
+    .home-content h1 {
+        font-size: 2.8rem;
+    }
+    .links {
+        max-width: 480px;
+    }
+}
+
+/* 480px — full mobile layout */
+@media (max-width: 480px) {
+    :root {
+        --nav-h: 48px;
+    }
+
+    nav {
+        padding: var(--space-2) var(--space-4);
+    }
+
+    .nav-links,
+    .music-toggle,
+    .nav-visualizer {
+        display: none;
+    }
+
+    .discord-label,
+    .discord-count {
+        display: none;
+    }
+
+    .home-content h1 {
+        font-size: 2.2rem;
+        letter-spacing: 1.5px;
+    }
+
+    .links {
+        flex-direction: column;
+        align-items: center;
+    }
+
+    .links a {
+        width: 200px;
+        justify-content: center;
+    }
+
+    .chat-input-container {
+        left: var(--space-4);
+        right: var(--space-4);
+        transform: none;
+        width: auto;
+    }
+
+    .chat-input {
+        flex: 1;
+        width: auto;
+    }
+
+    .bottom-bar {
+        flex-wrap: wrap;
+        gap: var(--space-3) var(--space-5);
+        padding: var(--space-2) var(--space-4);
+    }
+
+    .cursor {
+        display: none;
+    }
+}
