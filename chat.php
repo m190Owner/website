@@ -10,9 +10,58 @@ if (!file_exists($chatFile)) {
 }
 
 $method = $_SERVER['REQUEST_METHOD'];
+$action = $_GET['action'] ?? '';
 
+// ==============================================
+// ADMIN: DELETE MESSAGE
+// ==============================================
+if ($method === 'POST' && $action === 'delete') {
+    $token     = $_GET['token'] ?? '';
+    $adminToken = getenv('CHAT_ADMIN_TOKEN');
+
+    if (!$adminToken || !hash_equals($adminToken, $token)) {
+        http_response_code(403);
+        echo json_encode(['error' => 'Forbidden']);
+        exit;
+    }
+
+    $id = preg_replace('/[^a-f0-9]/', '', $_GET['id'] ?? '');
+    if (!$id) {
+        http_response_code(400);
+        echo json_encode(['error' => 'Missing id']);
+        exit;
+    }
+
+    $messages = readJsonFile($chatFile, []);
+    $messages = array_values(array_filter($messages, fn($m) => $m['id'] !== $id));
+    writeJsonFile($chatFile, $messages);
+    echo json_encode(['success' => true]);
+    exit;
+}
+
+// ==============================================
+// WORD FILTER
+// ==============================================
+function isBlocked(string $msg): bool {
+    $patterns = [
+        'nigger','nigga','faggot','chink','spic','kike','tranny',
+        'cunt','whore','rape','lynch','hitler','nazi',
+        // spam patterns
+        'buy now','click here','free money','make money fast','OnlyFans',
+        '<script','javascript:','data:text',
+    ];
+    $lower = mb_strtolower($msg);
+    foreach ($patterns as $p) {
+        if (str_contains($lower, mb_strtolower($p))) return true;
+    }
+    return false;
+}
+
+// ==============================================
+// POST: SEND MESSAGE
+// ==============================================
 if ($method === 'POST') {
-    enforceRateLimit('chat_post', 5, 60); // 5 messages per minute
+    enforceRateLimit('chat_post', 5, 60);
 
     $input = json_decode(file_get_contents('php://input'), true);
     $msg = isset($input['message']) ? trim($input['message']) : '';
@@ -22,30 +71,35 @@ if ($method === 'POST') {
         exit;
     }
 
+    if (isBlocked($msg)) {
+        echo json_encode(['error' => 'Message blocked']);
+        exit;
+    }
+
     $msg = htmlspecialchars($msg, ENT_QUOTES, 'UTF-8');
 
     $messages = readJsonFile($chatFile, []);
     $messages[] = [
         'text' => $msg,
         'time' => time(),
-        'id' => bin2hex(random_bytes(4))
+        'id'   => bin2hex(random_bytes(4))
     ];
 
-    // Keep last 50
     if (count($messages) > 50) {
         $messages = array_slice($messages, -50);
     }
 
     writeJsonFile($chatFile, $messages);
     echo json_encode(['success' => true]);
-} else {
-    enforceRateLimit('chat_get', 30, 60);
-
-    $messages = readJsonFile($chatFile, []);
-    // Only return messages from last 24 hours
-    $cutoff = time() - 86400;
-    $messages = array_values(array_filter($messages, function($m) use ($cutoff) {
-        return $m['time'] > $cutoff;
-    }));
-    echo json_encode($messages);
+    exit;
 }
+
+// ==============================================
+// GET: FETCH MESSAGES
+// ==============================================
+enforceRateLimit('chat_get', 30, 60);
+
+$messages = readJsonFile($chatFile, []);
+$cutoff   = time() - 86400;
+$messages = array_values(array_filter($messages, fn($m) => $m['time'] > $cutoff));
+echo json_encode($messages);
