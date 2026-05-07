@@ -62,7 +62,7 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: var(--font-sans);
     background: var(--color-bg);
     color: var(--color-text);
     overflow: hidden;
@@ -277,7 +277,7 @@ section {
     color: var(--color-text-muted);
     margin-top: 10px;
     height: 1.5em;
-    font-family: 'Consolas', 'Courier New', monospace;
+    font-family: var(--font-mono);
     letter-spacing: 1px;
 }
 
@@ -784,7 +784,7 @@ section {
     text-shadow: 0 0 8px rgba(122, 162, 255, 0.3);
     pointer-events: none;
     z-index: 5;
-    font-family: 'Segoe UI', sans-serif;
+    font-family: var(--font-sans);
 }
 
 /* Key hints */
