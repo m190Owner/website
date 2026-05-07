@@ -296,22 +296,61 @@
             position: fixed;
             bottom: 30px;
             right: 30px;
-            background: linear-gradient(135deg, #7aa2ff, #5a80cc);
-            color: #fff;
+            background: rgba(122, 162, 255, 0.12);
+            border: 1px solid rgba(122, 162, 255, 0.40);
+            color: #a8c0ff;
             text-decoration: none;
-            padding: 10px 20px;
-            border-radius: 8px;
+            padding: 8px 16px;
+            border-radius: 4px;
             font-size: 0.85rem;
-            font-weight: 600;
-            letter-spacing: 1px;
+            font-weight: 500;
+            letter-spacing: 0.5px;
             z-index: 100;
-            box-shadow: 0 4px 20px rgba(122,162,255,0.3);
-            transition: transform 0.2s;
+            transition: background 0.15s ease, box-shadow 0.15s ease, color 0.15s ease, border-color 0.15s ease;
         }
-        .back-to-site:hover { transform: scale(1.05); }
+        .back-to-site:hover {
+            background: rgba(122, 162, 255, 0.2);
+            box-shadow: 0 0 16px rgba(122, 162, 255, 0.18);
+            color: #fff;
+        }
+        .back-to-site:active {
+            background: rgba(122, 162, 255, 0.28);
+            transform: translateY(1px);
+        }
+
+        /* Mobile warning */
+        .mobile-warn {
+            display: none;
+        }
+        @media (max-width: 600px) {
+            .mobile-warn {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                position: fixed;
+                inset: 0;
+                background: #0b0b0f;
+                color: #8a96b8;
+                font-size: 0.9rem;
+                text-align: center;
+                gap: 16px;
+                z-index: 10000;
+                padding: 32px;
+            }
+            .mobile-warn a {
+                color: #7aa2ff;
+                text-decoration: none;
+            }
+        }
     </style>
 </head>
 <body>
+    <div class="mobile-warn">
+        This experience is designed for desktop.<br>
+        <a href="index.html">&#8592; Go back</a>
+    </div>
+
     <!-- Title Bar -->
     <div class="title-bar">
         <div class="title-bar-left">
