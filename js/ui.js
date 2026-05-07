@@ -228,7 +228,7 @@ checkBeatGlitch();
 function updateCursorSize() {
     const beat = getBeatStrength();
     const baseSize = 18;
-    const extra = (beat / 255) * 34;
+    const extra = (beat / 255) * 17;
     const size = baseSize + extra;
     cursor.style.width = size + 'px';
     cursor.style.height = size + 'px';
