@@ -1,70 +1,4 @@
 // ==============================================
-// 3D STARFIELD
-// ==============================================
-const STAR_COUNT = 400;
-const stars = [];
-
-function initStars() {
-    stars.length = 0;
-    for (let i = 0; i < STAR_COUNT; i++) {
-        stars.push({
-            x: (Math.random() - 0.5) * 2000,
-            y: (Math.random() - 0.5) * 2000,
-            z: Math.random() * 2000
-        });
-    }
-}
-
-function drawStarfield() {
-    sfCtx.clearRect(0, 0, w, h);
-
-    const beat = getBeatStrength();
-    const speed = 2 + beat / 10;
-    const cx = w / 2;
-    const cy = h / 2;
-
-    for (let i = 0; i < stars.length; i++) {
-        const s = stars[i];
-        s.z -= speed;
-
-        if (s.z <= 0) {
-            s.x = (Math.random() - 0.5) * 2000;
-            s.y = (Math.random() - 0.5) * 2000;
-            s.z = 2000;
-        }
-
-        const sx = (s.x / s.z) * 500 + cx;
-        const sy = (s.y / s.z) * 500 + cy;
-        const size = Math.max(0.5, (1 - s.z / 2000) * 3);
-        const alpha = 1 - s.z / 2000;
-
-        const prevZ = s.z + speed;
-        const px = (s.x / prevZ) * 500 + cx;
-        const py = (s.y / prevZ) * 500 + cy;
-
-        if (sx >= 0 && sx <= w && sy >= 0 && sy <= h) {
-            const hue = 210 + (beat / 3);
-            sfCtx.strokeStyle = `hsla(${hue}, 70%, 80%, ${alpha * 0.6})`;
-            sfCtx.lineWidth = size * 0.8;
-            sfCtx.beginPath();
-            sfCtx.moveTo(px, py);
-            sfCtx.lineTo(sx, sy);
-            sfCtx.stroke();
-
-            sfCtx.fillStyle = `hsla(${hue}, 80%, 90%, ${alpha})`;
-            sfCtx.beginPath();
-            sfCtx.arc(sx, sy, size, 0, Math.PI * 2);
-            sfCtx.fill();
-        }
-    }
-
-    requestAnimationFrame(drawStarfield);
-}
-
-initStars();
-drawStarfield();
-
-// ==============================================
 // FLOATING TEXT PARTICLE SYSTEM
 // ==============================================
 const phrases = [
@@ -266,56 +200,6 @@ function drawFloatingText(beat) {
     drawShockwaves();
 }
 
-// ==============================================
-// CURSOR TRAIL
-// ==============================================
-const trailParticles = [];
-
-function spawnTrail() {
-    const beat = getBeatStrength();
-    const count = beat > 40 ? 3 : 1;
-    for (let i = 0; i < count; i++) {
-        trailParticles.push({
-            x: mouseX + (Math.random() - 0.5) * 8,
-            y: mouseY + (Math.random() - 0.5) * 8,
-            vx: (Math.random() - 0.5) * (1 + beat / 40),
-            vy: (Math.random() - 0.5) * (1 + beat / 40),
-            size: 2 + Math.random() * 3 + beat / 30,
-            alpha: 0.8,
-            hue: 210 + Math.random() * 50 + beat / 3
-        });
-    }
-    if (trailParticles.length > 120) trailParticles.splice(0, trailParticles.length - 120);
-}
-
-function updateTrail() {
-    for (let i = trailParticles.length - 1; i >= 0; i--) {
-        const p = trailParticles[i];
-        p.x += p.vx;
-        p.y += p.vy;
-        p.alpha -= 0.02;
-        p.size *= 0.97;
-        if (p.alpha <= 0 || p.size < 0.3) {
-            trailParticles.splice(i, 1);
-        }
-    }
-}
-
-function drawTrail() {
-    trailParticles.forEach(p => {
-        ctx.save();
-        ctx.globalAlpha = p.alpha;
-        ctx.fillStyle = `hsla(${p.hue}, 85%, 70%, 1)`;
-        ctx.shadowColor = `hsla(${p.hue}, 100%, 70%, 0.8)`;
-        ctx.shadowBlur = 10;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-    });
-}
-
-setInterval(spawnTrail, 30);
 
 // ==============================================
 // LIGHTNING ARCS ON BEAT DROPS
@@ -480,8 +364,6 @@ function draw() {
     updateFloatingText(beat);
     drawFloatingText(beat);
 
-    updateTrail();
-    drawTrail();
 
     checkLightning();
     updateLightning();
@@ -522,11 +404,6 @@ function draw() {
                 t.vx += (dx / dist) * f;
                 t.vy += (dy / dist) * f;
             }
-        });
-        trailParticles.forEach(p => {
-            const dx = portalX - p.x, dy = portalY - p.y;
-            const dist = Math.hypot(dx, dy);
-            if (dist < portalRadius * 2) { p.vx += (dx / dist) * 0.4; p.vy += (dy / dist) * 0.4; }
         });
     }
 

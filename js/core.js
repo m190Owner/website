@@ -14,8 +14,6 @@ const cursor = document.querySelector('.cursor');
 const loader = document.getElementById('loader');
 const canvas = document.getElementById('particles');
 const ctx = canvas.getContext('2d');
-const sfCanvas = document.getElementById('starfield');
-const sfCtx = sfCanvas.getContext('2d');
 const toastContainer = document.getElementById('toast-container');
 let w, h;
 
@@ -56,8 +54,6 @@ document.addEventListener('mousemove', e => {
 function resize() {
     w = canvas.width = window.innerWidth;
     h = canvas.height = window.innerHeight;
-    sfCanvas.width = w;
-    sfCanvas.height = h;
 }
 
 window.addEventListener('resize', resize);

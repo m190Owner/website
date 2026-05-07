@@ -28,7 +28,6 @@
 
   /* Z-Index System */
   --z-bg:         -3;
-  --z-starfield:  -2;
   --z-particles:  -1;
   --z-nav:        10;
   --z-toast:      20;
@@ -252,14 +251,6 @@ section {
     text-align: center;
 }
 
-#starfield {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    z-index: var(--z-starfield);
-}
 
 #particles {
     position: fixed;
