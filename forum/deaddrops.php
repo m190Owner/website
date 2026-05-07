@@ -28,7 +28,10 @@ require_once __DIR__ . '/includes/header.php';
                 <span class="dd-classified">CLASSIFIED</span>
             </div>
             <p style="font-size:0.75rem;color:#8a96b8;line-height:1.6;">
-                End-to-end encrypted anonymous messages. Server only sees ciphertext.
+                Anonymous drops. <strong>Private drops</strong> are end-to-end encrypted &mdash;
+                only the recipient's browser can decrypt; the server stores ciphertext.
+                <strong>Public drops</strong> are <em>not</em> encrypted: they are base64-encoded
+                plaintext visible to all logged-in members and to the server.
                 Your private key never leaves this browser. Sender identity is not stored.
                 Burn-after-read enforced. Optional expiry up to 72 hours.
             </p>
@@ -64,10 +67,10 @@ require_once __DIR__ . '/includes/header.php';
                                 <?php if ($d['read']): ?><span class="dd-row-read">READ</span><?php endif; ?>
                                 <?php if ($d['expires']): ?><span class="dd-row-expires">expires <?= timeAgo($d['expires']) ?></span><?php endif; ?>
                             </div>
-                            <div class="dd-row-preview" data-preview>[encrypted &mdash; click to decrypt]</div>
+                            <div class="dd-row-preview" data-preview><?= $d['is_public'] ? '[public drop &mdash; click to view]' : '[encrypted &mdash; click to decrypt]' ?></div>
                         </div>
                         <div class="dd-row-actions">
-                            <button class="btn btn-secondary btn-sm" data-decrypt>Decrypt</button>
+                            <button class="btn btn-secondary btn-sm" data-decrypt><?= $d['is_public'] ? 'View' : 'Decrypt' ?></button>
                             <button class="btn btn-danger btn-sm" data-burn>Burn</button>
                         </div>
                     </div>
@@ -87,10 +90,10 @@ require_once __DIR__ . '/includes/header.php';
                     <label class="form-label">Mode</label>
                     <div style="display:flex;gap:10px;">
                         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.8rem;">
-                            <input type="radio" name="dd-mode" value="private" checked> Private (to user)
+                            <input type="radio" name="dd-mode" value="private" checked> Private (E2E encrypted to user)
                         </label>
                         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:0.8rem;">
-                            <input type="radio" name="dd-mode" value="public"> Public (readable by anyone)
+                            <input type="radio" name="dd-mode" value="public"> Public (plaintext, visible to all members)
                         </label>
                     </div>
                 </div>
@@ -101,8 +104,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
                 <div class="form-group">
                     <label class="form-label">Message</label>
-                    <textarea class="form-textarea" id="dd-message" maxlength="4000" placeholder="Write in clear. Encryption happens in your browser before sending." style="min-height:160px;"></textarea>
-                    <p class="form-hint">Max 4000 characters. Markdown-style formatting supported.</p>
+                    <textarea class="form-textarea" id="dd-message" maxlength="4000" placeholder="Write in clear. Private drops are encrypted in your browser before sending; public drops are sent as plaintext (base64)." style="min-height:160px;"></textarea>
+                    <p class="form-hint">Max 4000 characters. Markdown-style formatting supported. Public drops are NOT encrypted.</p>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Self-destruct</label>

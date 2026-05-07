@@ -245,8 +245,27 @@ function doRegister(string $username, string $password, string $inviteCode): arr
         return ['ok' => false, 'error' => 'Invalid or already used invite code.'];
     }
 
-    $users = readJsonFile(USERS_FILE, []);
+    // Lock the users file separately so the read/check/write is atomic. Without
+    // this, two concurrent registrations holding *different* invite locks could
+    // both pass the username-exists check and then race the write, producing a
+    // last-writer-wins clobber.
+    $usersFp = fopen(USERS_FILE, 'c+');
+    if (!$usersFp) {
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return ['ok' => false, 'error' => 'Server error'];
+    }
+    if (!flock($usersFp, LOCK_EX)) {
+        fclose($usersFp);
+        flock($fp, LOCK_UN);
+        fclose($fp);
+        return ['ok' => false, 'error' => 'Server error'];
+    }
+
+    $users = json_decode(stream_get_contents($usersFp), true) ?: [];
     if (isset($users[$key])) {
+        flock($usersFp, LOCK_UN);
+        fclose($usersFp);
         flock($fp, LOCK_UN);
         fclose($fp);
         return ['ok' => false, 'error' => 'Username already taken.'];
@@ -260,7 +279,12 @@ function doRegister(string $username, string $password, string $inviteCode): arr
         'banned' => false,
         'bio' => ''
     ];
-    writeJsonFile(USERS_FILE, $users);
+    ftruncate($usersFp, 0);
+    rewind($usersFp);
+    fwrite($usersFp, json_encode($users));
+    fflush($usersFp);
+    flock($usersFp, LOCK_UN);
+    fclose($usersFp);
 
     $invites[$inviteIndex]['used'] = true;
     $invites[$inviteIndex]['used_by'] = $username;
@@ -1261,25 +1285,40 @@ function moveThread(string $threadId, string $newCatId): bool {
 // ==============================================
 // MOD LOG
 // ==============================================
-define('MODLOG_FILE', DATA_DIR . '/modlog.json');
+define('MODLOG_FILE', DATA_DIR . '/modlog.json'); // legacy (abandoned, read-only)
+define('MOD_LOG_FILE', DATA_DIR . '/mod_log.txt'); // append-only flat log
 
-function logModAction(string $action, string $details): void {
-    $log = readJsonFile(MODLOG_FILE, []);
-    $log[] = [
-        'id' => bin2hex(random_bytes(6)),
-        'action' => $action, 'details' => $details,
-        'actor' => currentUser() ?? 'system',
-        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
-        'created' => date('c')
-    ];
-    if (count($log) > 500) $log = array_slice($log, -500);
-    writeJsonFile(MODLOG_FILE, $log);
+function logModAction(string $type, string $details): void {
+    // Append-only flat log. We deliberately avoid a JSON array that gets
+    // rewritten in full because that lets a compromised admin spam entries to
+    // flush earlier records. flat-file appends + LOCK_EX preserve history;
+    // tampering requires filesystem-level access, not application access.
+    $currentUser = currentUser() ?? 'system';
+    $line = date('Y-m-d H:i:s') . "\t" . $currentUser . "\t" . $type . "\t" . $details . "\n";
+    file_put_contents(MOD_LOG_FILE, $line, FILE_APPEND | LOCK_EX);
 }
 
-function getModLog(int $limit = 50): array {
-    $log = readJsonFile(MODLOG_FILE, []);
-    usort($log, fn($a, $b) => strtotime($b['created']) - strtotime($a['created']));
-    return array_slice($log, 0, $limit);
+function getModLog(int $limit = 100): array {
+    if (!file_exists(MOD_LOG_FILE)) return [];
+    $entries = [];
+    $fp = @fopen(MOD_LOG_FILE, 'r');
+    if (!$fp) return [];
+    while (($raw = fgets($fp)) !== false) {
+        $raw = rtrim($raw, "\r\n");
+        if ($raw === '') continue;
+        $parts = explode("\t", $raw, 4);
+        if (count($parts) < 4) continue;
+        $entries[] = [
+            'created' => $parts[0],
+            'actor'   => $parts[1],
+            'action'  => $parts[2],
+            'details' => $parts[3],
+        ];
+    }
+    fclose($fp);
+    // Most recent first, then take the requested tail
+    $entries = array_reverse($entries);
+    return array_slice($entries, 0, $limit);
 }
 
 // ==============================================
@@ -1409,16 +1448,23 @@ function getBountyCategoryById(string $id): ?array {
 
 function getBounties(string $filter = 'open'): array {
     $bounties = readJsonFile(BOUNTIES_FILE, []);
-    // Expire overdue bounties
+    // Expire overdue bounties and refund escrowed rep to authors
     $changed = false;
+    $refunds = [];
     foreach ($bounties as &$b) {
         if ($b['status'] === 'open' && !empty($b['deadline']) && strtotime($b['deadline']) < time()) {
             $b['status'] = 'expired';
             $changed = true;
+            $refunds[] = ['author' => $b['author'], 'reward' => (int)$b['reward']];
         }
     }
     unset($b);
-    if ($changed) writeJsonFile(BOUNTIES_FILE, $bounties);
+    if ($changed) {
+        writeJsonFile(BOUNTIES_FILE, $bounties);
+        foreach ($refunds as $r) {
+            refundBountyRep($r['author'], $r['reward']);
+        }
+    }
     if ($filter !== 'all') {
         $bounties = array_filter($bounties, fn($b) => $b['status'] === $filter);
     }
@@ -1455,6 +1501,18 @@ function createBounty(string $title, string $description, int $repReward, string
         'submissions' => [], 'winner' => null
     ];
     writeJsonFile(BOUNTIES_FILE, $bounties);
+
+    // Deduct the bounty reward from the author's bounty_rep so the rep is
+    // escrowed for the duration of the bounty. Refunded on cancel/expire,
+    // transferred to winner on award. Floor at 0 (no negative balances).
+    $users = readJsonFile(USERS_FILE, []);
+    $aKey = strtolower(currentUser());
+    if (isset($users[$aKey])) {
+        $current = (int)($users[$aKey]['bounty_rep'] ?? 0);
+        $users[$aKey]['bounty_rep'] = max(0, $current - $repReward);
+        writeJsonFile(USERS_FILE, $users);
+    }
+
     checkAndAwardAchievements(currentUser());
     return ['ok' => true, 'id' => $id];
 }
@@ -1531,10 +1589,21 @@ function cancelBounty(string $bountyId): array {
             if ($b['status'] !== 'open') return ['ok' => false, 'error' => 'Cannot cancel.'];
             $b['status'] = 'cancelled';
             writeJsonFile(BOUNTIES_FILE, $bounties);
+            // Refund escrowed rep to the bounty author
+            refundBountyRep($b['author'], (int)$b['reward']);
             return ['ok' => true];
         }
     }
     return ['ok' => false, 'error' => 'Not found.'];
+}
+
+function refundBountyRep(string $username, int $amount): void {
+    if ($amount <= 0) return;
+    $users = readJsonFile(USERS_FILE, []);
+    $key = strtolower($username);
+    if (!isset($users[$key])) return;
+    $users[$key]['bounty_rep'] = (int)($users[$key]['bounty_rep'] ?? 0) + $amount;
+    writeJsonFile(USERS_FILE, $users);
 }
 
 function getUserBountyRep(string $username): int {
@@ -1548,6 +1617,13 @@ function getUserBountyRep(string $username): int {
 define('DEADDROPS_FILE', DATA_DIR . '/deaddrops.json');
 
 function createDeadDrop(string $recipient, string $encryptedContent, string $publicNonce, bool $isPublic = false, ?string $expiresHours = null): array {
+    // NOTE on storage semantics:
+    //   - Private drops ($isPublic=false): $encryptedContent is true ECDH-AES-GCM
+    //     ciphertext produced client-side. The server never sees plaintext and
+    //     cannot decrypt it.
+    //   - Public drops ($isPublic=true): $encryptedContent is base64-encoded
+    //     PLAINTEXT (no key, no encryption). Any logged-in user can decode and
+    //     read it. The UI must not advertise public drops as encrypted.
     if (!isLoggedIn()) return ['ok' => false, 'error' => 'Not logged in.'];
     if (strlen($encryptedContent) < 1 || strlen($encryptedContent) > 20000) return ['ok' => false, 'error' => 'Content too long.'];
     if (!$isPublic) {
