@@ -327,6 +327,14 @@ if (mapLink) {
 }
 
 // ==============================================
+// MUSIC PANEL TOGGLE
+// ==============================================
+document.getElementById('music-toggle').addEventListener('click', () => {
+    const panel = document.getElementById('music-panel');
+    panel.hidden = !panel.hidden;
+});
+
+// ==============================================
 // NEW VISITOR TOAST POLLING
 // ==============================================
 let lastVisitorCount = 0;

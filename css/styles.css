@@ -111,7 +111,7 @@ body.loaded #home {
 /* Navigation */
 .announce-banner {
     position: fixed;
-    top: 58px;
+    top: var(--nav-h);
     left: 0;
     width: 100%;
     z-index: 9;
@@ -159,6 +159,86 @@ nav {
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(8px);
     z-index: var(--z-nav);
+}
+
+.nav-brand {
+    color: var(--color-text);
+    font-size: 0.95rem;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.nav-right {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.nav-links {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.nav-link {
+    color: var(--color-text-muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    letter-spacing: 0.5px;
+    padding: var(--space-2) var(--space-3);
+    border-radius: var(--radius-sm);
+    transition: color var(--transition-fast), background var(--transition-fast);
+    position: relative;
+    white-space: nowrap;
+}
+
+.nav-link::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: var(--space-3);
+    right: var(--space-3);
+    height: 1px;
+    background: var(--color-accent);
+    transform: scaleX(0);
+    transition: transform var(--transition-base);
+    transform-origin: center;
+}
+
+.nav-link:hover {
+    color: var(--color-accent-light);
+    background: rgba(122, 162, 255, 0.06);
+}
+
+.nav-link:hover::after {
+    transform: scaleX(1);
+}
+
+.music-panel {
+    position: fixed;
+    top: calc(var(--nav-h) + var(--space-2));
+    right: var(--space-5);
+    background: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    backdrop-filter: var(--blur-md);
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    z-index: var(--z-nav);
+}
+
+.music-panel[hidden] {
+    display: none;
+}
+
+.track-name {
+    font-size: 0.7rem;
+    min-width: 30px;
+    text-align: center;
+    opacity: 0.7;
+    color: var(--color-accent);
 }
 
 /* Sections */

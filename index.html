@@ -77,34 +77,35 @@
 
     <!-- Navigation -->
     <nav>
-        <strong>Logan Sandivar | ServerLagger</strong>
-        <div style="display: flex; align-items: center; gap: 15px;">
-            <!-- Audio Waveform -->
+        <strong class="nav-brand">Logan Sandivar | ServerLagger</strong>
+        <div class="nav-right">
             <div class="nav-visualizer">
                 <canvas id="nav-waveform" width="80" height="28"></canvas>
             </div>
-            <!-- Nav Links -->
-            <a href="map.html" class="feedback-btn" style="text-decoration: none;" id="map-link">Visitor Map</a>
-            <a href="browser.html" class="feedback-btn" style="text-decoration: none;">Browser</a>
-            <a href="room.html" class="feedback-btn" style="text-decoration: none;">3D Room</a>
-            <a href="forum/" class="feedback-btn" style="text-decoration: none;">m190</a>
-            <!-- Discord Status Widget -->
+            <div class="nav-links">
+                <a href="map.html" class="nav-link" id="map-link">Visitor Map</a>
+                <a href="browser.html" class="nav-link">Browser</a>
+                <a href="room.html" class="nav-link">3D Room</a>
+                <a href="forum/" class="nav-link">m190</a>
+            </div>
             <a href="https://discord.gg/BFs2Dgcg4y" target="_blank" class="discord-widget" id="discord-widget">
                 <div class="discord-dot" id="discord-dot"></div>
                 <span class="discord-count" id="discord-count">&mdash;</span>
                 <span class="discord-label">online</span>
             </a>
-            <!-- Feedback button -->
             <button class="btn btn-primary btn-sm" id="feedbackButton">Feedback</button>
-            <div id="volume-controls" style="display: flex; align-items: center; gap: 10px; color: #7aa2ff;">
-                <button id="prev-btn" class="btn btn-primary btn-sm" title="Previous track">&#9664;</button>
-                <span id="track-name" style="font-size: 0.7rem; min-width: 30px; text-align: center; opacity: 0.7;">1/5</span>
-                <button id="next-btn" class="btn btn-primary btn-sm" title="Next track">&#9654;</button>
-                <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.3">
-                <button id="mute-btn" class="btn btn-primary btn-sm">Mute</button>
-            </div>
+            <button class="btn btn-primary btn-sm music-toggle" id="music-toggle" title="Music controls">&#9835;</button>
         </div>
     </nav>
+
+    <!-- Music Panel (toggled by ♪ button) -->
+    <div class="music-panel" id="music-panel" hidden>
+        <button id="prev-btn" class="btn btn-primary btn-sm" title="Previous track">&#9664;</button>
+        <span id="track-name" class="track-name">1/5</span>
+        <button id="next-btn" class="btn btn-primary btn-sm" title="Next track">&#9654;</button>
+        <input type="range" id="volume-slider" min="0" max="1" step="0.01" value="0.3">
+        <button id="mute-btn" class="btn btn-primary btn-sm">Mute</button>
+    </div>
 
     <!-- Announcement Banner -->
     <div class="announce-banner" id="announce-banner" style="display:none;">
