@@ -299,55 +299,57 @@ section {
 /* Links */
 .links {
     margin-top: 25px;
-    perspective: 1000px;
 }
 
-.links a {
-    display: inline-block;
-    margin: 0 10px;
-    padding: 12px 24px;
-    border: none;
-    border-radius: 4px;
-    color: #fff;
-    text-decoration: none;
-    transition: transform 0.5s;
-    transform-style: preserve-3d;
-    position: relative;
-    background: linear-gradient(var(--color-accent), var(--color-accent-dark));
-    text-shadow: 0 6px 10px rgba(0,0,0,0.6);
-    transform: rotateX(70deg) rotateZ(30deg);
-    letter-spacing: 3px;
-    text-transform: uppercase;
-    font-size: 0.8rem;
-    font-weight: 600;
+/* Unified Button System */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-2) var(--space-5);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-sans);
+  font-size: 0.85rem;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  text-decoration: none;
+  cursor: pointer;
+  border: none;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast), color var(--transition-fast);
 }
 
-.links a::before {
-    content: "";
-    width: 100%;
-    height: 12px;
-    background-color: var(--color-accent-deep);
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    transform: rotateX(90deg);
-    transform-origin: bottom;
+.btn-primary {
+  background: rgba(122, 162, 255, 0.12);
+  border: 1px solid var(--color-border-hover);
+  color: var(--color-accent-light);
 }
 
-.links a::after {
-    content: "";
-    width: 12px;
-    height: 100%;
-    background-color: #8bb4ff;
-    position: absolute;
-    top: 0;
-    right: 0;
-    transform: rotateY(-90deg);
-    transform-origin: right;
+.btn-primary:hover {
+  background: rgba(122, 162, 255, 0.2);
+  box-shadow: 0 0 16px rgba(122, 162, 255, 0.18);
+  color: #fff;
 }
 
-.links a:hover {
-    transform: rotateX(30deg) rotateZ(0);
+.btn-primary:active {
+  background: rgba(122, 162, 255, 0.28);
+  transform: translateY(1px);
+}
+
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+}
+
+.btn-ghost:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent-light);
+  box-shadow: 0 0 12px rgba(122, 162, 255, 0.12);
+}
+
+.btn-sm {
+  padding: var(--space-1) var(--space-2);
+  font-size: 0.8rem;
 }
 
 /* Loader */
@@ -394,100 +396,6 @@ section {
 #volume-slider {
     width: 120px;
     cursor: pointer;
-}
-
-/* 3D Nav Buttons */
-.nav-ctrl-btn {
-    position: relative;
-    background: linear-gradient(var(--color-accent), var(--color-accent-dark));
-    border: none;
-    border-radius: 3px;
-    color: #fff;
-    padding: 5px 10px;
-    font-family: inherit;
-    font-size: 0.85rem;
-    cursor: pointer;
-    transition: transform 0.5s;
-    transform-style: preserve-3d;
-    text-shadow: 0 3px 6px rgba(0,0,0,0.5);
-    transform: rotateX(70deg) rotateZ(30deg);
-    letter-spacing: 1px;
-}
-
-.nav-ctrl-btn::before {
-    content: "";
-    width: 100%;
-    height: 8px;
-    background-color: var(--color-accent-deep);
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    transform: rotateX(90deg);
-    transform-origin: bottom;
-}
-
-.nav-ctrl-btn::after {
-    content: "";
-    width: 8px;
-    height: 100%;
-    background-color: #8bb4ff;
-    position: absolute;
-    top: 0;
-    right: 0;
-    transform: rotateY(-90deg);
-    transform-origin: right;
-}
-
-.nav-ctrl-btn:hover {
-    transform: rotateX(30deg) rotateZ(0);
-}
-
-/* Feedback button styling */
-.feedback-btn {
-    position: relative;
-    background: linear-gradient(var(--color-accent), var(--color-accent-dark));
-    border: none;
-    border-radius: 3px;
-    color: #fff;
-    padding: 8px 14px;
-    font-family: inherit;
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: transform 0.5s;
-    transform-style: preserve-3d;
-    text-shadow: 0 4px 8px rgba(0,0,0,0.5);
-    transform: rotateX(70deg) rotateZ(30deg);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    font-weight: 600;
-}
-
-.feedback-btn::before {
-    content: "";
-    width: 100%;
-    height: 10px;
-    background-color: var(--color-accent-deep);
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    transform: rotateX(90deg);
-    transform-origin: bottom;
-}
-
-.feedback-btn::after {
-    content: "";
-    width: 10px;
-    height: 100%;
-    background-color: #8bb4ff;
-    position: absolute;
-    top: 0;
-    right: 0;
-    transform: rotateY(-90deg);
-    transform-origin: right;
-}
-
-.feedback-btn:hover {
-    transform: rotateX(30deg) rotateZ(0);
 }
 
 /* Discord Status Widget */
@@ -698,7 +606,6 @@ section {
     gap: 8px;
     opacity: 0.4;
     transition: opacity 0.3s;
-    perspective: 1000px;
 }
 
 .chat-input-container:hover,
@@ -727,53 +634,6 @@ section {
 
 .chat-input::placeholder {
     color: var(--color-text-dim);
-}
-
-.chat-send {
-    position: relative;
-    background: linear-gradient(var(--color-accent), var(--color-accent-dark));
-    border: none;
-    border-radius: 3px;
-    padding: 8px 16px;
-    color: #fff;
-    font-family: inherit;
-    font-size: 0.8rem;
-    cursor: pointer;
-    transition: transform 0.5s;
-    transform-style: preserve-3d;
-    text-shadow: 0 3px 6px rgba(0,0,0,0.5);
-    transform: rotateX(70deg) rotateZ(30deg);
-    letter-spacing: 2px;
-    text-transform: uppercase;
-    font-weight: 600;
-}
-
-.chat-send::before {
-    content: "";
-    width: 100%;
-    height: 8px;
-    background-color: var(--color-accent-deep);
-    position: absolute;
-    bottom: 0;
-    right: 0;
-    transform: rotateX(90deg);
-    transform-origin: bottom;
-}
-
-.chat-send::after {
-    content: "";
-    width: 8px;
-    height: 100%;
-    background-color: #8bb4ff;
-    position: absolute;
-    top: 0;
-    right: 0;
-    transform: rotateY(-90deg);
-    transform-origin: right;
-}
-
-.chat-send:hover {
-    transform: rotateX(30deg) rotateZ(0);
 }
 
 .chat-bubble {
