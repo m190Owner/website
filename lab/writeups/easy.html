@@ -1,1 +1,21 @@
-<p>placeholder easy writeup</p>
+<h4>Easy — XOR warmup</h4>
+<p><strong>Intended path:</strong> recognize that <code>strings -a</code> shows nothing useful, drop into <code>objdump -d crackme-easy</code>, find the verify loop with a literal <code>xor 0x42</code> on each byte, dump <code>.rodata</code> with <code>objdump -s -j .rodata</code>, and xor the bytes against <code>0x42</code> in Python.</p>
+
+<p><strong>What's in the binary:</strong></p>
+<pre>const unsigned char enc[] = { /* flag XOR'd against 0x42 */ };
+for (size_t i = 0; i &lt; enc_len; i++) {
+    if (input[i] != (unsigned char)(enc[i] ^ 0x42)) return 0;
+}</pre>
+
+<p><strong>Why <code>strings</code> fails you here:</strong> the printable bytes of the flag, after XOR with 0x42, become non-printable garbage. <code>strings</code> only prints runs of printable ASCII, so it skips the array entirely. <code>strings -a</code> won't help — there's nothing printable to find. Lesson: <code>strings</code> is a smoke test, not a solve.</p>
+
+<p><strong>One-liner:</strong></p>
+<pre>$ objdump -s -j .rodata crackme-easy | python3 -c '
+import sys, re
+blob = bytes.fromhex("".join(re.findall(r"[0-9a-f]{2}", sys.stdin.read())))
+for s in range(len(blob)):
+    decoded = bytes(b ^ 0x42 for b in blob[s:])
+    m = re.search(rb"m190\{[A-Za-z0-9_]{8,40}\}", decoded)
+    if m: print(m.group().decode()); break'</pre>
+
+<p><strong>Why this tier exists:</strong> establishes a baseline. Disassembly literacy + recognizing trivial obfuscation. Anyone who's done a few crackmes will breeze through; folks new to RE will spend 10–20 min and learn something. Medium starts assuming you got here.</p>
