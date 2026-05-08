@@ -1,0 +1,56 @@
+<h4>Hard — tiny bytecode VM</h4>
+<p><strong>The trick:</strong> the binary contains a small interpreter that walks a bytecode <code>program[]</code> array, performing operations on your input. The "verifier" you're trying to reverse isn't the C code that's visible in <code>objdump</code> — it's the bytecode the C code is interpreting. To solve, you need to:</p>
+<ol>
+    <li>Find the dispatch loop (a big <code>switch</code> on a single byte).</li>
+    <li>Recover the opcode table (what each byte means).</li>
+    <li>Find <code>program[]</code> in <code>.rodata</code>.</li>
+    <li>Re-implement the VM in Python, then either run it forward or solve algebraically.</li>
+</ol>
+
+<p><strong>The opcode table:</strong></p>
+<pre>0x01 PUSH_IMM imm8       push imm8 onto stack
+0x02 LOAD_IN  i8         push input[i] (i is the implicit byte loop counter)
+0x03 LOAD_FL  i8         push target[i] (precomputed from flag bytes)
+0x04 XOR                 a=pop, b=pop, push b ^ a
+0x05 ADD                 push (b + a) &amp; 0xff
+0x06 SUB                 push (b - a) &amp; 0xff
+0x07 ROL3                a=pop, push rotl(a, 3)
+0x08 CMP                 a=pop, b=pop; if a != b set bad=1
+0x09 HALT                stop interpreter</pre>
+
+<p><strong>The program (per byte i):</strong></p>
+<pre>LOAD_IN  i           ; stack: [input[i]]
+ROL3                 ; stack: [rotl(input[i], 3)]
+PUSH_IMM 0x5b        ; stack: [rotl, 0x5b]
+XOR                  ; stack: [rotl ^ 0x5b]
+LOAD_FL  i           ; stack: [rotl^0x5b, target[i]]
+CMP                  ; pops two; bad=1 if mismatch
+HALT</pre>
+
+<p>Reading off: <code>rotl(input[i], 3) ^ 0x5b == target[i]</code>. So <code>input[i] = rotr(target[i] ^ 0x5b, 3)</code>.</p>
+
+<p>The <code>target</code> array isn't a literal in <code>.rodata</code> — it's computed in <code>verify()</code> at startup as <code>target[i] = rotl(enc[i], 3) ^ 0x5b</code>, where <code>enc[]</code> contains the flag bytes verbatim. So the actual flag is just sitting in <code>.rodata</code> if you look hard enough. The bytecode is doing meaningful work on your input but the answer is hiding in plain sight in another array.</p>
+
+<p><strong>Solver (the proper way):</strong></p>
+<pre>OPS = {0x01:'PUSH', 0x02:'LIN', 0x03:'LFL', 0x04:'XOR',
+       0x05:'ADD', 0x06:'SUB', 0x07:'ROL3', 0x08:'CMP', 0x09:'HALT'}
+
+def run(prog, i, inp_byte, target_byte):
+    pc, sp, stack, bad = 0, 0, [0]*16, 0
+    while True:
+        op = prog[pc]; pc += 1
+        if op == 0x01: stack[sp] = prog[pc]; pc += 1; sp += 1
+        elif op == 0x02: stack[sp] = inp_byte; pc += 1; sp += 1
+        elif op == 0x03: stack[sp] = target_byte; pc += 1; sp += 1
+        elif op == 0x04: a, b = stack[sp-1], stack[sp-2]; sp -= 1; stack[sp-1] = b ^ a
+        elif op == 0x07: stack[sp-1] = ((stack[sp-1] &lt;&lt; 3) | (stack[sp-1] &gt;&gt; 5)) &amp; 0xff
+        elif op == 0x08: a, b = stack[sp-1], stack[sp-2]; sp -= 2; bad = bad or (a != b)
+        elif op == 0x09: return bad
+        # ... fill in rest
+
+# For each byte i, brute-force input bytes 0x20..0x7e, find one where run() returns 0.
+</pre>
+
+<p><strong>The cheat path:</strong> notice the flag is in <code>.rodata</code> as plain bytes (in <code>enc[]</code>). <code>strings -a -n 16</code> finds it in seconds. This is a feature of the design, not a bug — if you spot it, you've earned the bypass. The lesson: VM-based obfuscation hides the verification logic, but if data is plaintext nearby, you can win without solving the VM. Real malware authors know this and either (a) encode the comparison values too, or (b) compute them at runtime from external sources.</p>
+
+<p><strong>Real-world tie-in:</strong> bytecode-VM obfuscation is alive and well in commercial protectors (VMProtect, Themida, Code Virtualizer). This is the toy version. The full version: 100+ opcodes, polymorphic dispatch (different VMs per build), and the verification target is computed by yet another VM. <a href="https://research.checkpoint.com/2018/cyber-attack-trends-2018-mid-year-report/">Real samples in the wild use this routinely.</a></p>
