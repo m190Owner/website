@@ -67,6 +67,16 @@ async function restorePreviousSolves() {
 
 // --- v86 boot ---
 let emulator = null;
+let vmAvailable = false;
+
+async function isVmImageAvailable() {
+    try {
+        const r = await fetch('/lab/vm/alpine.img', { method: 'HEAD' });
+        return r.ok;
+    } catch {
+        return false;
+    }
+}
 
 async function bootVm() {
     $('#boot-status').textContent = 'booting Alpine VM…';
@@ -90,6 +100,10 @@ async function bootVm() {
 }
 
 async function injectBinary(tier) {
+    if (!vmAvailable) {
+        renderDownloadPanel(tier);
+        return;
+    }
     const bytes = (tier === 'easy')
         ? new Uint8Array(await (await fetch('/lab/binaries/crackme-easy')).arrayBuffer())
         : await api('fetch_binary', { qs: { tier, token: session.token }, binary: true });
@@ -100,6 +114,38 @@ async function injectBinary(tier) {
     const cmd = '\nchmod +x /lab/crackme && ls -l /lab/crackme\n';
     emulator.serial0_send(cmd);
     $('#boot-status').textContent = `${tier} crackme loaded at /lab/crackme`;
+}
+
+// Fallback when no VM image is available: visitors download the binary and RE locally.
+async function downloadBinary(tier) {
+    let bytes;
+    if (tier === 'easy') {
+        bytes = new Uint8Array(await (await fetch('/lab/binaries/crackme-easy')).arrayBuffer());
+    } else {
+        bytes = await api('fetch_binary', { qs: { tier, token: session.token }, binary: true });
+    }
+    const blob = new Blob([bytes], { type: 'application/octet-stream' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crackme-${tier}`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+function renderDownloadPanel(tier) {
+    $('#boot-status').textContent = `download mode — VM image not deployed`;
+    const sc = $('#screen_container');
+    sc.innerHTML = `
+        <div class="dl-fallback">
+            <h3>Local RE Mode</h3>
+            <p>The in-browser Linux VM isn't deployed yet on this host. Download the <strong>${tier}</strong> crackme below and reverse it on your own machine — same challenge, your own toolkit.</p>
+            <p>Binary is a statically-linked x86_64 Linux ELF (~20 KB). Run inside Linux/WSL/Docker with <code>chmod +x crackme-${tier} && ./crackme-${tier}</code>.</p>
+            <button id="dl-btn" class="dl-btn">↓ Download crackme-${tier}</button>
+            <p class="dl-hint">Once you've extracted the flag, paste it in the form below to advance.</p>
+        </div>
+    `;
+    $('#dl-btn').addEventListener('click', () => downloadBinary(tier));
 }
 
 // --- Reset ---
@@ -134,11 +180,14 @@ function currentTier() {
 // --- Boot ---
 async function bootLab() {
     try {
-        setupResetButton();
         await ensureSession();
         await restorePreviousSolves();
         renderLeaderboard();
-        await bootVm();
+        vmAvailable = await isVmImageAvailable();
+        if (vmAvailable) {
+            setupResetButton();
+            await bootVm();
+        }
         await injectBinary(currentTier());
         if (typeof initUi === 'function') initUi();
     } catch (err) {
