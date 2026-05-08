@@ -146,6 +146,121 @@ function renderLeaderboard() {
     }
 }
 
+// --- UI: flag form, handle dialog, tier transitions ---
+function setStatus(text, kind = '') {
+    const el = $('#flag-status');
+    el.textContent = text;
+    el.className = `flag-status ${kind}`;
+}
+
+async function onSubmitFlag(e) {
+    e.preventDefault();
+    const flag = $('#flag-input').value.trim();
+    if (!flag) return;
+    const tier = currentTier();
+    setStatus('verifying…');
+    try {
+        const r = await api('submit_flag', {
+            body: { token: session.token, tier, flag },
+        });
+        if (!r.correct) {
+            setStatus('incorrect', 'bad');
+            return;
+        }
+        setStatus(`correct — ${tier} solved`, 'good');
+        $('#flag-input').value = '';
+        if (!solves.includes(tier)) solves.push(tier);
+        markTierSolved(tier);
+        // Show writeup
+        showWriteup(r.writeup_html);
+        // Handle prompt if needed
+        if (r.needs_handle) {
+            await promptHandle();
+            await refreshLeaderboard();
+        }
+        // Advance to next tier
+        if (r.next_tier_unlocked) {
+            await advanceTier(r.next_tier_unlocked);
+        } else {
+            setStatus('all tiers solved 🎉', 'good');
+        }
+    } catch (err) {
+        if (err.message.includes('invalid token')) {
+            localStorage.removeItem('lab_token');
+            setStatus('session expired — refresh page', 'bad');
+            return;
+        }
+        setStatus(`error: ${err.message}`, 'bad');
+    }
+}
+
+function markTierSolved(tier) {
+    const card = document.querySelector(`.tier-card[data-tier="${tier}"]`);
+    if (card) {
+        card.classList.remove('locked', 'active');
+        card.classList.add('solved');
+        $(`#status-${tier}`).textContent = 'solved';
+    }
+}
+function markTierActive(tier) {
+    document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('active'));
+    const card = document.querySelector(`.tier-card[data-tier="${tier}"]`);
+    if (card) {
+        card.classList.remove('locked');
+        card.classList.add('active');
+        $(`#status-${tier}`).textContent = 'active';
+    }
+}
+
+async function advanceTier(nextTier) {
+    markTierActive(nextTier);
+    try {
+        await injectBinary(nextTier);
+    } catch (err) {
+        setStatus(`couldn't load ${nextTier}: ${err.message}`, 'bad');
+    }
+}
+
+function showWriteup(html) {
+    $('#writeup-body').innerHTML = html;
+    $('#writeup-panel').classList.remove('hidden');
+}
+
+async function refreshLeaderboard() {
+    try {
+        const r = await api('leaderboard');
+        session.leaderboard = r.leaderboard;
+        renderLeaderboard();
+    } catch {}
+}
+
+function promptHandle() {
+    return new Promise((resolve) => {
+        const dlg = $('#handle-dialog');
+        const errEl = $('#handle-error');
+        errEl.textContent = '';
+        dlg.showModal();
+        $('#handle-cancel').onclick = () => { dlg.close('cancel'); resolve(null); };
+        $('#handle-form').onsubmit = async (e) => {
+            if (e.submitter && e.submitter.id !== 'handle-submit') return;
+            e.preventDefault();
+            const h = $('#handle-input').value.trim();
+            try {
+                const r = await api('set_handle', { body: { token: session.token, handle: h } });
+                dlg.close('ok');
+                resolve(r.handle);
+            } catch (err) {
+                errEl.textContent = err.message;
+            }
+        };
+    });
+}
+
+function initUi() {
+    $('#flag-form').addEventListener('submit', onSubmitFlag);
+    markTierActive('easy');
+}
+
 // --- Entry ---
 const reason = isUnsupported();
 if (reason) {
