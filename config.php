@@ -101,8 +101,9 @@ function containsProfanity(string $text): bool {
     if ($blocked === null) {
         // Keep this list short and obvious; extend as needed.
         $blocked = [
-            'fuck','shit','cunt','nigger','faggot','retard','rape',
+            'fuck','shit','cunt','nigger','nigga','faggot','retard','rape',
             'pussy','bitch','dick','cock','asshole','whore','slut',
+            'chink','spic','kike','tranny','lynch','hitler','nazi',
         ];
     }
     $normalized = strtolower($text);

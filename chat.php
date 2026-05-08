@@ -3,6 +3,24 @@ require_once __DIR__ . '/config.php';
 header('Content-Type: application/json');
 setCorsHeaders();
 
+/**
+ * Chat-specific spam and inline-XSS heuristics.
+ * Kept here (not in config.php) because these patterns are only
+ * meaningful for free-form chat messages; lab handles are already
+ * constrained by the alphanumeric+underscore regex.
+ */
+function chatExtraBlocks(string $text): bool {
+    $lower = strtolower($text);
+    $patterns = [
+        'buy now', 'click here', 'free money', 'make money fast', 'onlyfans',
+        '<script', 'javascript:', 'data:text',
+    ];
+    foreach ($patterns as $p) {
+        if (strpos($lower, $p) !== false) return true;
+    }
+    return false;
+}
+
 $chatFile = __DIR__ . '/chat_messages.json';
 
 if (!file_exists($chatFile)) {
@@ -53,7 +71,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    if (containsProfanity($msg)) {
+    if (containsProfanity($msg) || chatExtraBlocks($msg)) {
         echo json_encode(['error' => 'Message blocked']);
         exit;
     }
