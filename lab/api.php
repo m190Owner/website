@@ -132,6 +132,45 @@ switch ($action) {
         ]);
         break;
 
+    case 'set_handle':
+        enforceRateLimit('lab_handle_' . ($_POST['token'] ?? ''), 3, 60);
+        $token = $_POST['token'] ?? '';
+        $raw = $_POST['handle'] ?? '';
+        $session = getSession($token);
+        if (!$session) jerr(401, 'invalid token');
+        if ($session['handle'] !== null) jerr(409, 'handle already set');
+        $clean = sanitizeHandle($raw);
+        if ($clean === null) jerr(400, 'invalid handle (3-16 chars, alphanumeric/_, no profanity)');
+        $board = loadLeaderboard();
+        foreach ($board as $entry) {
+            if (strcasecmp($entry['handle'], $clean) === 0) {
+                jerr(409, 'handle already taken');
+            }
+        }
+        $session['handle'] = $clean;
+        putSession($token, $session);
+        // Backfill leaderboard entries for any tiers already solved.
+        $now = time();
+        $created = $session['created_at'];
+        $cumulative = 0;
+        foreach (LAB_TIERS as $tier) {
+            if (!in_array($tier, $session['solves'], true)) break;
+            $solved_at = $session['solved_at'][$tier] ?? $now;
+            $tier_time = $solved_at - $created - $cumulative;
+            $cumulative += $tier_time;
+            $board[] = [
+                'handle' => $clean,
+                'tier' => $tier,
+                'time_to_solve_seconds' => max(0, $tier_time),
+                'completed_at' => $solved_at,
+            ];
+        }
+        // Keep board sorted by completed_at ascending so newer solves append cleanly.
+        usort($board, fn($a, $b) => $a['completed_at'] <=> $b['completed_at']);
+        saveLeaderboard($board);
+        jok(['handle' => $clean]);
+        break;
+
     // Other actions added in subsequent tasks.
     default:
         jerr(400, 'unknown action');
