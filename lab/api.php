@@ -193,6 +193,26 @@ switch ($action) {
         readfile($path);
         exit;
 
+    case 'leaderboard':
+        enforceRateLimit('lab_lb', 30, 60);
+        $board = loadLeaderboard();
+        // Newest 100 entries; UI does its own sorting.
+        $board = array_slice($board, -100);
+        jok(['leaderboard' => $board]);
+        break;
+
+    case 'writeup':
+        $token = $_GET['token'] ?? '';
+        $tier = $_GET['tier'] ?? '';
+        if (!in_array($tier, LAB_TIERS, true)) jerr(400, 'bad tier');
+        $session = getSession($token);
+        if (!$session) jerr(401, 'invalid token');
+        if (!in_array($tier, $session['solves'], true)) jerr(403, 'tier not solved');
+        $path = LAB_WRITEUPS_DIR . '/' . $tier . '.html';
+        if (!file_exists($path)) jerr(500, 'writeup missing');
+        jok(['html' => file_get_contents($path)]);
+        break;
+
     // Other actions added in subsequent tasks.
     default:
         jerr(400, 'unknown action');
