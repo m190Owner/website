@@ -8,7 +8,7 @@ TOKEN=$(echo "$init" | sed -n 's/.*"token":"\([a-f0-9]\{64\}\)".*/\1/p')
 curl -s -X POST -d "token=$TOKEN&tier=easy&flag=$EASY_FLAG" "$BASE/lab/api.php?action=submit_flag" > /dev/null
 
 # Valid handle
-HANDLE="testuser_$(date +%s)"
+HANDLE="u_$(date +%s)"
 resp=$(curl -s -X POST -d "token=$TOKEN&handle=$HANDLE" "$BASE/lab/api.php?action=set_handle")
 echo "set_handle ok: $resp"
 echo "$resp" | grep -q "\"handle\":\"$HANDLE\"" || { echo "FAIL: handle not set"; exit 1; }
