@@ -90,3 +90,38 @@ function enforceRateLimit(string $endpoint, int $max = 30, int $window = 60) {
 if (rand(1, 50) === 1) {
     cleanRateLimits();
 }
+
+/**
+ * Profanity / blocklist check.
+ * Returns true if $text contains any blocked word (case-insensitive,
+ * with l33t-ish substitutions: 0->o, 1->i, 3->e, 4->a, 5->s, 7->t).
+ */
+function containsProfanity(string $text): bool {
+    static $blocked = null;
+    if ($blocked === null) {
+        // Keep this list short and obvious; extend as needed.
+        $blocked = [
+            'fuck','shit','cunt','nigger','faggot','retard','rape',
+            'pussy','bitch','dick','cock','asshole','whore','slut',
+        ];
+    }
+    $normalized = strtolower($text);
+    $normalized = strtr($normalized, ['0'=>'o','1'=>'i','3'=>'e','4'=>'a','5'=>'s','7'=>'t','@'=>'a','$'=>'s']);
+    $normalized = preg_replace('/[^a-z]/', '', $normalized);
+    foreach ($blocked as $word) {
+        if (strpos($normalized, $word) !== false) return true;
+    }
+    return false;
+}
+
+/**
+ * Validate a leaderboard handle.
+ * Returns the trimmed handle on success, null on failure.
+ * Rules: 3-16 chars, [a-zA-Z0-9_], no profanity.
+ */
+function sanitizeHandle(string $raw): ?string {
+    $h = trim($raw);
+    if (!preg_match('/^[a-zA-Z0-9_]{3,16}$/', $h)) return null;
+    if (containsProfanity($h)) return null;
+    return $h;
+}

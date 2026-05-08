@@ -40,24 +40,6 @@ if ($method === 'POST' && $action === 'delete') {
 }
 
 // ==============================================
-// WORD FILTER
-// ==============================================
-function isBlocked(string $msg): bool {
-    $patterns = [
-        'nigger','nigga','faggot','chink','spic','kike','tranny',
-        'cunt','whore','rape','lynch','hitler','nazi',
-        // spam patterns
-        'buy now','click here','free money','make money fast','OnlyFans',
-        '<script','javascript:','data:text',
-    ];
-    $lower = mb_strtolower($msg);
-    foreach ($patterns as $p) {
-        if (str_contains($lower, mb_strtolower($p))) return true;
-    }
-    return false;
-}
-
-// ==============================================
 // POST: SEND MESSAGE
 // ==============================================
 if ($method === 'POST') {
@@ -71,7 +53,7 @@ if ($method === 'POST') {
         exit;
     }
 
-    if (isBlocked($msg)) {
+    if (containsProfanity($msg)) {
         echo json_encode(['error' => 'Message blocked']);
         exit;
     }
