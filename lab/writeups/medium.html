@@ -1,0 +1,28 @@
+<h4>Medium — anti-debug + per-byte transform</h4>
+<p><strong>Intended path:</strong></p>
+<ol>
+    <li><strong>Spot the ptrace trap.</strong> The first thing the binary does is <code>ptrace(PTRACE_TRACEME, 0, 0, 0)</code>. If you started in <code>gdb</code>, ptrace returns -1 and the program exits silently. Set a breakpoint on <code>main</code>, step once, see <code>ptrace</code>, neutralize.</li>
+    <li><strong>Neutralize.</strong> Three options, pick your favorite:
+        <ul>
+            <li>Patch the binary: replace the <code>jl</code>/<code>js</code> after the ptrace check with <code>jmp</code>, or NOP the whole syscall.</li>
+            <li>LD_PRELOAD a stub that always returns 0:
+                <pre>$ cat &gt; ptrace_stub.c &lt;&lt; 'EOF'
+long ptrace(int r, int p, void *a, void *d) { return 0; }
+EOF
+$ gcc -shared -fPIC ptrace_stub.c -o stub.so
+$ LD_PRELOAD=./stub.so gdb ./crackme-medium</pre>
+            </li>
+            <li>Use <code>strace -e trace=ptrace</code> to confirm the call, then patch.</li>
+        </ul>
+    </li>
+    <li><strong>Reverse the transform.</strong> Per-byte: <code>enc[i] = (rotl(input[i], 3) ^ key[i%8]) - i</code>. Inverse: <code>input[i] = rotr((enc[i] + i) ^ key[i%8], 3)</code>. The key string lives in <code>.rodata</code> as <code>"m190labs"</code>.</li>
+</ol>
+
+<p><strong>Solver:</strong></p>
+<pre>def rotr8(x, n): return ((x &gt;&gt; n) | (x &lt;&lt; (8 - n))) &amp; 0xFF
+KEY = b"m190labs"
+flag = bytes(rotr8(((enc[i] + i) &amp; 0xFF) ^ KEY[i % 8], 3) for i in range(len(enc)))</pre>
+
+<p><strong>Real-world tie-in:</strong> per-byte algorithmic flag checks are still the most common shape of beginner-to-intermediate malware string protection. The <code>ptrace</code> self-check is a real-world habit that real malware uses — it's not theoretical, it's just the easiest tier of anti-debug. <a href="https://github.com/yellowbyte/anti-disassembly">More on anti-RE techniques in the wild</a>.</p>
+
+<p><strong>If you want to make it harder for yourself:</strong> solve it without neutralizing the ptrace check — pure static disassembly + python. Doable.</p>
