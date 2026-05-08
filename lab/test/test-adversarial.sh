@@ -2,6 +2,7 @@
 # Adversarial checks per spec section "Adversarial checks (run before shipping)"
 set -e
 BASE="${BASE:-http://localhost:8000}"
+REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 
 fail() { echo "FAIL: $1"; exit 1; }
 
@@ -38,12 +39,13 @@ status=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/lab/writeups/medium.html"
 echo "direct fetch writeups/medium.html → $status (expected 403 in production)"
 
 # 7. Search the JS bundle for flag hashes — there should be none.
-if grep -E '[0-9a-f]{64}' lab/lab.js > /dev/null; then
+[ -f "$REPO_ROOT/lab/lab.js" ] || fail "lab/lab.js not found at $REPO_ROOT/lab/lab.js"
+if grep -E '[0-9a-f]{64}' "$REPO_ROOT/lab/lab.js" > /dev/null; then
     fail "lab.js contains hex strings that look like hashes — flag hashes should never be in JS"
 fi
 
 # 8. Check that crackme source isn't in the repo.
-if [ -e crackmes/easy.c ] && git ls-files --error-unmatch crackmes/easy.c >/dev/null 2>&1; then
+if [ -e "$REPO_ROOT/crackmes/easy.c" ] && (cd "$REPO_ROOT" && git ls-files --error-unmatch crackmes/easy.c) >/dev/null 2>&1; then
     fail "crackmes/easy.c is tracked by git — must be gitignored"
 fi
 
