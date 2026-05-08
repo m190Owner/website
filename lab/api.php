@@ -171,6 +171,28 @@ switch ($action) {
         jok(['handle' => $clean]);
         break;
 
+    case 'fetch_binary':
+        enforceRateLimit('lab_fetch_' . ($_GET['token'] ?? ''), 20, 60);
+        $token = $_GET['token'] ?? '';
+        $tier = $_GET['tier'] ?? '';
+        if (!in_array($tier, LAB_TIERS, true)) jerr(400, 'bad tier');
+        $session = getSession($token);
+        if (!$session) jerr(401, 'invalid token');
+        $prereq = LAB_PREREQ[$tier];
+        if ($prereq !== null && !in_array($prereq, $session['solves'], true)) {
+            error_log("lab: blocked fetch_binary tier=$tier token=$token (no prereq)");
+            jerr(403, 'prerequisite tier not solved');
+        }
+        $path = LAB_BINARIES_DIR . '/crackme-' . $tier;
+        if (!file_exists($path)) jerr(500, 'binary missing on server');
+        // Stream raw bytes
+        header_remove('Content-Type');
+        header('Content-Type: application/octet-stream');
+        header('Content-Length: ' . filesize($path));
+        header('Cross-Origin-Resource-Policy: same-origin');
+        readfile($path);
+        exit;
+
     // Other actions added in subsequent tasks.
     default:
         jerr(400, 'unknown action');
