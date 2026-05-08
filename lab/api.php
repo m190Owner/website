@@ -7,9 +7,9 @@ header('Content-Type: application/json');
 // ----- Configuration -----
 // Replace these three with the hashes printed by `make hashes` in Task 9.
 // SHA-256 of the literal flag string (no trailing newline).
-define('LAB_HASH_EASY',   'REPLACE_WITH_EASY_HASH');
-define('LAB_HASH_MEDIUM', 'REPLACE_WITH_MEDIUM_HASH');
-define('LAB_HASH_HARD',   'REPLACE_WITH_HARD_HASH');
+define('LAB_HASH_EASY',   '8d7a620e44f793f1f598b1a359d5aff50fe987a7e0ba55ce31c29607a5904261');
+define('LAB_HASH_MEDIUM', 'ad93fbf2fd395dcd49782469e90fcc472e383efddc9267012ddeaf5b463b562e');
+define('LAB_HASH_HARD',   'bf0ecfd5fc3a970ee55d748ba6f470bfa332122a7e0490127c430a80bad49a90');
 
 define('LAB_DATA_DIR',     __DIR__ . '/data');
 define('LAB_SESSIONS_FILE',LAB_DATA_DIR . '/sessions.json');
