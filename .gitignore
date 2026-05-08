@@ -1,5 +1,8 @@
 # Server environment — contains secrets, never commit
 .htaccess
+# Allow lab access-control .htaccess files (no secrets, just headers/Require rules)
+!lab/.htaccess
+!lab/*/.htaccess
 
 # Runtime data
 github_cache.json
@@ -9,3 +12,10 @@ click_count.txt
 visitor_locations.json
 active_visitors/
 counter_migrated.txt
+
+# Pwn lab runtime data
+lab/data/sessions.json
+lab/data/leaderboard.json
+
+# Crackme source (private)
+crackmes/

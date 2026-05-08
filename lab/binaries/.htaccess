@@ -1,0 +1,12 @@
+# Default deny
+<FilesMatch ".*">
+    Require all denied
+</FilesMatch>
+
+# Public: easy crackme is a static asset
+<Files "crackme-easy">
+    Require all granted
+    <IfModule mod_headers.c>
+        Header set Cross-Origin-Resource-Policy "same-origin"
+    </IfModule>
+</Files>
