@@ -10,7 +10,7 @@ setCorsHeaders();
  * constrained by the alphanumeric+underscore regex.
  */
 function chatExtraBlocks(string $text): bool {
-    $lower = strtolower($text);
+    $lower = mb_strtolower($text, 'UTF-8');
     $patterns = [
         'buy now', 'click here', 'free money', 'make money fast', 'onlyfans',
         '<script', 'javascript:', 'data:text',

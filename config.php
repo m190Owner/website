@@ -106,7 +106,7 @@ function containsProfanity(string $text): bool {
             'chink','spic','kike','tranny','lynch','hitler','nazi',
         ];
     }
-    $normalized = strtolower($text);
+    $normalized = mb_strtolower($text, 'UTF-8');
     $normalized = strtr($normalized, ['0'=>'o','1'=>'i','3'=>'e','4'=>'a','5'=>'s','7'=>'t','@'=>'a','$'=>'s']);
     $normalized = preg_replace('/[^a-z]/', '', $normalized);
     foreach ($blocked as $word) {

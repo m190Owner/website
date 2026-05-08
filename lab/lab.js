@@ -48,6 +48,23 @@ async function ensureSession() {
     localStorage.setItem('lab_token', r.token);
 }
 
+async function restorePreviousSolves() {
+    let lastWriteup = null;
+    for (const tier of TIERS) {
+        try {
+            const r = await api('writeup', { qs: { tier, token: session.token } });
+            // Server returned ok=true and html — this tier is solved.
+            if (!solves.includes(tier)) solves.push(tier);
+            markTierSolved(tier);
+            lastWriteup = r.html;
+        } catch (err) {
+            // 403 = not solved yet; stop walking.
+            break;
+        }
+    }
+    if (lastWriteup) showWriteup(lastWriteup);
+}
+
 // --- v86 boot ---
 let emulator = null;
 
@@ -119,9 +136,10 @@ async function bootLab() {
     try {
         setupResetButton();
         await ensureSession();
+        await restorePreviousSolves();
         renderLeaderboard();
         await bootVm();
-        await injectBinary('easy');
+        await injectBinary(currentTier());
         if (typeof initUi === 'function') initUi();
     } catch (err) {
         console.error('lab boot failed:', err);

@@ -88,7 +88,7 @@ switch ($action) {
         putSession($token, $session);
         jok([
             'token' => $token,
-            'leaderboard' => array_slice(loadLeaderboard(), 0, 50),
+            'leaderboard' => array_slice(loadLeaderboard(), -50),
         ]);
         break;
 
@@ -116,6 +116,24 @@ switch ($action) {
             $session['solves'][] = $tier;
             $session['solved_at'][$tier] = time();
             putSession($token, $session);
+        }
+        // Append leaderboard entry if handle is set (set_handle backfills earlier solves; this catches solves AFTER handle was set).
+        if (!$already && $session['handle'] !== null) {
+            $idx2 = array_search($tier, LAB_TIERS, true);
+            $prev_tier = ($idx2 > 0) ? LAB_TIERS[$idx2 - 1] : null;
+            $tier_start = $prev_tier !== null
+                ? ($session['solved_at'][$prev_tier] ?? $session['created_at'])
+                : $session['created_at'];
+            $solve_time = max(0, time() - $tier_start);
+            $board = loadLeaderboard();
+            $board[] = [
+                'handle' => $session['handle'],
+                'tier' => $tier,
+                'time_to_solve_seconds' => $solve_time,
+                'completed_at' => time(),
+            ];
+            usort($board, fn($a, $b) => $a['completed_at'] <=> $b['completed_at']);
+            saveLeaderboard($board);
         }
         // Determine next tier (linear progression).
         $idx = array_search($tier, LAB_TIERS, true);
