@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>m190 Pwn Lab — Logan Sandivar</title>
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+    <link rel="stylesheet" href="lab.css">
+    <meta property="og:title" content="m190 Pwn Lab" />
+    <meta property="og:description" content="Three crackmes in a real x86 Linux VM, in your browser." />
+    <meta property="og:type" content="website" />
+</head>
+<body>
+    <div id="unsupported" class="full-card hidden">
+        <h2>Pwn Lab requires desktop</h2>
+        <p>This lab is keyboard-driven RE work in a real Linux VM. Please open on a desktop browser (Chrome or Firefox).</p>
+        <p><a href="/">← back to logansandivar.com</a></p>
+    </div>
+
+    <div id="lab-root" class="hidden">
+        <header class="lab-head">
+            <a href="/" class="lab-back">←</a>
+            <h1>m190 Pwn Lab</h1>
+            <span class="lab-tag">3 crackmes · linear · browser-native</span>
+        </header>
+
+        <section class="lab-grid">
+            <aside class="lab-tiers">
+                <h2>Tiers</h2>
+                <div class="tier-card" data-tier="easy">
+                    <span class="tier-name">Easy</span>
+                    <span class="tier-status" id="status-easy">active</span>
+                    <p class="tier-desc">XOR warmup. <code>objdump</code>, <code>xxd</code>, a Python one-liner.</p>
+                </div>
+                <div class="tier-card locked" data-tier="medium">
+                    <span class="tier-name">Medium</span>
+                    <span class="tier-status" id="status-medium">locked</span>
+                    <p class="tier-desc">Anti-debug + per-byte transform.</p>
+                </div>
+                <div class="tier-card locked" data-tier="hard">
+                    <span class="tier-name">Hard</span>
+                    <span class="tier-status" id="status-hard">locked</span>
+                    <p class="tier-desc">Tiny bytecode VM. Bring z3.</p>
+                </div>
+            </aside>
+
+            <main class="lab-main">
+                <div id="boot-status" class="boot-status">booting Alpine…</div>
+                <div id="screen_container">
+                    <div style="white-space: pre; font: 14px monospace; line-height: 14px"></div>
+                    <canvas style="display: none"></canvas>
+                </div>
+                <button id="reset-vm" class="btn-reset hidden" type="button">VM stuck — reset</button>
+
+                <form id="flag-form" class="flag-form" autocomplete="off">
+                    <label for="flag-input">Flag</label>
+                    <input id="flag-input" name="flag" type="text" placeholder="m190{...}" maxlength="64" required>
+                    <button type="submit">Verify</button>
+                    <span id="flag-status" class="flag-status"></span>
+                </form>
+
+                <div id="writeup-panel" class="writeup-panel hidden">
+                    <h3>Writeup</h3>
+                    <div id="writeup-body"></div>
+                </div>
+            </main>
+
+            <aside class="lab-board">
+                <h2>Leaderboard</h2>
+                <ol id="leaderboard"></ol>
+            </aside>
+        </section>
+
+        <dialog id="handle-dialog">
+            <form method="dialog" id="handle-form">
+                <h3>Pick a handle</h3>
+                <p>Your name on the leaderboard. 3–16 chars, letters/digits/underscore.</p>
+                <input id="handle-input" name="handle" type="text" minlength="3" maxlength="16" required pattern="[A-Za-z0-9_]+">
+                <span id="handle-error" class="handle-error"></span>
+                <menu>
+                    <button value="cancel" type="button" id="handle-cancel">Skip</button>
+                    <button value="ok" id="handle-submit">Save</button>
+                </menu>
+            </form>
+        </dialog>
+    </div>
+
+    <script src="lib/v86_all.js"></script>
+    <script src="lab.js" defer></script>
+</body>
+</html>
