@@ -92,6 +92,46 @@ switch ($action) {
         ]);
         break;
 
+    case 'submit_flag':
+        enforceRateLimit('lab_submit_' . ($_POST['token'] ?? ''), 10, 60);
+        $token = $_POST['token'] ?? '';
+        $tier = $_POST['tier'] ?? '';
+        $flag = $_POST['flag'] ?? '';
+        if (!in_array($tier, LAB_TIERS, true)) jerr(400, 'bad tier');
+        $session = getSession($token);
+        if (!$session) jerr(401, 'invalid token');
+        // Prereq check: must have solved the previous tier (if any).
+        $prereq = LAB_PREREQ[$tier];
+        if ($prereq !== null && !in_array($prereq, $session['solves'], true)) {
+            jerr(403, 'prerequisite tier not solved');
+        }
+        // Hash compare.
+        $submitted_hash = hash('sha256', $flag);
+        if (!hash_equals(expectedHash($tier), $submitted_hash)) {
+            jok(['correct' => false]);
+        }
+        // Already solved? Don't double-credit.
+        $already = in_array($tier, $session['solves'], true);
+        if (!$already) {
+            $session['solves'][] = $tier;
+            $session['solved_at'][$tier] = time();
+            putSession($token, $session);
+        }
+        // Determine next tier (linear progression).
+        $idx = array_search($tier, LAB_TIERS, true);
+        $next = ($idx !== false && isset(LAB_TIERS[$idx + 1])) ? LAB_TIERS[$idx + 1] : null;
+        $writeup_path = LAB_WRITEUPS_DIR . '/' . $tier . '.html';
+        $writeup_html = file_exists($writeup_path) ? file_get_contents($writeup_path) : '<p>(writeup missing)</p>';
+        jok([
+            'correct' => true,
+            'tier' => $tier,
+            'already_solved' => $already,
+            'needs_handle' => ($session['handle'] === null && !$already),
+            'next_tier_unlocked' => $next,
+            'writeup_html' => $writeup_html,
+        ]);
+        break;
+
     // Other actions added in subsequent tasks.
     default:
         jerr(400, 'unknown action');
