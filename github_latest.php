@@ -1,11 +1,17 @@
 <?php
 require_once __DIR__ . '/config.php';
 header('Content-Type: application/json');
+// Always revalidate on the client so each page load reflects current repos.
+header('Cache-Control: no-cache, no-store, must-revalidate');
 setCorsHeaders();
 enforceRateLimit('github_latest', 30, 60);
 
 $cacheFile = __DIR__ . '/github_cache.json';
-$cacheTTL  = 3600;
+// Short TTL so newly created public repos show up almost immediately on
+// page load. Kept at 60s (not 0) because unauthenticated GitHub API allows
+// only 60 requests/hour per IP — this caps us at one upstream call per
+// minute regardless of traffic, and stale cache is served if that fails.
+$cacheTTL  = 60;
 
 // Serve cache if fresh
 if (file_exists($cacheFile)) {
@@ -16,7 +22,7 @@ if (file_exists($cacheFile)) {
     }
 }
 
-$ch = curl_init('https://api.github.com/users/m190Owner/repos?sort=created&direction=desc&per_page=10&type=public');
+$ch = curl_init('https://api.github.com/users/m190Owner/repos?sort=created&direction=desc&per_page=100&type=public');
 curl_setopt_array($ch, [
     CURLOPT_RETURNTRANSFER => true,
     CURLOPT_TIMEOUT        => 5,
