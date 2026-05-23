@@ -33,17 +33,36 @@ updateDiscordStatus();
 setInterval(updateDiscordStatus, 30000);
 
 // ==============================================
-// ANNOUNCEMENT BANNER (latest GitHub project)
+// GITHUB: ANNOUNCEMENT BANNER (latest) + PROJECTS GRID (all public repos)
 // ==============================================
 (async function () {
     const banner   = document.getElementById('announce-banner');
     const textEl   = document.getElementById('announce-text');
     const closeBtn = document.getElementById('announce-close');
-    if (!banner) return;
+    const grid     = document.getElementById('projects-grid');
 
     function escHtml(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 
+    // Render the projects grid from the live public-repo list. Keeps the
+    // hardcoded fallback cards in place if anything is missing.
+    function renderProjects(repos) {
+        if (!grid || !Array.isArray(repos) || !repos.length) return;
+        grid.innerHTML = repos.map(r => {
+            const desc = r.description
+                ? `<div class="project-desc">${escHtml(r.description)}</div>`
+                : `<div class="project-desc"></div>`;
+            const lang  = r.language ? `<span class="project-lang">${escHtml(r.language)}</span>` : '';
+            const stars = r.stars ? `<span class="project-stars">&#9733; ${r.stars}</span>` : '';
+            const footer = (lang || stars)
+                ? `<div class="project-footer">${lang}${stars}</div>`
+                : '';
+            return `<a class="project-card" href="${escHtml(r.url)}" target="_blank" rel="noopener">`
+                 + `<div class="project-name">${escHtml(r.name)}</div>${desc}${footer}</a>`;
+        }).join('');
+    }
+
     function showBanner(name, url, description, dismissKey) {
+        if (!banner) return;
         if (localStorage.getItem(dismissKey)) return;
         const desc = description ? ` — ${escHtml(description)}` : '';
         textEl.innerHTML = `&#127381; New project: <a href="${escHtml(url)}" target="_blank" rel="noopener">${escHtml(name)}</a>${desc} — leave a &#11088;!`;
@@ -69,6 +88,7 @@ setInterval(updateDiscordStatus, 30000);
 
     if (data && data.ok) {
         showBanner(data.name, data.url, data.description, 'announce-dismissed-' + data.full_name);
+        renderProjects(data.repos);
     } else {
         showBanner(FALLBACK.name, FALLBACK.url, FALLBACK.description, 'announce-dismissed-' + FALLBACK.full_name);
     }

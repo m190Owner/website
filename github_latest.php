@@ -38,23 +38,37 @@ if (!is_array($repos) || empty($repos)) {
     exit;
 }
 
-$repo = null;
+// Keep only public, non-fork repos (newest first — API already sorts by created desc).
+$public = [];
 foreach ($repos as $r) {
-    if (!$r['fork'] && !$r['private']) { $repo = $r; break; }
+    if (empty($r['fork']) && empty($r['private'])) {
+        $public[] = [
+            'name'        => $r['name'],
+            'full_name'   => $r['full_name'],
+            'description' => $r['description'] ?? '',
+            'url'         => $r['html_url'],
+            'stars'       => $r['stargazers_count'] ?? 0,
+            'language'    => $r['language'] ?? '',
+        ];
+    }
 }
 
-if (!$repo) {
+if (!$public) {
     echo json_encode(['ok' => false]);
     exit;
 }
 
+$latest = $public[0];
 $data = [
     'ok'          => true,
-    'name'        => $repo['name'],
-    'full_name'   => $repo['full_name'],
-    'description' => $repo['description'] ?? '',
-    'url'         => $repo['html_url'],
-    'stars'       => $repo['stargazers_count'],
+    // Top-level latest repo (used by the announcement banner).
+    'name'        => $latest['name'],
+    'full_name'   => $latest['full_name'],
+    'description' => $latest['description'],
+    'url'         => $latest['url'],
+    'stars'       => $latest['stars'],
+    // Full public-repo list (used by the projects grid).
+    'repos'       => $public,
     'fetched_at'  => time(),
 ];
 
