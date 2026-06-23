@@ -22,8 +22,8 @@
     /* Shift the HUD timer clear of the back link. */
     #timer{ margin-left:104px; }
   </style>
-  <script type="module" crossorigin src="./assets/index-C1cqqfq_.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DucrcgIY.css">
+  <script type="module" crossorigin src="./assets/index-DVMET8iK.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-NHTlTlZX.css">
 </head>
 <body>
   <a id="back-to-site" href="/" title="Back to logansandivar.com">&#8592; Site</a>
@@ -105,6 +105,22 @@
       <div class="shop-section-label">Operators</div>
       <div id="shop-operators" class="shop-grid"></div>
       <button id="shop-back-btn">BACK</button>
+    </div>
+
+    <!-- Pause menu + settings -->
+    <div id="pause-screen" class="modal hidden">
+      <h1>PAUSED</h1>
+      <div class="settings-row">
+        <label for="set-volume">🔊 Volume</label>
+        <input type="range" id="set-volume" min="0" max="1" step="0.05" value="0.7">
+      </div>
+      <div class="settings-row">
+        <label for="set-shake">📳 Screen shake</label>
+        <input type="checkbox" id="set-shake" checked>
+      </div>
+      <button id="resume-btn">RESUME</button>
+      <button id="quit-btn" class="lb-btn">QUIT TO MENU</button>
+      <p class="hint">Press P or Esc to resume</p>
     </div>
 
     <!-- Active ability button / cooldown indicator -->
