@@ -17,5 +17,8 @@ counter_migrated.txt
 lab/data/sessions.json
 lab/data/leaderboard.json
 
+# Game leaderboard runtime data
+game/data/
+
 # Crackme source (private)
 crackmes/
