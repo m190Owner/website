@@ -15,11 +15,14 @@ header('Content-Type: application/json');
 setCorsHeaders();
 
 define('GAME_DATA_DIR', __DIR__ . '/data');
-define('GAME_LB_FILE', GAME_DATA_DIR . '/leaderboard.json');
 
 if (!is_dir(GAME_DATA_DIR)) {
     mkdir(GAME_DATA_DIR, 0755, true);
 }
+
+// Solo and co-op keep separate boards.
+$mode = (($_REQUEST['mode'] ?? 'solo') === 'coop') ? 'coop' : 'solo';
+$LB_FILE = GAME_DATA_DIR . ($mode === 'coop' ? '/coop_leaderboard.json' : '/leaderboard.json');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 if ($method === 'OPTIONS') { http_response_code(204); exit; }
@@ -51,6 +54,7 @@ if ($method === 'POST') {
     $time  = (int)($_POST['time'] ?? -1);
     $kills = (int)($_POST['kills'] ?? -1);
     $level = (int)($_POST['level'] ?? -1);
+    $players = max(1, min(8, (int)($_POST['players'] ?? 1)));
 
     // Range / sanity caps — reject impossible runs.
     if ($time < 0 || $time > 86400 ||      // <= 24h survived
@@ -59,12 +63,13 @@ if ($method === 'POST') {
         jerr(400, 'invalid score');
     }
 
-    $board = readJsonFile(GAME_LB_FILE, []);
+    $board = readJsonFile($LB_FILE, []);
     $entry = ['name' => $name, 'time' => $time, 'kills' => $kills, 'level' => $level, 'at' => time()];
+    if ($mode === 'coop') $entry['players'] = $players;
     $board[] = $entry;
     $board = sortBoard($board);
     $board = array_slice($board, 0, 200); // keep storage bounded
-    writeJsonFile(GAME_LB_FILE, $board);
+    writeJsonFile($LB_FILE, $board);
 
     // Rank of the run we just inserted (first row matching this exact entry).
     $rank = null;
@@ -85,7 +90,7 @@ if ($method === 'POST') {
 }
 
 // GET — current board.
-$board = sortBoard(readJsonFile(GAME_LB_FILE, []));
+$board = sortBoard(readJsonFile($LB_FILE, []));
 echo json_encode([
     'ok'          => true,
     'leaderboard' => array_slice($board, 0, 50),
