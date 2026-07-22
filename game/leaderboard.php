@@ -3,12 +3,15 @@
 // Mirrors the lab leaderboard pattern: shared helpers from config.php,
 // file-based JSON storage, rate limiting, and the shared handle sanitizer.
 //
-// GET  -> { ok:true, leaderboard:[ {name,time,kills,level,at}, ... ] }  (top 50, by time desc)
-// POST -> name,time,kills,level  ->  { ok:true, your_rank:N, leaderboard:[...] }
+// GET  ?action=start           -> { ok:true, token }             (issue a signed run token)
+// GET                          -> { ok:true, leaderboard:[...] }  (top 50, by time desc)
+// POST name,time,kills,level,token,mode,players -> { ok:true, your_rank, leaderboard }
 //
-// NOTE: scores are submitted by the browser, so a determined user could forge a
-// run — unavoidable for a client-side game. We rate-limit and range-cap values
-// to stop casual tampering; that is the intended bar for a fun feature.
+// ANTI-CHEAT: a run must present a server-signed HMAC token issued at run start.
+// The token binds the run to a real start time, so the submitted survival time
+// can't exceed the wall-clock elapsed since the token was issued, tokens can't be
+// forged (HMAC), and each token is single-use (replay guard). This makes forging a
+// top time require actually letting that much real time pass.
 
 require_once __DIR__ . '/../config.php';
 header('Content-Type: application/json');
@@ -43,6 +46,61 @@ function jerr(int $code, string $msg): void {
     exit;
 }
 
+// ---- Signed run tokens (HMAC) ----
+define('HMAC_SECRET_FILE', GAME_DATA_DIR . '/hmac_secret.php');
+define('USED_TOKENS_FILE', GAME_DATA_DIR . '/used_tokens.json');
+define('TOKEN_TTL', 6 * 3600); // a run token is valid for up to 6 hours
+
+// Persistent server secret. Stored as a .php file so a direct web request executes
+// it (returning nothing) instead of leaking the raw value. Auto-created once.
+function lbSecret(): string {
+    if (!file_exists(HMAC_SECRET_FILE)) {
+        $s = bin2hex(random_bytes(32));
+        @file_put_contents(HMAC_SECRET_FILE, "<?php return '" . $s . "';\n", LOCK_EX);
+    }
+    $s = @include HMAC_SECRET_FILE;
+    return is_string($s) && $s !== '' ? $s : 'insecure-fallback-secret';
+}
+
+function lbIssueToken(): string {
+    $nonce = bin2hex(random_bytes(8));
+    $ts = time();
+    $sig = hash_hmac('sha256', $nonce . '.' . $ts, lbSecret());
+    return $nonce . '.' . $ts . '.' . $sig;
+}
+
+// Returns null if the token is valid for a run of `$claimedTime` seconds, else an
+// error string. Consumes the token (single use) on success.
+function lbCheckToken(string $token, int $claimedTime): ?string {
+    $parts = explode('.', $token);
+    if (count($parts) !== 3) return 'missing run token — start a fresh run';
+    [$nonce, $ts, $sig] = $parts;
+    if (!ctype_xdigit($nonce) || !ctype_digit($ts)) return 'invalid run token';
+    $expected = hash_hmac('sha256', $nonce . '.' . $ts, lbSecret());
+    if (!hash_equals($expected, $sig)) return 'invalid run token';
+
+    $ts = (int) $ts;
+    $now = time();
+    if ($ts > $now + 5 || $now - $ts > TOKEN_TTL) return 'run token expired — start a fresh run';
+    // Survival time cannot exceed the real wall-clock elapsed since run start.
+    if ($claimedTime > ($now - $ts) + 15) return 'submitted time exceeds real elapsed';
+
+    // Single-use replay guard.
+    $used = readJsonFile(USED_TOKENS_FILE, []);
+    if (!is_array($used)) $used = [];
+    $used = array_filter($used, fn($t) => $now - (int) $t < TOKEN_TTL);
+    if (isset($used[$nonce])) return 'run token already used';
+    $used[$nonce] = $now;
+    writeJsonFile(USED_TOKENS_FILE, $used);
+    return null;
+}
+
+// Issue a token: GET/POST ?action=start
+if (($_REQUEST['action'] ?? '') === 'start') {
+    echo json_encode(['ok' => true, 'token' => lbIssueToken()]);
+    exit;
+}
+
 if ($method === 'POST') {
     enforceRateLimit('game_lb_submit', 10, 60);
 
@@ -62,6 +120,10 @@ if ($method === 'POST') {
         $level < 1 || $level > 10000) {
         jerr(400, 'invalid score');
     }
+
+    // Require a valid, single-use, time-bound server token for this run.
+    $tokenErr = lbCheckToken($_POST['token'] ?? '', $time);
+    if ($tokenErr !== null) jerr(403, $tokenErr);
 
     $board = readJsonFile($LB_FILE, []);
     $entry = ['name' => $name, 'time' => $time, 'kills' => $kills, 'level' => $level, 'at' => time()];
