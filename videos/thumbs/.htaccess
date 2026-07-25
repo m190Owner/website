@@ -1,0 +1,28 @@
+# Hardening for user-uploaded video files. Never execute, never list.
+# Files here only ever get a server-chosen media extension with a random name;
+# these rules are defense-in-depth against anything that might slip through.
+Options -Indexes -ExecCGI
+
+# Deny access to any script/markup extension outright (returns 403 before any
+# handler — the reliable guard even under PHP-FPM where php_flag is ignored).
+<FilesMatch "(?i)\.(php|phtml|phar|pht|php[0-9]?|cgi|pl|py|rb|sh|lua|asp|aspx|jsp|js|mjs|htaccess|htm|html|xht|xhtml|svg|xml|swf)$">
+  Require all denied
+</FilesMatch>
+
+# Strip known script handlers as well.
+RemoveHandler .php .phtml .phar .pht .php3 .php4 .php5 .php7 .php8 .cgi .pl .py
+
+# Turn PHP off if (and only if) running as an Apache module — skipped under FPM.
+<IfModule mod_php.c>
+  php_admin_flag engine off
+</IfModule>
+<IfModule mod_php7.c>
+  php_admin_flag engine off
+</IfModule>
+<IfModule mod_php8.c>
+  php_admin_flag engine off
+</IfModule>
+
+<IfModule mod_headers.c>
+  Header set X-Content-Type-Options "nosniff"
+</IfModule>

@@ -12,6 +12,8 @@ click_count.txt
 visitor_locations.json
 active_visitors/
 counter_migrated.txt
+chat_messages.json
+cursor_data.json
 
 # Pwn lab runtime data
 lab/data/sessions.json
@@ -19,6 +21,18 @@ lab/data/leaderboard.json
 
 # Game leaderboard runtime data
 game/data/
+
+# Videos section runtime data — never commit the SQLite DB or user uploads,
+# but DO keep the hardening .htaccess files that ship with the section.
+videos/data/*
+videos/media/*
+videos/thumbs/*
+!videos/data/.htaccess
+!videos/media/.htaccess
+!videos/thumbs/.htaccess
+
+# Local Claude Code tooling (launch configs, settings) — not part of the site
+.claude/
 
 # Crackme source (private)
 crackmes/
