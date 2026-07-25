@@ -37,7 +37,7 @@ $rows = $vs->fetchAll();
 render_header($ch['username'] . '’s channel');
 ?>
 <div class="v-channel-head">
-  <div class="v-avatar"><?= e(strtoupper(substr($ch['username'], 0, 1))) ?></div>
+  <?= avatar_html($ch['username'], $ch['avatar'], 'v-avatar') ?>
   <div class="v-channel-info">
     <h1><?= e($ch['username']) ?><?php if (!empty($ch['is_admin'])): ?> <span class="v-badge">owner</span><?php endif; ?></h1>
     <div class="v-dim"><?= fmt_count($subCount) ?> subscriber<?= $subCount === 1 ? '' : 's' ?> · <?= count($rows) ?> video<?= count($rows) === 1 ? '' : 's' ?></div>
@@ -46,6 +46,7 @@ render_header($ch['username'] . '’s channel');
   <div class="v-channel-actions">
     <?php if ($isSelf): ?>
       <a href="/videos/upload.php" class="v-btn v-btn-accent">↑ Upload</a>
+      <a href="/videos/settings.php" class="v-btn">✎ Edit profile</a>
     <?php elseif ($me): ?>
       <form method="post" action="/videos/action.php" class="v-inline">
         <?= csrf_field() ?>

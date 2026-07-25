@@ -35,7 +35,10 @@ $pct     = min(100, round($used / VIDEO_GLOBAL_CAP_BYTES * 100, 1));
 
 render_header('Admin');
 ?>
-<div class="v-feed-head"><h1>Admin</h1></div>
+<div class="v-feed-head">
+  <h1>Admin</h1>
+  <a href="/videos/admin_users.php" class="v-btn v-btn-accent">👥 Manage users</a>
+</div>
 
 <div class="v-stats">
   <div class="v-stat"><b><?= $nVideos ?></b><span>videos</span></div>

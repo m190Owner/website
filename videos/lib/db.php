@@ -25,6 +25,8 @@ function videos_db_init(PDO $db): void {
             password_hash TEXT NOT NULL,
             is_admin      INTEGER NOT NULL DEFAULT 0,
             is_banned     INTEGER NOT NULL DEFAULT 0,
+            is_muted      INTEGER NOT NULL DEFAULT 0,
+            avatar        TEXT NOT NULL DEFAULT '',
             about         TEXT NOT NULL DEFAULT '',
             created_at    INTEGER NOT NULL
         );
@@ -74,11 +76,26 @@ function videos_db_init(PDO $db): void {
             resolved    INTEGER NOT NULL DEFAULT 0,
             created_at  INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS warnings (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id      INTEGER NOT NULL,
+            issued_by    INTEGER,
+            reason       TEXT NOT NULL DEFAULT '',
+            acknowledged INTEGER NOT NULL DEFAULT 0,
+            created_at   INTEGER NOT NULL
+        );
         CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_videos_user    ON videos(user_id);
         CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(video_id);
         CREATE INDEX IF NOT EXISTS idx_reports_open   ON reports(resolved);
+        CREATE INDEX IF NOT EXISTS idx_warnings_user  ON warnings(user_id);
     ");
+
+    // Migrate older databases that predate the profile/moderation columns.
+    $cols = array_column($db->query("PRAGMA table_info(users)")->fetchAll(), 'name');
+    if (!in_array('is_muted', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN is_muted INTEGER NOT NULL DEFAULT 0");
+    if (!in_array('avatar',   $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''");
+    if (!in_array('about',    $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN about TEXT NOT NULL DEFAULT ''");
 
     // Keep the designated owner account flagged as admin (idempotent).
     $st = $db->prepare("UPDATE users SET is_admin = 1 WHERE username = ?");

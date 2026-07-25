@@ -54,7 +54,7 @@ $canModerate = $isOwner || ($me && !empty($me['is_admin']));
 
 // Comments.
 $cs = $db->prepare(
-    "SELECT c.*, u.username FROM comments c JOIN users u ON u.id = c.user_id
+    "SELECT c.*, u.username, u.avatar FROM comments c JOIN users u ON u.id = c.user_id
       WHERE c.video_id = ? AND c.status = 'live' ORDER BY c.created_at DESC LIMIT 500"
 );
 $cs->execute([$id]);
@@ -68,9 +68,9 @@ render_header($v['title']);
 
 <div class="v-watch">
   <div class="v-player">
-    <video controls playsinline preload="metadata"
-           poster="<?= e(thumb_url($v)) ?>"
-           src="/videos/media/<?= e(rawurlencode($v['filename'])) ?>"></video>
+    <video controls playsinline preload="metadata" poster="<?= e(thumb_url($v)) ?>">
+      <source src="/videos/stream.php?v=<?= urlencode($id) ?>" type="<?= e($v['mime']) ?>">
+    </video>
   </div>
 
   <h1 class="v-watch-title"><?= e($v['title']) ?></h1>
@@ -159,6 +159,8 @@ render_header($v['title']);
 
     <?php foreach ($comments as $c): ?>
       <div class="v-comment">
+        <a class="v-comment-av" href="/videos/channel.php?u=<?= urlencode($c['username']) ?>"><?= avatar_html($c['username'], $c['avatar'], 'v-chip-av') ?></a>
+        <div class="v-comment-main">
         <div class="v-comment-head">
           <a href="/videos/channel.php?u=<?= urlencode($c['username']) ?>" class="v-comment-author"><?= e($c['username']) ?></a>
           <span class="v-dim"><?= e(time_ago((int) $c['created_at'])) ?></span>
@@ -184,6 +186,7 @@ render_header($v['title']);
               <button class="v-link-btn">delete</button>
             </form>
           <?php endif; ?>
+        </div>
         </div>
       </div>
     <?php endforeach; ?>

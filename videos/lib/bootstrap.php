@@ -8,11 +8,12 @@ require_once __DIR__ . '/../../config.php';   // setCorsHeaders, enforceRateLimi
 
 // ---- Paths ----
 define('VIDEOS_ROOT', dirname(__DIR__));      // .../website/videos
-define('VIDEOS_DATA_DIR',  VIDEOS_ROOT . '/data');
-define('VIDEOS_MEDIA_DIR', VIDEOS_ROOT . '/media');
-define('VIDEOS_THUMB_DIR', VIDEOS_ROOT . '/thumbs');
+define('VIDEOS_DATA_DIR',   VIDEOS_ROOT . '/data');
+define('VIDEOS_MEDIA_DIR',  VIDEOS_ROOT . '/media');
+define('VIDEOS_THUMB_DIR',  VIDEOS_ROOT . '/thumbs');
+define('VIDEOS_AVATAR_DIR', VIDEOS_ROOT . '/avatars');
 
-foreach ([VIDEOS_DATA_DIR, VIDEOS_MEDIA_DIR, VIDEOS_THUMB_DIR] as $d) {
+foreach ([VIDEOS_DATA_DIR, VIDEOS_MEDIA_DIR, VIDEOS_THUMB_DIR, VIDEOS_AVATAR_DIR] as $d) {
     if (!is_dir($d)) @mkdir($d, 0755, true);
 }
 
@@ -22,6 +23,8 @@ define('VIDEO_MAX_DURATION_SEC',  900);                 // per file: 15 min
 define('VIDEO_GLOBAL_CAP_BYTES',  5 * 1024 * 1024 * 1024); // total media/: 5 GB
 define('VIDEO_UPLOADS_PER_DAY',   10);                  // per user
 define('THUMB_MAX_BYTES',         2 * 1024 * 1024);     // thumbnail image: 2 MB
+define('AVATAR_MAX_BYTES',        2 * 1024 * 1024);     // profile pic: 2 MB
+define('WARN_BAN_THRESHOLD',      3);                   // auto-ban at N warnings
 
 // Text length caps.
 define('TITLE_MAX',       120);

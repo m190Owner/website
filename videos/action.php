@@ -60,6 +60,7 @@ switch ($action) {
 
     case 'comment': {
         $u = require_login();
+        if ((int) $u['is_muted'] === 1) redirect(add_flash($back . '#comments', 'Your account is suspended from posting.'));
         enforceRateLimit('videos_comment', 15, 60);
         $vid  = $_POST['video_id'] ?? '';
         $body = trim($_POST['body'] ?? '');
@@ -134,6 +135,50 @@ switch ($action) {
         require_admin();
         $rid = (int) ($_POST['report_id'] ?? 0);
         $db->prepare("UPDATE reports SET resolved = 1 WHERE id = ?")->execute([$rid]);
+        redirect($back);
+    }
+
+    case 'warn': {
+        $me = require_admin();
+        $uid = (int) ($_POST['user_id'] ?? 0);
+        $reason = mb_substr(trim($_POST['reason'] ?? ''), 0, REPORT_REASON_MAX);
+        // Never warn an admin/owner or a nonexistent user.
+        $chk = $db->prepare("SELECT 1 FROM users WHERE id = ? AND is_admin = 0");
+        $chk->execute([$uid]);
+        if ($chk->fetch()) {
+            $db->prepare("INSERT INTO warnings (user_id, issued_by, reason, created_at) VALUES (?, ?, ?, ?)")
+               ->execute([$uid, $me['id'], $reason, time()]);
+            // Auto-ban once the warning count reaches the threshold.
+            $cnt = (int) $db->query("SELECT COUNT(*) FROM warnings WHERE user_id = " . $uid)->fetchColumn();
+            if ($cnt >= WARN_BAN_THRESHOLD) {
+                $db->prepare("UPDATE users SET is_banned = 1 WHERE id = ?")->execute([$uid]);
+            }
+        }
+        redirect($back);
+    }
+
+    case 'mute':
+    case 'unmute': {
+        require_admin();
+        $uid = (int) ($_POST['user_id'] ?? 0);
+        $db->prepare("UPDATE users SET is_muted = ? WHERE id = ? AND is_admin = 0")
+           ->execute([$action === 'mute' ? 1 : 0, $uid]);
+        redirect($back);
+    }
+
+    case 'delete_user_videos': {
+        require_admin();
+        $uid = (int) ($_POST['user_id'] ?? 0);
+        $vs = $db->prepare("SELECT * FROM videos WHERE user_id = ? AND status = 'live'");
+        $vs->execute([$uid]);
+        foreach ($vs->fetchAll() as $v) remove_video_files($v);
+        $db->prepare("UPDATE videos SET status = 'removed' WHERE user_id = ?")->execute([$uid]);
+        redirect($back);
+    }
+
+    case 'ack_warning': {
+        $u = require_login();
+        $db->prepare("UPDATE warnings SET acknowledged = 1 WHERE user_id = ?")->execute([$u['id']]);
         redirect($back);
     }
 

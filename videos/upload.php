@@ -14,6 +14,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 /** Returns an error string; on success it redirects/JSONs and never returns. */
 function handle_upload(array $u, bool $isXhr): string {
     csrf_require($isXhr);
+    if ((int) $u['is_muted'] === 1) return 'Your account is suspended from posting.';
     enforceRateLimit('videos_upload_ip', 20, 3600);
 
     // Per-user daily cap.

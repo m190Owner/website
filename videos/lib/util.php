@@ -80,6 +80,34 @@ function thumb_url(array $v): string {
         : '/videos/assets/placeholder.svg';
 }
 
+/** Avatar element: the uploaded image if set, else a letter tile. $cls sizes it. */
+function avatar_html(string $username, string $avatar, string $cls): string {
+    if ($avatar !== '') {
+        return '<img class="' . e($cls) . ' v-av-img" src="/videos/avatars/'
+             . e(rawurlencode($avatar)) . '" alt="">';
+    }
+    return '<span class="' . e($cls) . '">' . e(strtoupper(mb_substr($username, 0, 1))) . '</span>';
+}
+
+/**
+ * Validate + store an uploaded image (avatar or thumbnail). Returns the stored
+ * filename on success, or null if absent/invalid. Sniffs the real MIME, confirms
+ * it decodes as an image, and never trusts the client filename.
+ */
+function store_uploaded_image(array $file, string $destDir, string $baseName, int $maxBytes): ?string {
+    if (!is_uploaded_file($file['tmp_name'] ?? '') || ($file['error'] ?? 1) !== UPLOAD_ERR_OK) return null;
+    if ((int) $file['size'] <= 0 || (int) $file['size'] > $maxBytes) return null;
+
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($file['tmp_name']);
+    if (!isset(THUMB_MIME_EXT[$mime]))       return null;
+    if (getimagesize($file['tmp_name']) === false) return null;
+
+    $name = $baseName . '.' . THUMB_MIME_EXT[$mime];
+    if (!move_uploaded_file($file['tmp_name'], $destDir . '/' . $name)) return null;
+    @chmod($destDir . '/' . $name, 0644);
+    return $name;
+}
+
 /** Render one video card. $v needs: id,title,thumb,username,views,created_at,duration_sec.
  *  Note: no nested <a> — the channel link is a sibling of the thumb/title links,
  *  since nesting anchors is invalid HTML and fragments the card in the grid. */
@@ -155,6 +183,41 @@ function render_header(string $title, string $active = ''): void {
   </div>
 </nav>
 <main class="v-main"><?php
+    render_warning_banner($u);
+}
+
+/** Show any unacknowledged warnings to the user, with an acknowledge button. */
+function render_warning_banner(?array $u): void {
+    if (!$u) return;
+    $st = videos_db()->prepare(
+        "SELECT reason, created_at FROM warnings WHERE user_id = ? AND acknowledged = 0 ORDER BY created_at"
+    );
+    $st->execute([$u['id']]);
+    $warns = $st->fetchAll();
+    if (!$warns) return;
+
+    $total = (int) videos_db()->query("SELECT COUNT(*) FROM warnings WHERE user_id = " . (int) $u['id'])->fetchColumn();
+    $left = max(0, WARN_BAN_THRESHOLD - $total);
+    ?>
+    <div class="v-warn-banner">
+      <div class="v-warn-head">⚠ You have received a warning from a moderator</div>
+      <?php foreach ($warns as $w): ?>
+        <div class="v-warn-reason"><?= trim($w['reason']) !== '' ? e($w['reason']) : 'No reason given.' ?>
+          <span class="v-dim">· <?= e(time_ago((int) $w['created_at'])) ?></span></div>
+      <?php endforeach; ?>
+      <div class="v-warn-foot">
+        <?= $left > 0
+            ? e($left) . ' more warning' . ($left === 1 ? '' : 's') . ' will result in a ban.'
+            : 'Further violations will result in a ban.' ?>
+      </div>
+      <form method="post" action="/videos/action.php" class="v-inline">
+        <?= csrf_field() ?>
+        <input type="hidden" name="action" value="ack_warning">
+        <input type="hidden" name="back" value="<?= e($_SERVER['REQUEST_URI'] ?? '/videos/') ?>">
+        <button class="v-btn">I understand</button>
+      </form>
+    </div>
+    <?php
 }
 
 function render_footer(): void {

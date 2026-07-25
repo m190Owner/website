@@ -164,6 +164,52 @@ h2{font-size:1.1rem}
 .v-report-buttons{display:flex; gap:8px; align-items:flex-start; flex-wrap:wrap}
 .v-tag{display:inline-block; font-size:.68rem; text-transform:uppercase; letter-spacing:.5px; background:var(--elevated); border:1px solid var(--border); color:var(--muted); padding:2px 7px; border-radius:6px; margin-right:6px}
 
+/* ---- Avatars (image variant of the letter tiles) ---- */
+.v-av-img{object-fit:cover; padding:0}
+img.v-avatar{background:none}
+
+/* ---- Warning banner ---- */
+.v-warn-banner{max-width:960px; margin:0 auto 16px; background:rgba(250,166,26,.1); border:1px solid rgba(250,166,26,.5); border-radius:var(--radius); padding:14px 16px}
+.v-warn-head{font-weight:700; color:#ffcf7a; margin-bottom:6px}
+.v-warn-reason{margin:3px 0}
+.v-warn-foot{color:var(--muted); font-size:.85rem; margin:8px 0}
+
+/* ---- Settings ---- */
+.v-settings-avatar{display:flex; gap:18px; align-items:flex-start; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px}
+.v-checkline{flex-direction:row !important; align-items:center; gap:6px; margin-top:8px; color:var(--muted)}
+.v-checkline input{width:auto}
+.v-form-row{display:flex; gap:10px}
+
+/* ---- Comments with avatar ---- */
+.v-comment{display:flex; gap:12px}
+.v-comment-av{flex:0 0 auto}
+.v-comment-main{flex:1; min-width:0}
+
+/* ---- User management (admin) ---- */
+.v-usersearch{display:flex; gap:8px; margin-bottom:16px; max-width:420px}
+.v-usersearch input{flex:1; padding:8px 12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font:inherit}
+.v-usertable{display:flex; flex-direction:column; gap:6px}
+.v-userrow{display:grid; grid-template-columns:2fr 1fr .7fr .8fr .9fr; gap:12px; align-items:center; padding:10px 14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); color:var(--text); text-decoration:none}
+a.v-userrow:hover{border-color:var(--border-hover); text-decoration:none}
+.v-userhead{background:none; border:none; color:var(--dim); font-size:.78rem; text-transform:uppercase; letter-spacing:.5px; padding-bottom:0}
+.v-usercell{display:flex; align-items:center; gap:10px; min-width:0}
+.v-usercell b{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.v-warn-count{color:var(--warning,#faa61a); font-weight:700}
+.v-tag-owner{color:var(--accent); border-color:var(--accent)}
+.v-tag-banned{color:var(--danger); border-color:rgba(255,85,85,.4)}
+.v-tag-muted{color:#faa61a; border-color:rgba(250,166,26,.4)}
+
+/* ---- Moderation panel ---- */
+.v-modpanel{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:8px; display:flex; flex-direction:column; gap:12px}
+.v-warnform{display:flex; flex-direction:column; gap:8px; max-width:560px}
+.v-warnform textarea{width:100%; padding:9px 11px; background:var(--bg); border:1px solid var(--border); border-radius:8px; color:var(--text); font:inherit}
+.v-modbtns{display:flex; gap:8px; flex-wrap:wrap}
+.v-modlist{display:flex; flex-direction:column; gap:6px}
+.v-modline{display:flex; align-items:center; gap:12px; padding:9px 12px; background:var(--surface); border:1px solid var(--border); border-radius:8px; flex-wrap:wrap}
+.v-modline a:first-child{font-weight:600}
+.v-modcomment{flex:1; min-width:160px}
+.v-modline form{margin-left:auto}
+
 /* ---- Footer ---- */
 .v-footer{max-width:1280px; margin:40px auto 0; padding:20px 16px; border-top:1px solid var(--border); display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; color:var(--dim); font-size:.8rem}
 

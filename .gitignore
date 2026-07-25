@@ -27,9 +27,11 @@ game/data/
 videos/data/*
 videos/media/*
 videos/thumbs/*
+videos/avatars/*
 !videos/data/.htaccess
 !videos/media/.htaccess
 !videos/thumbs/.htaccess
+!videos/avatars/.htaccess
 
 # Local Claude Code tooling (launch configs, settings) — not part of the site
 .claude/

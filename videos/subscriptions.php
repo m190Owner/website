@@ -6,7 +6,7 @@ $db = videos_db();
 
 // Channels the user follows.
 $chs = $db->prepare(
-    "SELECT u.id, u.username,
+    "SELECT u.id, u.username, u.avatar,
             (SELECT COUNT(*) FROM videos v WHERE v.user_id = u.id AND v.status = 'live') AS n
        FROM subscriptions s JOIN users u ON u.id = s.channel_id
       WHERE s.subscriber_id = ? ORDER BY u.username COLLATE NOCASE"
@@ -32,7 +32,7 @@ render_header('Subscriptions');
   <div class="v-chips">
     <?php foreach ($channels as $c): ?>
       <a class="v-chip" href="/videos/channel.php?u=<?= urlencode($c['username']) ?>">
-        <span class="v-chip-av"><?= e(strtoupper(substr($c['username'], 0, 1))) ?></span>
+        <?= avatar_html($c['username'], $c['avatar'], 'v-chip-av') ?>
         <?= e($c['username']) ?> <span class="v-dim">· <?= (int) $c['n'] ?></span>
       </a>
     <?php endforeach; ?>
