@@ -20,7 +20,7 @@ foreach ([VIDEOS_DATA_DIR, VIDEOS_MEDIA_DIR, VIDEOS_THUMB_DIR, VIDEOS_AVATAR_DIR
 // ---- Caps / limits (tune freely) ----
 define('VIDEO_MAX_BYTES',         128 * 1024 * 1024);   // per file: 128 MB
 define('VIDEO_MAX_DURATION_SEC',  900);                 // per file: 15 min
-define('VIDEO_GLOBAL_CAP_BYTES',  5 * 1024 * 1024 * 1024); // total media/: 5 GB
+define('VIDEO_GLOBAL_CAP_BYTES',  15 * 1024 * 1024 * 1024); // total media/: 15 GB (host disk is 20 GB; leaves ~5 GB headroom for the rest of the site)
 define('VIDEO_UPLOADS_PER_DAY',   10);                  // per user
 define('THUMB_MAX_BYTES',         2 * 1024 * 1024);     // thumbnail image: 2 MB
 define('AVATAR_MAX_BYTES',        2 * 1024 * 1024);     // profile pic: 2 MB
