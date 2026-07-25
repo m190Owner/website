@@ -39,8 +39,8 @@
       });
     })();
   </script>
-  <script type="module" crossorigin src="./assets/index-ottgUN2g.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-DnCuinug.css">
+  <script type="module" crossorigin src="./assets/index-I3GCN2cV.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DK7jhzbf.css">
 </head>
 <body>
   <a id="back-to-site" href="/" title="Back to logansandivar.com">&#8592; Site</a>
@@ -103,6 +103,7 @@
       <p class="sub">Every gun fires at its real-world rate of fire. Choose your operator.</p>
       <div class="coin-row">
         <span class="coin-pill">🪙 <span id="start-coins">0</span></span>
+        <button id="daily-btn" class="lb-btn">🗓️ Daily</button>
         <button id="story-btn" class="lb-btn">📖 Story</button>
         <button id="shop-btn" class="lb-btn">🛒 Armoury</button>
         <button id="coop-btn" class="lb-btn">👥 Co-op</button>
@@ -184,6 +185,23 @@
         <ol id="coop-over-board" class="lb-list"><li class="lb-empty">Loading…</li></ol>
       </div>
       <button id="coop-over-leave-btn">BACK TO MENU</button>
+    </div>
+
+    <!-- Daily Challenge -->
+    <div id="daily-screen" class="modal hidden">
+      <h1>🗓️ DAILY CHALLENGE</h1>
+      <p class="sub">Everyone plays the same seeded run today. No upgrades, no loadout — just skill. Come back daily to keep your streak.</p>
+      <div class="daily-info">
+        <div class="daily-info-cell"><span class="daily-label">Today</span><b id="daily-date">—</b></div>
+        <div class="daily-info-cell"><span class="daily-label">Operator</span><b id="daily-op">—</b></div>
+        <div class="daily-info-cell"><span class="daily-label">Streak</span><b id="daily-streak">—</b></div>
+      </div>
+      <button id="daily-play-btn" class="lb-btn daily-play">▶ PLAY TODAY'S RUN</button>
+      <div class="lb-panel">
+        <div class="lb-title">🏆 Today's Leaderboard — Longest Survival</div>
+        <ol id="daily-board" class="lb-list"><li class="lb-empty">Loading…</li></ol>
+      </div>
+      <button id="daily-back-btn" class="lb-btn">BACK</button>
     </div>
 
     <!-- Story: chapter select -->

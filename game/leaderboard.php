@@ -23,8 +23,9 @@ if (!is_dir(GAME_DATA_DIR)) {
     mkdir(GAME_DATA_DIR, 0755, true);
 }
 
-// Solo and co-op keep separate boards.
-$mode = (($_REQUEST['mode'] ?? 'solo') === 'coop') ? 'coop' : 'solo';
+// Solo, co-op, and the date-keyed daily challenge keep separate boards.
+$reqMode = $_REQUEST['mode'] ?? 'solo';
+$mode = in_array($reqMode, ['coop', 'daily'], true) ? $reqMode : 'solo';
 $LB_FILE = GAME_DATA_DIR . ($mode === 'coop' ? '/coop_leaderboard.json' : '/leaderboard.json');
 
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
@@ -100,6 +101,87 @@ if (($_REQUEST['action'] ?? '') === 'start') {
     echo json_encode(['ok' => true, 'token' => lbIssueToken()]);
     exit;
 }
+
+// ---- Daily Challenge: one shared seed per UTC day, a board that resets daily,
+// and per-player streaks. Stored date-keyed so old days age out. ----
+define('DAILY_FILE',        GAME_DATA_DIR . '/daily.json');
+define('DAILY_STREAK_FILE', GAME_DATA_DIR . '/daily_streaks.json');
+define('DAILY_KEEP_DAYS',   30);
+
+function handleDaily(string $method): void {
+    $today = gmdate('Y-m-d');
+
+    if ($method === 'POST') {
+        enforceRateLimit('game_daily_submit', 10, 60);
+
+        $name = sanitizeHandle($_POST['name'] ?? '');
+        if ($name === null) jerr(400, 'invalid name (3-16 chars, letters/numbers/_, no profanity)');
+
+        $time  = (int)($_POST['time'] ?? -1);
+        $kills = (int)($_POST['kills'] ?? -1);
+        $level = (int)($_POST['level'] ?? -1);
+        if ($time < 0 || $time > 86400 || $kills < 0 || $kills > 1000000 || $level < 1 || $level > 10000) {
+            jerr(400, 'invalid score');
+        }
+
+        // Same signed-token anti-cheat as the main board.
+        $tokenErr = lbCheckToken($_POST['token'] ?? '', $time);
+        if ($tokenErr !== null) jerr(403, $tokenErr);
+
+        // The run must be for today's seed — no back- or forward-dating.
+        if (($_POST['date'] ?? '') !== $today) {
+            jerr(400, "that run isn't today's challenge — refresh and play today's seed");
+        }
+
+        $all   = readJsonFile(DAILY_FILE, []);
+        if (!is_array($all)) $all = [];
+        $board = $all[$today] ?? [];
+
+        // Keep each player's best (longest) time for the day.
+        $entry = ['name' => $name, 'time' => $time, 'kills' => $kills, 'level' => $level, 'at' => time()];
+        $prev = null;
+        foreach ($board as $i => $e) { if ($e['name'] === $name) { $prev = $i; break; } }
+        if ($prev === null)                    $board[] = $entry;
+        elseif ($board[$prev]['time'] < $time) $board[$prev] = $entry;
+
+        $board = sortBoard($board);
+        $all[$today] = $board;
+        // Age out old days.
+        if (count($all) > DAILY_KEEP_DAYS) { krsort($all); $all = array_slice($all, 0, DAILY_KEEP_DAYS, true); }
+        writeJsonFile(DAILY_FILE, $all);
+
+        // Streak: consecutive days (ending today) this name has played.
+        $streaks = readJsonFile(DAILY_STREAK_FILE, []);
+        if (!is_array($streaks)) $streaks = [];
+        $yesterday = gmdate('Y-m-d', time() - 86400);
+        $cur = $streaks[$name] ?? null;
+        if     ($cur && ($cur['last'] ?? '') === $today)     $streak = (int)$cur['streak'];       // already counted
+        elseif ($cur && ($cur['last'] ?? '') === $yesterday) $streak = (int)$cur['streak'] + 1;
+        else                                                 $streak = 1;
+        $streaks[$name] = ['streak' => $streak, 'last' => $today];
+        writeJsonFile(DAILY_STREAK_FILE, $streaks);
+
+        $rank = null;
+        foreach ($board as $i => $e) { if ($e['name'] === $name) { $rank = $i + 1; break; } }
+
+        echo json_encode([
+            'ok'          => true,
+            'your_rank'   => $rank,
+            'streak'      => $streak,
+            'date'        => $today,
+            'leaderboard' => array_slice($board, 0, 50),
+        ]);
+        exit;
+    }
+
+    // GET — today's board.
+    $all   = readJsonFile(DAILY_FILE, []);
+    $board = is_array($all) && isset($all[$today]) ? sortBoard($all[$today]) : [];
+    echo json_encode(['ok' => true, 'date' => $today, 'leaderboard' => array_slice($board, 0, 50)]);
+    exit;
+}
+
+if ($mode === 'daily') handleDaily($method);
 
 if ($method === 'POST') {
     enforceRateLimit('game_lb_submit', 10, 60);
