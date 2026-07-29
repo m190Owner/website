@@ -96,6 +96,38 @@ h1{font-size:1.5rem;margin:0 0 .4em}h2{font-size:1.15rem}
 .c-hval{color:var(--gold);font-weight:700;margin-top:4px}
 .c-seat-label{color:var(--muted);font-size:.85rem;margin-bottom:4px}
 
+/* Poker */
+.poker-page{max-width:900px;margin:0 auto}
+.poker-top{display:flex;align-items:center;gap:14px;justify-content:space-between;flex-wrap:wrap;margin-bottom:10px}
+.poker-top h1{margin:0;font-size:1.2rem}
+.poker-table{position:relative;height:460px;margin:0 auto;border-radius:220px/150px;
+  background:radial-gradient(120% 120% at 50% 35%,var(--felt),var(--felt-edge));border:10px solid #2a1c10;box-shadow:inset 0 0 70px rgba(0,0,0,.55)}
+.poker-board{position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);display:flex;gap:6px}
+.poker-pot{position:absolute;left:50%;top:58%;transform:translateX(-50%);color:var(--gold);font-weight:700}
+.poker-status{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:#dfe6d8;font-size:.9rem;text-align:center;max-width:60%;pointer-events:none}
+.poker-seats{position:absolute;inset:0}
+.pk-seat{position:absolute;transform:translate(-50%,-50%);width:120px;text-align:center;color:#eafff0}
+.pk-seat.empty{width:0}
+.pk-seat .pk-cards{display:flex;gap:3px;justify-content:center;min-height:42px}
+.pk-seat.folded{opacity:.4}
+.pk-info{background:rgba(6,18,12,.85);border:1px solid rgba(232,193,90,.25);border-radius:8px;padding:4px 8px;margin-top:3px}
+.pk-seat.toact .pk-info{border-color:var(--gold);box-shadow:0 0 12px rgba(232,193,90,.6)}
+.pk-name{font-weight:700;font-size:.82rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pk-stack{color:var(--gold);font-size:.78rem}
+.pk-bet{color:#fff;font-size:.75rem;margin-top:2px;min-height:1em}
+.pk-seat.dealer::after{content:'D';position:absolute;top:-6px;right:8px;width:20px;height:20px;line-height:20px;border-radius:50%;background:#fff;color:#111;font:700 11px sans-serif}
+.pk-timer{color:#ff9a9a;font-size:.72rem}
+.pk-sit{font-size:.8rem;padding:5px 12px}
+.card.mini{width:34px;height:48px;padding:3px 4px;border-radius:5px}
+.card.mini .r{font-size:.72rem}.card.mini .s{font-size:.85rem}
+.poker-actions{display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap;margin:16px 0}
+.pk-raisewrap{display:flex;gap:8px;align-items:center}
+.pk-raisewrap input[type=range]{width:150px}
+.pk-raise-amt{width:88px;background:var(--elevated);border:1px solid var(--border);color:var(--text);border-radius:7px;padding:7px;font:inherit}
+.poker-log{max-width:520px;margin:6px auto 0;color:var(--dim);font-size:.78rem;line-height:1.5}
+.poker-log div{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media(max-width:640px){.poker-table{height:400px}.pk-seat{width:96px}}
+
 /* Footer */
 .c-footer{max-width:1080px;margin:40px auto 0;padding:18px 16px;border-top:1px solid var(--border);display:flex;
   justify-content:space-between;gap:12px;flex-wrap:wrap;color:var(--dim);font-size:.8rem}
