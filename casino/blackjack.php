@@ -116,6 +116,9 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $action) {
 
 $u = require_casino_user();
 bj_table();
+// Restore an in-progress hand so a refresh/return doesn't strand the player.
+$cur = bj_load((int) $u['id']);
+$initState = ($cur && $cur['status'] === 'player') ? bj_view((int) $u['id'], $cur) : null;
 render_casino_header('Blackjack', $u);
 ?>
 <div class="c-game-page">
@@ -144,6 +147,7 @@ render_casino_header('Blackjack', $u);
     <button class="c-btn c-btn-lg" id="bj-double">Double</button>
   </div>
 </div>
-<script src="/casino/assets/cards.js"></script>
-<script src="/casino/assets/blackjack.js"></script>
+<script>window.BJ_STATE = <?= json_encode($initState) ?>;</script>
+<script src="<?= casset('/assets/cards.js') ?>"></script>
+<script src="<?= casset('/assets/blackjack.js') ?>"></script>
 <?php render_casino_footer();

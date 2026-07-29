@@ -49,4 +49,7 @@
   hitBtn.addEventListener('click', () => act('hit'));
   standBtn.addEventListener('click', () => act('stand'));
   doubleBtn.addEventListener('click', () => act('double'));
+
+  // Restore an in-progress hand (server-embedded) so you can finish it.
+  if (window.BJ_STATE) apply(window.BJ_STATE);
 })();

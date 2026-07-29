@@ -114,6 +114,6 @@ render_casino_header($t['name'] . " · Hold'em", $u);
   </div>
   <div class="poker-log" id="pk-log"></div>
 </div>
-<script src="/casino/assets/cards.js"></script>
-<script src="/casino/assets/poker.js"></script>
+<script src="<?= casset('/assets/cards.js') ?>"></script>
+<script src="<?= casset('/assets/poker.js') ?>"></script>
 <?php render_casino_footer();

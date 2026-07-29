@@ -88,5 +88,5 @@ render_casino_header('Slots', $u);
   </details>
 </div>
 <script>window.SLOT = { min: <?= SLOT_MIN ?>, max: <?= SLOT_MAX ?>, symbols: <?= json_encode(array_keys(SLOT_SYMBOLS)) ?> };</script>
-<script src="/casino/assets/slots.js"></script>
+<script src="<?= casset('/assets/slots.js') ?>"></script>
 <?php render_casino_footer();

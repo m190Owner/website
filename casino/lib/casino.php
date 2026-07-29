@@ -46,6 +46,13 @@ function fmt_coins(int $n): string {
     return number_format($n);
 }
 
+/** Cache-busted URL for a casino asset (appends the file's mtime), so browsers
+ *  always pick up updates instead of serving a stale cached copy. */
+function casset(string $rel): string {
+    $v = @filemtime(dirname(__DIR__) . $rel) ?: 1;
+    return '/casino' . $rel . '?v=' . $v;
+}
+
 // ---- Cards (0..51: rank = i%13 [0=2 .. 12=A], suit = i div 13 [0=s,1=h,2=d,3=c]) ----
 const RANK_CHARS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
 const SUIT_CHARS = ['s','h','d','c'];
@@ -96,10 +103,11 @@ function render_casino_header(string $title, ?array $u = null): void {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?= e($title) ?> · Casino · Logan Sandivar</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/casino/assets/casino.css">
+<link rel="stylesheet" href="<?= casset('/assets/casino.css') ?>">
 <?php if ($u): ?><meta name="csrf" content="<?= e(csrf_token()) ?>"><?php endif; ?>
 <script src="/js/noinspect.js"></script>
-<script src="/casino/assets/sfx.js"></script>
+<script src="<?= casset('/assets/sfx.js') ?>"></script>
+<script src="<?= casset('/assets/casino.js') ?>"></script>
 </head>
 <body>
 <nav class="c-nav">
@@ -132,7 +140,6 @@ function render_casino_footer(): void {
   <span>LS Casino · play-money only · part of <a href="/">logansandivar.com</a></span>
   <span class="c-dim">🪙 LS coins have no real-world value.</span>
 </footer>
-<script src="/casino/assets/casino.js"></script>
 </body>
 </html><?php
 }

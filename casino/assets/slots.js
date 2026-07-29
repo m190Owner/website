@@ -16,6 +16,7 @@
   async function spin() {
     if (spinning) return;
     spinning = true; spinBtn.disabled = true;
+    if (window.SFX) SFX.chip();          // in-gesture (always plays) + bet feedback
     result.textContent = ''; result.className = 'slot-result';
     reels.forEach((r) => r.classList.add('spinning'));
     if (window.SFX) SFX.spinStart();
