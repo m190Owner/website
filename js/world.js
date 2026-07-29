@@ -188,7 +188,7 @@
         const pct = pd.dead ? 0 : Math.max(0, Math.min(100, pd.hp));
         hudHp.style.width = pct + '%'; hudHp.style.background = hpColor(pct);
         hudNuke.style.width = Math.min(100, (pd.aliveMs / WIN_MS) * 100) + '%';
-        hudStatus.textContent = pd.dead ? ('DEAD · ' + Math.ceil(pd.respawnMs / 1000) + 's') : 'alive';
+        hudStatus.textContent = roundPhase === 'wait' ? 'waiting…' : (pd.dead ? ('DEAD · ' + Math.ceil(pd.respawnMs / 1000) + 's') : 'alive');
         continue;
       }
       let o = remotes.get(uid);
@@ -205,12 +205,16 @@
     }
     for (const [uid, o] of remotes) if (!seen.has(uid)) { o.el.remove(); remotes.delete(uid); delete prevHp[uid]; }
 
-    // round / nuke banner
+    // round / nuke / waiting banner
     if (round.phase === 'inter') {
       if (lastPhase !== 'inter') { flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go'); } // nuke flash on the transition
       banner.style.display = 'block';
       banner.querySelector('.wbn-title').textContent = '🏆 ' + (round.winner || 'someone') + ' won!';
       banner.querySelector('.wbn-sub').textContent = 'New round in ' + Math.ceil((round.interMs || 0) / 1000) + 's';
+    } else if (round.phase === 'wait') {
+      banner.style.display = 'block';
+      banner.querySelector('.wbn-title').textContent = '⏳ Waiting for players';
+      banner.querySelector('.wbn-sub').textContent = 'The arena starts when 2+ are online';
     } else {
       banner.style.display = 'none';
     }

@@ -42,10 +42,26 @@ function powerOf(array $p, float $now): int {
 // Respawns, the 60s-survival nuke/win, and round rollover — all authoritative.
 function resolve(array &$d, float $now): void {
     if (!isset($d['r']) || !is_array($d['r'])) {
-        $d['r'] = ['id' => 1, 'phase' => 'active', 'win' => null, 'wn' => '', 'ends' => 0];
+        $d['r'] = ['id' => 1, 'phase' => 'wait', 'win' => null, 'wn' => '', 'ends' => 0];
     }
     $r = &$d['r'];
     $players = &$d['p'];
+
+    // The arena needs at least 2 players. With fewer, hold in 'wait' and keep
+    // everyone fresh so nobody banks survival time toward the nuke early.
+    if (count($players) < 2) {
+        $r['phase'] = 'wait'; $r['win'] = null; $r['wn'] = '';
+        foreach ($players as &$p) { $p['dead'] = 0; $p['hp'] = MAX_HP; $p['sp'] = $now; $p['la'] = 0; $p['du'] = 0; }
+        unset($p);
+        return;
+    }
+    // Enough players now — if we were waiting, start a fresh round immediately.
+    if ($r['phase'] === 'wait') {
+        $r['id'] = (int)($r['id'] ?? 1) + 1; $r['phase'] = 'active'; $r['win'] = null; $r['wn'] = '';
+        foreach ($players as &$p) { $p['dead'] = 0; $p['hp'] = MAX_HP; $p['sp'] = $now; $p['la'] = 0; }
+        unset($p);
+        return;
+    }
 
     if ($r['phase'] === 'active') {
         // Respawn anyone whose death timer elapsed.
@@ -120,6 +136,9 @@ if ($fp) {
         $d['p'][$id] = $p;
     }
 
+    // Prune the departed first so resolve() sees an accurate player count.
+    foreach ($d['p'] as $k => $v) if ($now - ($v['t'] ?? 0) > WORLD_TTL_MS) unset($d['p'][$k]);
+
     resolve($d, $now);
 
     // Attack resolution.
@@ -137,9 +156,6 @@ if ($fp) {
             $d['p'][$id] = $atk; $d['p'][$tid] = $tgt;
         }
     }
-
-    // Prune the departed.
-    foreach ($d['p'] as $k => $v) if ($now - ($v['t'] ?? 0) > WORLD_TTL_MS) unset($d['p'][$k]);
 
     rewind($fp); ftruncate($fp, 0); fwrite($fp, json_encode($d)); fflush($fp); flock($fp, LOCK_UN); fclose($fp);
 }
