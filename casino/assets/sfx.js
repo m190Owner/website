@@ -10,11 +10,21 @@ window.SFX = (function () {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
       ctx = new AC();
-      master = ctx.createGain(); master.gain.value = 0.5; master.connect(ctx.destination);
+      master = ctx.createGain(); master.gain.value = 0.75; master.connect(ctx.destination);
     }
     if (ctx.state === 'suspended') ctx.resume();
     return ctx;
   }
+  // Robustly unlock/keep-alive the AudioContext: browsers only let it start (and
+  // stay started) around a user gesture, so resume on every gesture type and when
+  // the tab regains focus, and prime it once with a silent buffer.
+  function unlock() {
+    const c = ac(); if (!c) return;
+    if (c.state === 'suspended') c.resume();
+    try { const b = c.createBuffer(1, 1, c.sampleRate); const s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch (e) {}
+  }
+  ['pointerdown', 'touchstart', 'keydown', 'click'].forEach((ev) => addEventListener(ev, unlock, { capture: true, passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && ctx && ctx.state === 'suspended') ctx.resume(); });
   function noiseBuf(dur) {
     const c = ac(); const n = Math.max(1, Math.floor(c.sampleRate * dur));
     const b = c.createBuffer(1, n, c.sampleRate); const d = b.getChannelData(0);
@@ -60,9 +70,8 @@ window.SFX = (function () {
     win(big) { if (muted) return; const c = ac(); if (!c) return; const t = c.currentTime; const notes = big ? [523, 659, 784, 1047, 1319] : [523, 659, 784]; notes.forEach((f, i) => tone(f, t + i * 0.09, 0.19, 'triangle', 0.28)); },
     lose() { if (muted) return; const c = ac(); if (!c) return; const t = c.currentTime; tone(320, t, 0.14, 'sawtooth', 0.16); tone(220, t + 0.11, 0.2, 'sawtooth', 0.14); },
     push() { if (muted) return; const c = ac(); if (!c) return; tone(440, c.currentTime, 0.12, 'sine', 0.15); },
+    state() { return ctx ? ctx.state : 'none'; },
   };
-
-  addEventListener('pointerdown', () => { try { ac(); } catch (e) {} }, { once: true });
 
   // mute button in the casino nav
   addEventListener('DOMContentLoaded', () => {
