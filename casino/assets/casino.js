@@ -23,24 +23,3 @@ window.Casino = (function () {
 
   return { csrf, post, setBalance, fmt };
 })();
-
-// Lobby: collect-coins faucet.
-(function () {
-  const btn = document.getElementById('c-bonus-btn');
-  if (!btn) return;
-  const msg = document.getElementById('c-bonus-msg');
-  btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    const r = await Casino.post('/casino/index.php', { action: 'bonus' });
-    if (r.ok) {
-      Casino.setBalance(r.balance);
-      msg.textContent = '+' + Casino.fmt(r.amount) + ' LS 🎉';
-      msg.style.color = '#e8c15a';
-    } else {
-      msg.textContent = r.error || 'Try again later.';
-      msg.style.color = '#9a9aa6';
-      if (typeof r.balance === 'number') Casino.setBalance(r.balance);
-    }
-    setTimeout(() => { btn.disabled = false; }, 1200);
-  });
-})();

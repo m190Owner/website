@@ -7,15 +7,25 @@
 require_once __DIR__ . '/../../videos/lib/bootstrap.php'; // current_user, require_login, videos_db, csrf*, e, json_out, redirect
 
 // ---- Economy ----
-const LS_WELCOME        = 2000;  // first-ever bonus claim
-const LS_BONUS          = 500;   // regular bonus
-const LS_BONUS_COOLDOWN = 3600;  // seconds between regular claims
-const LS_BROKE          = 100;   // below this you can always top up (no lockout)
+const LS_WELCOME = 2000;  // one-time starting stack; there are no other bonuses
 
 function casino_balance(int $uid): int {
     $st = videos_db()->prepare("SELECT coins FROM users WHERE id = ?");
     $st->execute([$uid]);
     return (int) $st->fetchColumn();
+}
+
+// Grant the one-time starting stack. last_bonus flips from 0 so it never repeats;
+// after this, more coins only come from the admin top-up page.
+function casino_ensure_funded(int $uid): void {
+    videos_db()->prepare("UPDATE users SET coins = coins + ?, last_bonus = ? WHERE id = ? AND last_bonus = 0")
+               ->execute([LS_WELCOME, time(), $uid]);
+}
+
+// Admin adjustment (positive = give, negative = take). Never drops below 0.
+function casino_admin_adjust(int $uid, int $delta): int {
+    videos_db()->prepare("UPDATE users SET coins = MAX(0, coins + ?) WHERE id = ?")->execute([$delta, $uid]);
+    return casino_balance($uid);
 }
 
 /** Atomically remove a stake. Returns true if it was affordable and applied. */
@@ -30,23 +40,6 @@ function casino_bet(int $uid, int $amount): bool {
 function casino_credit(int $uid, int $amount): void {
     if ($amount <= 0) return;
     videos_db()->prepare("UPDATE users SET coins = coins + ? WHERE id = ?")->execute([$amount, $uid]);
-}
-
-/** Claim the coin faucet. Returns [amountGranted, newBalance, error|null]. */
-function casino_claim_bonus(array $u): array {
-    $uid = (int) $u['id'];
-    $now = time();
-    $last = (int) ($u['last_bonus'] ?? 0);
-    $coins = casino_balance($uid);
-    $ready = ($now - $last) >= LS_BONUS_COOLDOWN;
-    $broke = $coins < LS_BROKE;
-    if (!$ready && !$broke) {
-        return [0, $coins, 'Next bonus in ' . ceil((LS_BONUS_COOLDOWN - ($now - $last)) / 60) . ' min'];
-    }
-    $amount = $last === 0 ? LS_WELCOME : LS_BONUS;
-    videos_db()->prepare("UPDATE users SET coins = coins + ?, last_bonus = ? WHERE id = ?")
-               ->execute([$amount, $now, $uid]);
-    return [$amount, $coins + $amount, null];
 }
 
 function fmt_coins(int $n): string {
@@ -89,6 +82,7 @@ function bj_value(array $cards): array {
 // ---- Page shell ----
 function require_casino_user(): array {
     $u = require_login();                                   // videos login (redirects if needed)
+    casino_ensure_funded((int) $u['id']);                  // one-time 2000 starting stack
     return $u;
 }
 
@@ -117,6 +111,7 @@ function render_casino_header(string $title, ?array $u = null): void {
     <a href="/casino/slots.php">Slots</a>
     <a href="/casino/blackjack.php">Blackjack</a>
     <a href="/casino/poker.php">Poker</a>
+    <?php if ($u && !empty($u['is_admin'])): ?><a href="/casino/admin.php">🛠 Admin</a><?php endif; ?>
   </div>
   <div class="c-nav-right">
     <button id="c-mute" class="c-btn" title="Sound on/off">🔊</button>

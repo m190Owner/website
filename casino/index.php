@@ -2,17 +2,7 @@
 require __DIR__ . '/lib/casino.php';
 
 $u = current_user();
-$isXhr = strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest';
-
-// Coin faucet (bonus) — JSON endpoint.
-if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'bonus') {
-    $u = require_login();
-    csrf_require(true);
-    enforceRateLimit('casino_bonus', 30, 3600);
-    [$amount, $balance, $err] = casino_claim_bonus($u);
-    json_out($err ? ['ok' => false, 'error' => $err, 'balance' => $balance]
-                  : ['ok' => true, 'amount' => $amount, 'balance' => $balance]);
-}
+if ($u) casino_ensure_funded((int) $u['id']);   // one-time 2000 starting stack
 
 render_casino_header('Lobby', $u);
 ?>
@@ -28,8 +18,11 @@ render_casino_header('Lobby', $u);
     <h1>Welcome, <?= e($u['username']) ?></h1>
     <div class="c-wallet">
       <div class="c-wallet-bal">🪙 <b id="c-balance-big"><?= fmt_coins(casino_balance((int) $u['id'])) ?></b> <span>LS</span></div>
-      <button id="c-bonus-btn" class="c-btn c-btn-gold">🎁 Collect coins</button>
-      <div id="c-bonus-msg" class="c-dim"></div>
+      <?php if (!empty($u['is_admin'])): ?>
+        <a href="/casino/admin.php" class="c-btn c-btn-gold">🛠 Admin — grant coins</a>
+      <?php else: ?>
+        <span class="c-dim">Out of coins? Ask Logan for a top-up.</span>
+      <?php endif; ?>
     </div>
   </div>
 
