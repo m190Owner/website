@@ -15,6 +15,7 @@ counter_migrated.txt
 chat_messages.json
 cursor_data.json
 place_data/
+world_data.json
 
 # Pwn lab runtime data
 lab/data/sessions.json
