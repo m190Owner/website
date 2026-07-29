@@ -95,6 +95,7 @@ if ($action === 'place' && $method === 'POST') {
     if ($fp) { flock($fp, LOCK_EX); fseek($fp, $y * PW + $x); fwrite($fp, chr($c)); flock($fp, LOCK_UN); fclose($fp); }
     $cds[$ip] = $now; writeJsonFile(CD_FILE, $cds);
     appendChange($y * PW + $x, $c);
+    if (random_int(1, 12) === 1) activity_log('🎨', 'the canvas is being painted', 'pixel', 45);
     echo json_encode(['ok' => true, 'cooldown' => COOLDOWN_MS]);
     exit;
 }

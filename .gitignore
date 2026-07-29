@@ -16,6 +16,7 @@ chat_messages.json
 cursor_data.json
 place_data/
 world_data.json
+activity_feed.json
 
 # Pwn lab runtime data
 lab/data/sessions.json

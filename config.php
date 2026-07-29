@@ -126,3 +126,38 @@ function sanitizeHandle(string $raw): ?string {
     if (containsProfanity($h)) return null;
     return $h;
 }
+
+// ==============================================
+// SITE ACTIVITY FEED (powers the homepage ticker)
+// ==============================================
+define('ACTIVITY_FILE', __DIR__ . '/activity_feed.json');
+
+/**
+ * Append a site-activity event. Called server-side by the various features when
+ * something notable happens (arena win, upload, canvas paint, game run). Text is
+ * stripped of control/HTML chars and length-capped; the client escapes on render.
+ * For high-frequency sources, pass $throttleType + $throttleSec to rate-limit that
+ * category (e.g. one "canvas painted" event per 45s).
+ */
+function activity_log(string $icon, string $text, ?string $throttleType = null, int $throttleSec = 0): void {
+    $text = trim(mb_substr(preg_replace('/[\x00-\x1F\x7F<>&"]/u', '', $text), 0, 120, 'UTF-8'));
+    if ($text === '') return;
+    $now = time();
+    $feed = readJsonFile(ACTIVITY_FILE, []);
+    if (!is_array($feed)) $feed = [];
+    if ($throttleType !== null && $throttleSec > 0) {
+        foreach ($feed as $e) {
+            if (($e['ty'] ?? '') === $throttleType && $now - ($e['t'] ?? 0) < $throttleSec) return;
+        }
+    }
+    $feed[] = ['t' => $now, 'i' => mb_substr($icon, 0, 2, 'UTF-8'), 'x' => $text, 'ty' => $throttleType ?? ''];
+    $feed = array_values(array_filter($feed, fn($e) => $now - ($e['t'] ?? 0) < 7200)); // keep 2h
+    if (count($feed) > 60) $feed = array_slice($feed, -60);
+    writeJsonFile(ACTIVITY_FILE, $feed);
+}
+
+/** Most recent events (newest last). */
+function activity_recent(int $n = 40): array {
+    $feed = readJsonFile(ACTIVITY_FILE, []);
+    return is_array($feed) ? array_slice($feed, -$n) : [];
+}

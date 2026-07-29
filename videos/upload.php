@@ -92,6 +92,7 @@ function handle_upload(array $u, bool $isXhr): string {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     );
     $ins->execute([$id, $u['id'], $title, $desc, $filename, $thumbName, $mime, $size, $duration, time()]);
+    activity_log('📹', $u['username'] . ' uploaded "' . $title . '"');
 
     $dest = '/videos/watch.php?v=' . $id;
     if ($isXhr) json_out(['ok' => true, 'redirect' => $dest]);

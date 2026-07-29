@@ -89,6 +89,7 @@ function resolve(array &$d, float $now): void {
             $r['win']   = $winner;
             $r['wn']    = $players[$winner]['n'] ?? 'someone';
             $r['ends']  = $now + INTERMISSION_MS;
+            activity_log('🏆', $r['wn'] . ' won the arena');
         }
     } elseif ($r['phase'] === 'inter' && $now >= ($r['ends'] ?? 0)) {
         // New round: everyone present respawns fresh.

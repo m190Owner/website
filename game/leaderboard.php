@@ -149,6 +149,7 @@ function handleDaily(string $method): void {
         // Age out old days.
         if (count($all) > DAILY_KEEP_DAYS) { krsort($all); $all = array_slice($all, 0, DAILY_KEEP_DAYS, true); }
         writeJsonFile(DAILY_FILE, $all);
+        if ($time >= 30) activity_log('🎮', $name . ' survived ' . gmdate('i:s', $time) . ' in today\'s Daily Challenge');
 
         // Streak: consecutive days (ending today) this name has played.
         $streaks = readJsonFile(DAILY_STREAK_FILE, []);
@@ -214,6 +215,7 @@ if ($method === 'POST') {
     $board = sortBoard($board);
     $board = array_slice($board, 0, 200); // keep storage bounded
     writeJsonFile($LB_FILE, $board);
+    if ($time >= 30) activity_log('🎮', $name . ' survived ' . gmdate('i:s', $time) . ' in RoF Survivors');
 
     // Rank of the run we just inserted (first row matching this exact entry).
     $rank = null;
