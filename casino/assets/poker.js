@@ -23,6 +23,7 @@
     { left: '50%', top: '8%' }, { left: '86%', top: '24%' }, { left: '86%', top: '76%' },
   ];
   let view = null, busy = false;
+  let sBoard = 0, sPot = 0, sResult = '';   // last-seen values, for SFX diffing
 
   function post(action, extra) { return Casino.post('/casino/poker.php', Object.assign({ action, t: T }, extra || {})); }
 
@@ -30,7 +31,22 @@
 
   function render(v) {
     view = v;
-    Casino.setBalance ? null : 0;
+    // sound effects (diffed against the previous poll)
+    if (window.SFX) {
+      const bl = (v.board || []).length;
+      if (bl > sBoard) SFX.deal(bl - sBoard);                 // flop/turn/river
+      else if (bl === 0 && sBoard > 0 && v.street) SFX.deal(2); // new hand -> hole cards
+      sBoard = bl;
+      const pot = v.pot || 0;
+      if (pot > sPot) SFX.chip();                             // a bet/call went in
+      sPot = pot;
+      const rk = v.result ? JSON.stringify(v.result.winners || []) + (v.board || []).join('') : '';
+      if (rk && rk !== sResult) {
+        const iWon = v.mySeat != null && (v.result.winners || []).some((w) => w.seat === v.mySeat);
+        iWon ? SFX.win(true) : SFX.chip();
+      }
+      sResult = rk;
+    }
     // board
     boardEl.innerHTML = '';
     (v.board || []).forEach((c) => boardEl.appendChild(renderCard(c)));

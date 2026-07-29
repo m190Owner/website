@@ -30,14 +30,17 @@
       const tag = s.delta > 0 ? '  +' + Casino.fmt(s.delta) + ' LS' : '';
       msg.textContent = s.result + tag;
       msg.className = 'c-msg ' + (s.delta > 0 ? 'c-win' : s.delta < 0 ? 'c-lose' : 'c-push');
+      if (window.SFX) { if (s.delta > 0) SFX.win(s.delta >= (s.bet || 0)); else if (s.delta < 0) SFX.lose(); else SFX.push(); }
     }
   }
 
   async function act(action, extra) {
     if (busy) return; busy = true;
     [dealBtn, hitBtn, standBtn, doubleBtn].forEach((b) => b.disabled = true);
+    if (window.SFX) { if (action === 'deal' || action === 'double') SFX.chip(); else if (action === 'hit') SFX.card(); }
     const s = await Casino.post('/casino/blackjack.php', Object.assign({ action, bet }, extra || {}));
     apply(s);
+    if (window.SFX && (action === 'deal' || action === 'double')) SFX.deal(action === 'double' ? 1 : 3);
     busy = false;
     [dealBtn, hitBtn, standBtn, doubleBtn].forEach((b) => b.disabled = false);
   }

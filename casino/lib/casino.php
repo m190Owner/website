@@ -105,6 +105,7 @@ function render_casino_header(string $title, ?array $u = null): void {
 <link rel="stylesheet" href="/casino/assets/casino.css">
 <?php if ($u): ?><meta name="csrf" content="<?= e(csrf_token()) ?>"><?php endif; ?>
 <script src="/js/noinspect.js"></script>
+<script src="/casino/assets/sfx.js"></script>
 </head>
 <body>
 <nav class="c-nav">
@@ -118,6 +119,7 @@ function render_casino_header(string $title, ?array $u = null): void {
     <a href="/casino/poker.php">Poker</a>
   </div>
   <div class="c-nav-right">
+    <button id="c-mute" class="c-btn" title="Sound on/off">🔊</button>
     <?php if ($u): ?>
       <span class="c-balance" id="c-balance">🪙 <b><?= fmt_coins($bal) ?></b> LS</span>
       <a href="/videos/logout.php" class="c-btn">Logout</a>

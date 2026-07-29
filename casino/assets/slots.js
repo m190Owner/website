@@ -18,6 +18,7 @@
     spinning = true; spinBtn.disabled = true;
     result.textContent = ''; result.className = 'slot-result';
     reels.forEach((r) => r.classList.add('spinning'));
+    if (window.SFX) SFX.spinStart();
     const shuffle = setInterval(() => {
       reels.forEach((r) => { r.textContent = SLOT.symbols[(Math.random() * SLOT.symbols.length) | 0]; });
     }, 70);
@@ -27,9 +28,13 @@
     setTimeout(() => {
       clearInterval(shuffle);
       reels.forEach((el) => el.classList.remove('spinning'));
-      if (!r.ok) { result.textContent = r.error || 'Error'; spinning = false; spinBtn.disabled = false; return; }
+      if (!r.ok) { if (window.SFX) SFX.spinStop(); result.textContent = r.error || 'Error'; spinning = false; spinBtn.disabled = false; return; }
       // settle reels one at a time
-      r.reels.forEach((sym, i) => setTimeout(() => { reels[i].textContent = sym; if (i === 2) settle(r); }, i * 220));
+      r.reels.forEach((sym, i) => setTimeout(() => {
+        reels[i].textContent = sym;
+        if (window.SFX) SFX.reelStop();
+        if (i === 2) { if (window.SFX) SFX.spinStop(); settle(r); }
+      }, i * 220));
     }, 500);
   }
 
@@ -38,9 +43,11 @@
     if (r.payout > 0) {
       result.className = 'slot-result c-win';
       result.textContent = (r.line || 'Winner') + '  +' + Casino.fmt(r.payout) + ' LS';
+      if (window.SFX) SFX.win(r.payout >= bet * 10);
     } else {
       result.className = 'slot-result c-lose';
       result.textContent = 'No win — try again';
+      if (window.SFX) SFX.lose();
     }
     spinning = false; spinBtn.disabled = false;
   }
