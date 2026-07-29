@@ -31,9 +31,9 @@
     @keyframes world-pop{from{transform:translateX(-50%) scale(.5);opacity:0}to{transform:translateX(-50%) scale(1);opacity:1}}
     @keyframes world-float{to{transform:translateX(-50%) translateY(-26px) scale(1.25);opacity:0}}
     .world-bubble.emote{animation:world-pop .18s ease, world-float 1.4s ease .3s forwards}
-    #world-bar{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:7px;
-      pointer-events:auto;background:rgba(17,17,24,.9);border:1px solid rgba(122,162,255,.22);border-radius:12px;
-      padding:6px 9px;backdrop-filter:blur(10px);font-family:'Segoe UI',sans-serif}
+    #world-bar{position:fixed;left:14px;bottom:14px;z-index:60;display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+      max-width:min(94vw,470px);pointer-events:auto;background:rgba(17,17,24,.9);border:1px solid rgba(122,162,255,.22);
+      border-radius:12px;padding:6px 9px;backdrop-filter:blur(10px);font-family:'Segoe UI',sans-serif}
     #world-bar input{background:#0b0b0f;border:1px solid rgba(122,162,255,.22);color:#e5e5e5;border-radius:7px;font:inherit;font-size:.82rem;padding:5px 8px}
     #wb-name{width:84px}#wb-chat{width:150px}
     #world-bar .wb-face{font-size:20px;line-height:1;cursor:pointer}
@@ -41,7 +41,7 @@
     .wb-emote:hover{background:rgba(122,162,255,.16)}
     .wb-count{color:#8a96b8;font-size:.76rem;white-space:nowrap}
     .wb-x{cursor:pointer;color:#8a96b8;font-size:1rem;padding:0 3px}.wb-x:hover{color:#e5e5e5}
-    #wb-toggle{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:60;pointer-events:auto;cursor:pointer;display:none;
+    #wb-toggle{position:fixed;left:14px;bottom:14px;z-index:60;pointer-events:auto;cursor:pointer;display:none;
       background:rgba(17,17,24,.9);border:1px solid rgba(122,162,255,.22);border-radius:10px;padding:6px 12px;color:#e5e5e5;font:600 12px 'Segoe UI'}
   `;
   document.head.appendChild(style);
