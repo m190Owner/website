@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Canvas — a shared pixel board · Logan Sandivar</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<script src="js/noinspect.js"></script>
+<style>
+  :root{
+    --bg:#0b0b0f; --surface:#111118; --border:rgba(122,162,255,.15);
+    --border-hover:rgba(122,162,255,.40); --accent:#7aa2ff; --text:#e5e5e5;
+    --muted:#8a96b8; --dim:#5a6480;
+    --font:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:var(--font)}
+  #cv{position:fixed;inset:0;display:block;cursor:crosshair;touch-action:none;background:#07070a}
+  /* Top nav */
+  .nav{position:fixed;top:0;left:0;right:0;height:52px;z-index:10;display:flex;align-items:center;gap:14px;
+       padding:0 16px;background:rgba(12,12,16,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  .nav a.back{color:var(--muted);text-decoration:none;font-size:1.2rem}
+  .nav a.back:hover{color:var(--accent)}
+  .brand{font-weight:700;font-size:1.1rem;letter-spacing:.3px}
+  .brand small{font-weight:400;color:var(--dim);font-size:.72rem;margin-left:6px}
+  .online{margin-left:auto;display:flex;align-items:center;gap:7px;color:var(--muted);font-size:.85rem}
+  .dot{width:8px;height:8px;border-radius:50%;background:#3ba55d;box-shadow:0 0 8px #3ba55d}
+  /* Bottom toolbar */
+  .bar{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:10;max-width:96vw;
+       display:flex;flex-direction:column;gap:8px;align-items:center;
+       background:rgba(17,17,24,.92);border:1px solid var(--border);border-radius:14px;padding:10px 12px;backdrop-filter:blur(10px)}
+  .swatches{display:flex;gap:5px;flex-wrap:wrap;justify-content:center;max-width:520px}
+  .sw{width:26px;height:26px;border-radius:6px;border:2px solid transparent;cursor:pointer}
+  .sw:hover{transform:scale(1.08)}
+  .sw.sel{border-color:#fff;box-shadow:0 0 0 2px var(--accent)}
+  .row{display:flex;gap:10px;align-items:center;width:100%;justify-content:center;flex-wrap:wrap}
+  .row input[type=text]{background:var(--surface);border:1px solid var(--border);border-radius:8px;color:var(--text);
+       font:inherit;font-size:.85rem;padding:6px 10px;width:150px}
+  .row input:focus{outline:none;border-color:var(--border-hover)}
+  .cd{position:relative;height:8px;width:150px;border-radius:6px;background:#222;overflow:hidden}
+  .cd > i{position:absolute;inset:0;transform-origin:left;background:var(--accent);transform:scaleX(0)}
+  .cd.ready > i{transform:scaleX(1);background:#3ba55d}
+  .hint{color:var(--dim);font-size:.72rem;text-align:center}
+  .btn{background:#16161f;border:1px solid var(--border);color:var(--text);border-radius:8px;padding:6px 12px;
+       font:inherit;font-size:.82rem;cursor:pointer}
+  .btn:hover{border-color:var(--border-hover)}
+  .btn-danger{color:#ff6b6b;border-color:rgba(255,80,80,.35)}
+  #msg{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:11;background:rgba(17,17,24,.95);
+       border:1px solid var(--border);border-radius:8px;padding:7px 14px;font-size:.85rem;opacity:0;transition:opacity .2s;pointer-events:none}
+  #msg.show{opacity:1}
+</style>
+</head>
+<body>
+  <canvas id="cv"></canvas>
+
+  <div class="nav">
+    <a class="back" href="/" title="Back to logansandivar.com">&#8592;</a>
+    <span class="brand">🎨 Canvas <small>place a pixel · paint together</small></span>
+    <span class="online"><span class="dot"></span><b id="online">1</b> online</span>
+  </div>
+
+  <div id="msg"></div>
+
+  <div class="bar">
+    <div class="swatches" id="swatches"></div>
+    <div class="row">
+      <input type="text" id="name" placeholder="your name" maxlength="16" autocomplete="off" spellcheck="false">
+      <div class="cd ready" id="cd"><i></i></div>
+      <button class="btn" id="fit">Fit</button>
+      <button class="btn btn-danger" id="clear" style="display:none">Clear board</button>
+    </div>
+    <div class="hint">click to place · drag to pan · scroll to zoom · pixels cool down for a few seconds</div>
+  </div>
+
+<script>
+(function () {
+  const ENDPOINT = 'place.php';
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const off = document.createElement('canvas'); // 1:1 board buffer
+  let octx;
+
+  // ---- state ----
+  let W = 0, H = 0, palette = [], rgb = [];
+  let grid = new Uint8Array(0);
+  let scale = 4, offX = 0, offY = 0;
+  let selected = 5, epoch = 1, since = 0, cooldownMs = 4000, cooldownUntil = 0, isOwner = false;
+  let users = {};
+  const myId = (() => { let s = sessionStorage.getItem('place_id'); if (!s) { s = Math.random().toString(36).slice(2, 12); sessionStorage.setItem('place_id', s); } return s; })();
+  let myGX = -1, myGY = -1; // my hovered board cell (sent as presence)
+  let vw = 0, vh = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+  const nameEl = document.getElementById('name');
+  nameEl.value = localStorage.getItem('place_name') || '';
+  nameEl.addEventListener('input', () => localStorage.setItem('place_name', nameEl.value.trim()));
+  const myName = () => (nameEl.value.trim() || 'anon');
+
+  function resize() {
+    vw = window.innerWidth; vh = window.innerHeight;
+    cv.width = vw * dpr; cv.height = vh * dpr;
+    cv.style.width = vw + 'px'; cv.style.height = vh + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    redraw();
+  }
+  window.addEventListener('resize', resize);
+
+  function hexToRgb(h) { const n = parseInt(h.slice(1), 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; }
+
+  function buildSwatches() {
+    const box = document.getElementById('swatches');
+    box.innerHTML = '';
+    palette.forEach((c, i) => {
+      const d = document.createElement('div');
+      d.className = 'sw' + (i === selected ? ' sel' : '');
+      d.style.background = c;
+      d.title = c;
+      d.addEventListener('click', () => { selected = i; [...box.children].forEach((e, j) => e.classList.toggle('sel', j === i)); });
+      box.appendChild(d);
+    });
+  }
+
+  function fitView() {
+    scale = Math.max(1, Math.min(vw / W, vh / H) * 0.9);
+    offX = (vw - W * scale) / 2;
+    offY = (vh - H * scale) / 2;
+    redraw();
+  }
+
+  function setPixel(i, c) {
+    grid[i] = c;
+    octx.fillStyle = palette[c];
+    octx.fillRect(i % W, (i / W) | 0, 1, 1);
+  }
+
+  function drawFullBoard() {
+    const img = octx.createImageData(W, H);
+    for (let i = 0; i < grid.length; i++) {
+      const col = rgb[grid[i]] || rgb[0]; const o = i * 4;
+      img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
+    }
+    octx.putImageData(img, 0, 0);
+  }
+
+  function redraw() {
+    if (!W) return;
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = '#07070a'; ctx.fillRect(0, 0, vw, vh);
+    // subtle board frame
+    ctx.save();
+    ctx.translate(offX, offY);
+    ctx.drawImage(off, 0, 0, W, H, 0, 0, W * scale, H * scale);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(122,162,255,.25)';
+    ctx.strokeRect(offX - 0.5, offY - 0.5, W * scale + 1, H * scale + 1);
+
+    // hover cell
+    if (myGX >= 0 && myGX < W && myGY >= 0 && myGY < H) {
+      ctx.fillStyle = palette[selected];
+      ctx.globalAlpha = 0.6;
+      ctx.fillRect(offX + myGX * scale, offY + myGY * scale, scale, scale);
+      ctx.globalAlpha = 1;
+      ctx.strokeStyle = '#fff';
+      ctx.strokeRect(offX + myGX * scale + 0.5, offY + myGY * scale + 0.5, scale - 1, scale - 1);
+    }
+
+    // other users' cursors
+    for (const id in users) {
+      const u = users[id];
+      const sx = offX + (u.x + 0.5) * scale, sy = offY + (u.y + 0.5) * scale;
+      if (sx < -40 || sy < -40 || sx > vw + 40 || sy > vh + 40) continue;
+      ctx.fillStyle = palette[u.c] || '#fff';
+      ctx.beginPath(); ctx.arc(sx, sy, 4, 0, 6.283); ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.stroke();
+      const label = String(u.n || 'anon');
+      ctx.font = '11px ' + getComputedStyle(document.body).fontFamily;
+      const w = ctx.measureText(label).width + 10;
+      ctx.fillStyle = 'rgba(12,12,16,.85)';
+      ctx.fillRect(sx + 7, sy - 8, w, 16);
+      ctx.fillStyle = '#e5e5e5';
+      ctx.fillText(label, sx + 12, sy + 4);
+    }
+  }
+
+  // ---- coordinate helpers ----
+  const toGrid = (sx, sy) => [Math.floor((sx - offX) / scale), Math.floor((sy - offY) / scale)];
+
+  // ---- interaction ----
+  let dragging = false, moved = false, lastX = 0, lastY = 0, downX = 0, downY = 0;
+  cv.addEventListener('pointerdown', (e) => { dragging = true; moved = false; lastX = downX = e.clientX; lastY = downY = e.clientY; cv.setPointerCapture(e.pointerId); });
+  cv.addEventListener('pointermove', (e) => {
+    const [gx, gy] = toGrid(e.clientX, e.clientY);
+    myGX = gx; myGY = gy;
+    if (dragging) {
+      const dx = e.clientX - lastX, dy = e.clientY - lastY;
+      if (Math.abs(e.clientX - downX) + Math.abs(e.clientY - downY) > 4) moved = true;
+      offX += dx; offY += dy; lastX = e.clientX; lastY = e.clientY;
+    }
+    redraw();
+  });
+  cv.addEventListener('pointerup', (e) => {
+    dragging = false;
+    if (!moved) { const [gx, gy] = toGrid(e.clientX, e.clientY); place(gx, gy); }
+  });
+  cv.addEventListener('pointerleave', () => { myGX = -1; redraw(); });
+  cv.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const mx = e.clientX, my = e.clientY;
+    const gx = (mx - offX) / scale, gy = (my - offY) / scale;
+    scale = Math.max(1, Math.min(48, scale * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+    offX = mx - gx * scale; offY = my - gy * scale;
+    redraw();
+  }, { passive: false });
+
+  document.getElementById('fit').addEventListener('click', fitView);
+  document.getElementById('clear').addEventListener('click', async () => {
+    if (!confirm('Wipe the entire board?')) return;
+    await postJSON('clear', {});
+    await init();
+  });
+
+  // ---- networking ----
+  async function postJSON(action, body) {
+    try {
+      const r = await fetch(`${ENDPOINT}?action=${action}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      return await r.json();
+    } catch { return null; }
+  }
+
+  function flash(text) { const m = document.getElementById('msg'); m.textContent = text; m.classList.add('show'); clearTimeout(flash._t); flash._t = setTimeout(() => m.classList.remove('show'), 1800); }
+
+  async function place(gx, gy) {
+    if (gx < 0 || gx >= W || gy < 0 || gy >= H) return;
+    if (Date.now() < cooldownUntil) { flash('Cooling down…'); return; }
+    const i = gy * W + gx, prev = grid[i];
+    if (prev === selected) return;
+    setPixel(i, selected); redraw();
+    cooldownUntil = Date.now() + cooldownMs; runCooldown();
+    const r = await postJSON('place', { x: gx, y: gy, c: selected });
+    if (!r || r.ok !== true) {
+      setPixel(i, prev); redraw();
+      if (r && r.wait) { cooldownUntil = Date.now() + r.wait; runCooldown(); flash('Cooldown: ' + Math.ceil(r.wait / 1000) + 's'); }
+      else { cooldownUntil = 0; }
+    }
+  }
+
+  const cdEl = document.getElementById('cd'), cdBar = cdEl.querySelector('i');
+  function runCooldown() {
+    clearInterval(runCooldown._t);
+    const total = cooldownMs;
+    runCooldown._t = setInterval(() => {
+      const left = cooldownUntil - Date.now();
+      if (left <= 0) { clearInterval(runCooldown._t); cdEl.classList.add('ready'); cdBar.style.transform = 'scaleX(1)'; return; }
+      cdEl.classList.remove('ready'); cdBar.style.transform = 'scaleX(' + (1 - left / total).toFixed(3) + ')';
+    }, 50);
+  }
+
+  async function init() {
+    const r = await fetch(ENDPOINT).then((x) => x.json());
+    W = r.w; H = r.h; palette = r.palette; rgb = palette.map(hexToRgb);
+    cooldownMs = r.cooldown; epoch = r.epoch; since = r.now; isOwner = r.isOwner;
+    off.width = W; off.height = H; octx = off.getContext('2d');
+    const bin = atob(r.grid);
+    grid = new Uint8Array(W * H);
+    for (let i = 0; i < grid.length; i++) grid[i] = bin.charCodeAt(i) & 15;
+    drawFullBoard();
+    buildSwatches();
+    if (isOwner) document.getElementById('clear').style.display = '';
+    fitView();
+  }
+
+  async function poll() {
+    const q = new URLSearchParams({
+      action: 'poll', since: String(since), id: myId,
+      px: String(myGX), py: String(myGY), pn: myName(), pc: String(selected),
+    });
+    try {
+      const r = await fetch(`${ENDPOINT}?${q}`).then((x) => x.json());
+      if (!r) return;
+      if (r.epoch !== epoch) { await init(); return; }
+      since = r.now;
+      if (r.pixels && r.pixels.length) { for (const p of r.pixels) setPixel(p.i, p.c & 15); }
+      users = r.users || {};
+      document.getElementById('online').textContent = r.count || 1;
+      redraw();
+    } catch {}
+  }
+
+  resize();
+  init().then(() => { setInterval(poll, 1000); });
+})();
+</script>
+</body>
+</html>
