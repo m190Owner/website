@@ -28,6 +28,8 @@ function videos_db_init(PDO $db): void {
             is_muted      INTEGER NOT NULL DEFAULT 0,
             avatar        TEXT NOT NULL DEFAULT '',
             about         TEXT NOT NULL DEFAULT '',
+            coins         INTEGER NOT NULL DEFAULT 0,
+            last_bonus    INTEGER NOT NULL DEFAULT 0,
             created_at    INTEGER NOT NULL
         );
         CREATE TABLE IF NOT EXISTS videos (
@@ -96,6 +98,8 @@ function videos_db_init(PDO $db): void {
     if (!in_array('is_muted', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN is_muted INTEGER NOT NULL DEFAULT 0");
     if (!in_array('avatar',   $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN avatar TEXT NOT NULL DEFAULT ''");
     if (!in_array('about',    $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN about TEXT NOT NULL DEFAULT ''");
+    if (!in_array('coins',      $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN coins INTEGER NOT NULL DEFAULT 0");
+    if (!in_array('last_bonus', $cols, true)) $db->exec("ALTER TABLE users ADD COLUMN last_bonus INTEGER NOT NULL DEFAULT 0");
 
     // Keep the designated owner account flagged as admin (idempotent).
     $st = $db->prepare("UPDATE users SET is_admin = 1 WHERE username = ?");

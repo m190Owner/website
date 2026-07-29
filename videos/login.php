@@ -5,7 +5,8 @@ if (current_user()) redirect('/videos/');
 
 $error = '';
 $next = $_GET['next'] ?? ($_POST['next'] ?? '/videos/');
-if (!str_starts_with((string) $next, '/videos/')) $next = '/videos/';
+// Same-origin only: must start with a single "/" (blocks "//evil.com" open redirects).
+if (!preg_match('#^/[^/]#', (string) $next)) $next = '/videos/';
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     csrf_require();
