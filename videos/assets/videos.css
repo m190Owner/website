@@ -10,10 +10,11 @@
 }
 *{box-sizing:border-box}
 [hidden]{display:none !important}   /* beat explicit display: rules (e.g. flex) */
+html{background:var(--bg)}          /* paint the whole viewport, not just body height */
 html,body{margin:0}
 body{
   background:var(--bg); color:var(--text); font-family:var(--font);
-  line-height:1.5; -webkit-font-smoothing:antialiased;
+  min-height:100vh; line-height:1.5; -webkit-font-smoothing:antialiased;
 }
 a{color:var(--accent); text-decoration:none}
 a:hover{text-decoration:underline}
