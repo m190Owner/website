@@ -68,5 +68,7 @@ render_header('Edit profile');
       <a href="/videos/channel.php?u=<?= urlencode($u['username']) ?>" class="v-btn v-btn-lg">Cancel</a>
     </div>
   </form>
+
+  <p class="v-dim" style="margin-top:16px">🔒 <a href="/videos/change_password.php">Change your password</a></p>
 </div>
 <?php render_footer();

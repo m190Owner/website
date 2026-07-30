@@ -145,6 +145,29 @@ function authenticate(string $rawUser, string $password): array {
     return [(int) $u['id'], null];
 }
 
+/**
+ * Change a user's own password after verifying the current one. Returns null on
+ * success, or an error message. Used by the self-service change-password page so
+ * users who logged in with an admin-issued temp password can set their own.
+ */
+function change_password(int $userId, string $current, string $new, string $confirm): ?string {
+    if ($new !== $confirm)   return 'The new passwords do not match.';
+    if (strlen($new) < 8)    return 'New password must be at least 8 characters.';
+    if (strlen($new) > 200)  return 'New password is too long.';
+
+    $db = videos_db();
+    $st = $db->prepare("SELECT password_hash FROM users WHERE id = ?");
+    $st->execute([$userId]);
+    $hash = $st->fetchColumn();
+    if ($hash === false)                     return 'Account not found.';
+    if (!password_verify($current, $hash))   return 'Your current password is incorrect.';
+    if (password_verify($new, $hash))        return 'New password must be different from your current one.';
+
+    $db->prepare("UPDATE users SET password_hash = ? WHERE id = ?")
+       ->execute([password_hash($new, PASSWORD_DEFAULT), $userId]);
+    return null;
+}
+
 // ---- Password reset (manual, admin-approved — the site has no email) ----
 
 /** A readable temporary password (no ambiguous characters), >= 8 chars. */
