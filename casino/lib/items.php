@@ -158,6 +158,37 @@ function item_quicksell(int $uid, int $itemId): array {
     return [$d['value'], null];
 }
 
+/**
+ * Quick-sell every unlisted item of a given rarity to the house at once.
+ * Atomic (one transaction): the exact rows counted are the rows deleted, and
+ * the summed value is credited once. Returns [count, total, error].
+ */
+function item_quicksell_rarity(int $uid, string $rarity): array {
+    if (!isset(RARITIES[$rarity])) return [0, 0, 'Unknown rarity.'];
+    $keys = [];
+    foreach (ITEMS as $k => $v) if ($v[2] === $rarity) $keys[] = $k;
+    if (!$keys) return [0, 0, null];
+
+    $db = videos_db();
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        $ph = implode(',', array_fill(0, count($keys), '?'));
+        $st = $db->prepare("SELECT id, item FROM casino_items WHERE owner_id = ? AND listed = 0 AND item IN ($ph)");
+        $st->execute(array_merge([$uid], $keys));
+        $rows = $st->fetchAll();
+        if (!$rows) { $db->exec('COMMIT'); return [0, 0, null]; }
+
+        $ids = []; $total = 0;
+        foreach ($rows as $r) { $ids[] = (int) $r['id']; $total += item_def($r['item'])['value']; }
+        $idph = implode(',', array_fill(0, count($ids), '?'));
+        $db->prepare("DELETE FROM casino_items WHERE owner_id = ? AND listed = 0 AND id IN ($idph)")
+           ->execute(array_merge([$uid], $ids));
+        casino_credit($uid, $total);
+        $db->exec('COMMIT');
+        return [count($ids), $total, null];
+    } catch (\Throwable $e) { $db->exec('ROLLBACK'); throw $e; }
+}
+
 function market_list_item(int $uid, int $itemId, int $price): ?string {
     if ($price < 1 || $price > 100000000) return 'Enter a valid price.';
     $st = videos_db()->prepare("UPDATE casino_items SET listed = 1, price = ? WHERE id = ? AND owner_id = ? AND listed = 0");

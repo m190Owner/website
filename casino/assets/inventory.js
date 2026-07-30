@@ -2,6 +2,8 @@
 (function () {
   const grid = document.getElementById('inv-grid');
   const empty = document.getElementById('inv-empty');
+  const bulk = document.getElementById('inv-bulk');
+  const RARITY_ORDER = window.RARITY_ORDER || [];
   let inv = window.INV || [];
 
   function card(it) {
@@ -35,14 +37,46 @@
     return el;
   }
 
+  // Per-rarity "sell all" bar, built from the unlisted items you currently hold.
+  function renderBulk() {
+    const groups = {};
+    inv.forEach((it) => {
+      if (it.listed) return;
+      const g = groups[it.rarity] || (groups[it.rarity] = { label: it.rarityLabel, color: it.color, count: 0, total: 0 });
+      g.count++; g.total += it.value;
+    });
+    const order = RARITY_ORDER.length ? RARITY_ORDER : Object.keys(groups);
+    const present = order.filter((r) => groups[r]);
+    bulk.innerHTML = '';
+    if (!present.length) { bulk.style.display = 'none'; return; }
+    bulk.style.display = 'flex';
+    const lbl = document.createElement('span'); lbl.className = 'c-dim'; lbl.textContent = 'Sell all by rarity:';
+    bulk.appendChild(lbl);
+    present.forEach((r) => {
+      const g = groups[r];
+      const b = document.createElement('button');
+      b.className = 'c-btn inv-bulk-btn';
+      b.style.borderColor = g.color; b.style.color = g.color;
+      b.textContent = g.label + ' · ' + g.count + ' · 🪙 ' + Casino.fmt(g.total);
+      b.onclick = () => {
+        if (!confirm('Quick-sell all ' + g.count + ' ' + g.label + ' item' + (g.count === 1 ? '' : 's') + ' for 🪙 ' + Casino.fmt(g.total) + '?')) return;
+        act2('quicksell_rarity', null, { rarity: r });
+      };
+      bulk.appendChild(b);
+    });
+  }
+
   function render() {
     grid.innerHTML = '';
     empty.style.display = inv.length ? 'none' : 'block';
     inv.forEach((it) => grid.appendChild(card(it)));
+    renderBulk();
   }
 
   async function act2(action, id, extra) {
-    const r = await Casino.post('/casino/inventory.php', Object.assign({ action, item_id: id }, extra || {}));
+    const body = Object.assign({ action }, extra || {});
+    if (id != null) body.item_id = id;
+    const r = await Casino.post('/casino/inventory.php', body);
     if (!r || !r.ok) { alert((r && r.error) || 'Error'); return; }
     if (typeof r.balance === 'number') Casino.setBalance(r.balance);
     if (r.amount && window.SFX) SFX.chip();
