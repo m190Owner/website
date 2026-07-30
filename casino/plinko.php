@@ -6,23 +6,33 @@ const PLINKO_ROWS = 12;
 const PLINKO_MULTS = [10, 3, 1.5, 1.2, 1, 0.9, 0.8, 0.9, 1, 1.2, 1.5, 3, 10];
 const PLINKO_MIN = 10, PLINKO_MAX = 1000;
 
+const PLINKO_MAX_BALLS = 10;
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'drop') {
     $u = require_login();
     csrf_require(true);
     enforceRateLimit('casino_plinko', 120, 60);
     $bet = (int) ($_POST['bet'] ?? 0);
-    if ($bet < PLINKO_MIN || $bet > PLINKO_MAX) json_out(['ok' => false, 'error' => 'Bet must be between ' . PLINKO_MIN . ' and ' . PLINKO_MAX . '.']);
-    if (!casino_bet((int) $u['id'], $bet)) json_out(['ok' => false, 'error' => 'Not enough coins.']);
+    $balls = max(1, min(PLINKO_MAX_BALLS, (int) ($_POST['balls'] ?? 1)));
+    if ($bet < PLINKO_MIN || $bet > PLINKO_MAX) json_out(['ok' => false, 'error' => 'Bet must be between ' . PLINKO_MIN . ' and ' . PLINKO_MAX . ' per ball.']);
+    $total = $bet * $balls;
+    if (!casino_bet((int) $u['id'], $total)) json_out(['ok' => false, 'error' => 'Not enough coins for ' . $balls . ' ball' . ($balls === 1 ? '' : 's') . ' (' . $total . ').']);
 
-    $path = []; $slot = 0;
-    for ($i = 0; $i < PLINKO_ROWS; $i++) { $r = random_int(0, 1); $path[] = $r; $slot += $r; }
-    $mult = PLINKO_MULTS[$slot];
-    $payout = (int) floor($bet * $mult);
-    if ($payout > 0) casino_credit((int) $u['id'], $payout);
+    $results = []; $totalPayout = 0;
+    for ($b = 0; $b < $balls; $b++) {
+        $path = []; $slot = 0;
+        for ($i = 0; $i < PLINKO_ROWS; $i++) { $r = random_int(0, 1); $path[] = $r; $slot += $r; }
+        $mult = PLINKO_MULTS[$slot];
+        $payout = (int) floor($bet * $mult);
+        $totalPayout += $payout;
+        $results[] = ['path' => $path, 'slot' => $slot, 'mult' => $mult, 'payout' => $payout];
+    }
+    if ($totalPayout > 0) casino_credit((int) $u['id'], $totalPayout);
 
     json_out([
-        'ok' => true, 'path' => $path, 'slot' => $slot, 'mult' => $mult,
-        'payout' => $payout, 'net' => $payout - $bet, 'balance' => casino_balance((int) $u['id']),
+        'ok' => true, 'balls' => $results, 'bet' => $bet,
+        'totalBet' => $total, 'totalPayout' => $totalPayout, 'net' => $totalPayout - $total,
+        'balance' => casino_balance((int) $u['id']),
     ]);
 }
 
@@ -41,8 +51,16 @@ render_casino_header('Plinko', $u);
       <button class="c-chip" data-bet="100">100</button>
       <button class="c-chip" data-bet="250">250</button>
     </div>
+    <span class="c-dim">Balls</span>
+    <div class="c-bet-chips" id="c-balls-chips">
+      <button class="c-chip on" data-balls="1">1</button>
+      <button class="c-chip" data-balls="3">3</button>
+      <button class="c-chip" data-balls="5">5</button>
+      <button class="c-chip" data-balls="10">10</button>
+    </div>
     <button class="c-btn c-btn-gold c-btn-lg" id="plinko-drop">DROP</button>
   </div>
+  <div class="c-dim" id="plinko-stake" style="margin-top:-6px">Total stake: <b>50</b> LS</div>
 </div>
 <script>window.PLINKO = { rows: <?= PLINKO_ROWS ?>, mults: <?= json_encode(PLINKO_MULTS) ?> };</script>
 <script src="<?= casset('/assets/plinko.js') ?>"></script>
