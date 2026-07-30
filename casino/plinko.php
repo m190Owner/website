@@ -4,9 +4,9 @@ require __DIR__ . '/lib/casino.php';
 const PLINKO_ROWS = 12;
 // 13 slots, symmetric; binomial-weighted EV ≈ 0.97 (house edge ~3%).
 const PLINKO_MULTS = [10, 3, 1.5, 1.2, 1, 0.9, 0.8, 0.9, 1, 1.2, 1.5, 3, 10];
-const PLINKO_MIN = 10, PLINKO_MAX = 1000;
+const PLINKO_MIN = 10, PLINKO_MAX = 5000;
 
-const PLINKO_MAX_BALLS = 10;
+const PLINKO_MAX_BALLS = 100;
 
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'drop') {
     $u = require_login();
@@ -48,15 +48,16 @@ render_casino_header('Plinko', $u);
     <div class="c-bet-chips" id="c-bet-chips">
       <button class="c-chip" data-bet="10">10</button>
       <button class="c-chip on" data-bet="50">50</button>
-      <button class="c-chip" data-bet="100">100</button>
       <button class="c-chip" data-bet="250">250</button>
+      <button class="c-chip" data-bet="1000">1k</button>
+      <button class="c-chip" data-bet="5000">5k</button>
     </div>
     <span class="c-dim">Balls</span>
     <div class="c-bet-chips" id="c-balls-chips">
       <button class="c-chip on" data-balls="1">1</button>
-      <button class="c-chip" data-balls="3">3</button>
-      <button class="c-chip" data-balls="5">5</button>
       <button class="c-chip" data-balls="10">10</button>
+      <button class="c-chip" data-balls="50">50</button>
+      <button class="c-chip" data-balls="100">100</button>
     </div>
     <button class="c-btn c-btn-gold c-btn-lg" id="plinko-drop">DROP</button>
   </div>

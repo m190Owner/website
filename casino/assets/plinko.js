@@ -46,11 +46,15 @@
     return wps;
   }
 
-  // Animate every result concurrently, each staggered by a few frames.
+  // Animate every result concurrently. The per-ball start is staggered, but the
+  // total start-spread is bounded (~1.5s) so 100 balls cascade in about the same
+  // wall-clock time as 10 — the stagger just gets tighter as the count grows.
   function animate(results) {
+    const n = results.length;
+    const stagger = Math.max(1, Math.min(8, Math.floor(90 / n)));   // frames between successive ball starts
     const bs = results.map((r, i) => ({
       wps: waypoints(r.path), slot: r.slot,
-      wait: i * 8, seg: 0, t: 0, done: false,
+      wait: i * stagger, seg: 0, t: 0, done: false,
       x: px(0, 0), y: py(0),
     }));
     const landed = () => { const h = {}; for (const b of bs) if (b.done) h[b.slot] = (h[b.slot] || 0) + 1; return h; };
@@ -61,7 +65,9 @@
         for (const b of bs) { const last = b.wps[b.wps.length - 1]; b.x = last.x; b.y = last.y; b.done = true; }
         draw(bs, landed()); res();
       };
-      const safety = setTimeout(finish, 3000 + results.length * 500);   // never hang if rAF is throttled
+      // upper bound on real run time: last ball's start + a full fall + buffer.
+      const estFrames = (n - 1) * stagger + Math.ceil(ROWS / 0.07) + 40;
+      const safety = setTimeout(finish, estFrames * 17 + 2000);   // never hang if rAF is throttled
       (function step() {
         if (finished) return;
         let allDone = true, tick = false;
