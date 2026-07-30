@@ -108,17 +108,30 @@ function case_roll(string $caseId): string {
     return $pool[random_int(0, count($pool) - 1)];
 }
 
-/** Open a case: charge price, roll an item, add to inventory. Returns [itemDef, error]. */
-function case_open(int $uid, string $caseId): array {
+const CASE_MAX_OPEN = 10; // most cases a player can open in one go
+
+/**
+ * Open 1..CASE_MAX_OPEN cases at once: charge price*count in a single atomic
+ * debit, roll each independently, add all to inventory. Returns [itemDefs, error].
+ */
+function case_open_many(int $uid, string $caseId, int $count): array {
     if (!isset(CASES[$caseId])) return [null, 'Unknown case.'];
-    if (!casino_bet($uid, CASES[$caseId]['price'])) return [null, 'Not enough coins.'];
-    $key = case_roll($caseId);
+    $count = max(1, min(CASE_MAX_OPEN, $count));
+    $total = CASES[$caseId]['price'] * $count;
+    if (!casino_bet($uid, $total)) return [null, 'Not enough coins for ' . $count . ' case' . ($count === 1 ? '' : 's') . ' (' . $total . ').'];
+
     $db = videos_db();
-    $db->prepare("INSERT INTO casino_items (owner_id, item, created_at) VALUES (?, ?, ?)")
-       ->execute([$uid, $key, time()]);
-    $def = item_def($key);
-    $def['invId'] = (int) $db->lastInsertId();
-    return [$def, null];
+    $ins = $db->prepare("INSERT INTO casino_items (owner_id, item, created_at) VALUES (?, ?, ?)");
+    $now = time();
+    $items = [];
+    for ($i = 0; $i < $count; $i++) {
+        $key = case_roll($caseId);
+        $ins->execute([$uid, $key, $now]);
+        $def = item_def($key);
+        $def['invId'] = (int) $db->lastInsertId();
+        $items[] = $def;
+    }
+    return [$items, null];
 }
 
 function inventory_list(int $uid): array {

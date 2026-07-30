@@ -10,11 +10,16 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && $action) {
     $uid = (int) $u['id'];
 
     if ($action === 'open') {
-        $case = $_POST['case'] ?? '';
-        [$item, $err] = case_open($uid, $case);
+        $case  = $_POST['case'] ?? '';
+        $count = (int) ($_POST['count'] ?? 1);
+        [$items, $err] = case_open_many($uid, $case, $count);
         if ($err) json_out(['ok' => false, 'error' => $err]);
-        if ($item['rarity'] === 'exceedingly') activity_log('🔪', $u['username'] . ' unboxed ' . $item['name'] . '!');
-        json_out(['ok' => true, 'item' => $item, 'balance' => casino_balance($uid)]);
+        foreach ($items as $it) if ($it['rarity'] === 'exceedingly') activity_log('🔪', $u['username'] . ' unboxed ' . $it['name'] . '!');
+        json_out([
+            'ok' => true, 'items' => $items, 'count' => count($items),
+            'totalCost' => CASES[$case]['price'] * count($items),
+            'balance' => casino_balance($uid),
+        ]);
     }
     if ($action === 'quicksell') {
         [$amt, $err] = item_quicksell($uid, (int) ($_POST['item_id'] ?? 0));
@@ -32,8 +37,20 @@ render_casino_header('Cases', $u);
   <h1>📦 Case Opening</h1>
   <p class="c-sub">Open a case for a chance at rare guns, gloves and knives. Sell your pulls on the <a href="/casino/market.php">Marketplace</a> or keep them in your <a href="/casino/inventory.php">Inventory</a>.</p>
 
+  <div class="c-betbar" style="justify-content:flex-start;margin:6px 0 4px">
+    <span class="c-dim">Open</span>
+    <div class="c-bet-chips" id="c-count-chips">
+      <button class="c-chip on" data-count="1">1</button>
+      <button class="c-chip" data-count="3">3</button>
+      <button class="c-chip" data-count="5">5</button>
+      <button class="c-chip" data-count="10">10</button>
+    </div>
+    <span class="c-dim">at a time</span>
+  </div>
+
   <div class="case-reveal" id="case-reveal" style="display:none">
-    <div class="case-reel-window"><div class="case-reel" id="case-reel"></div><div class="case-marker"></div></div>
+    <div class="case-reel-window" id="case-reel-window"><div class="case-reel" id="case-reel"></div><div class="case-marker"></div></div>
+    <div class="case-multi" id="case-multi" style="display:none"></div>
     <div class="case-result" id="case-result"></div>
   </div>
 
@@ -45,7 +62,7 @@ render_casino_header('Cases', $u);
         <div class="c-game-desc">
           <?php $rr = []; foreach ($c['odds'] as $r => $p) $rr[] = '<span style="color:' . RARITIES[$r][1] . '">' . RARITIES[$r][0] . '</span>'; echo implode(' · ', $rr); ?>
         </div>
-        <button class="c-btn c-btn-gold" data-case="<?= $cid ?>">Open · 🪙 <?= fmt_coins($c['price']) ?></button>
+        <button class="c-btn c-btn-gold" data-case="<?= $cid ?>" data-price="<?= (int) $c['price'] ?>">Open · 🪙 <?= fmt_coins($c['price']) ?></button>
       </div>
     <?php endforeach; ?>
   </div>

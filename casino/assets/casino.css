@@ -113,6 +113,21 @@ h1{font-size:1.5rem;margin:0 0 .4em}h2{font-size:1.15rem}
 .cw-value{color:var(--muted);font-size:.85rem}
 .cw-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:8px}
 
+/* Multi-open grid reveal */
+.case-multi{grid-template-columns:repeat(auto-fill,minmax(148px,1fr));gap:8px;margin:6px 0}
+.case-mcard{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;text-align:center;
+  min-height:104px;padding:10px 8px;border-radius:9px;background:var(--elevated);border-bottom:4px solid #888}
+.case-mcard.rolling{opacity:.7;filter:saturate(.35)}
+.case-mcard.rolling .mc-name{color:var(--dim)}
+.case-mcard.locked{animation:mc-pop .28s ease}
+.case-mcard.sold{opacity:.45}
+@keyframes mc-pop{from{transform:scale(.84);opacity:.35}to{transform:scale(1);opacity:1}}
+.mc-type{color:var(--dim);font-size:.66rem;text-transform:uppercase;letter-spacing:.5px}
+.mc-name{font-size:.82rem;font-weight:700;line-height:1.15}
+.mc-val{color:var(--muted);font-size:.75rem}
+.mc-sell{margin-top:5px;padding:3px 10px;font-size:.72rem;min-height:0}
+.case-msum{display:flex;flex-direction:column;gap:6px;align-items:center;text-align:center}
+
 /* Item grid (inventory + market) */
 .item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-top:16px}
 .item-card{background:var(--panel);border:1px solid var(--border);border-top:4px solid #888;border-radius:10px;padding:12px;display:flex;flex-direction:column;gap:4px}
