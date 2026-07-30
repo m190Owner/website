@@ -5,6 +5,19 @@ $me = require_admin();
 $db = videos_db();
 $back = '/videos/admin.php';
 
+// Password reset — handled inline (never redirect: the temp password must not
+// end up in a URL). Shows the new credential once for the admin to pass along.
+$resetCred = null; $resetErr = null;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'reset_pw') {
+    csrf_require();
+    enforceRateLimit('videos_admin_reset', 60, 60);
+    $uid = (int) ($_POST['user_id'] ?? 0);
+    if ($uid <= 0 && trim($_POST['username'] ?? '') !== '') $uid = user_id_by_name($_POST['username']) ?? 0;
+    $resetCred = $uid > 0 ? admin_reset_password($uid) : null;
+    if (!$resetCred) $resetErr = 'No such user.';
+}
+$resets = pending_resets();
+
 // Open reports (newest first).
 $reports = $db->query(
     "SELECT r.*, u.username AS reporter
@@ -47,6 +60,45 @@ render_header('Admin');
   <div class="v-stat"><b><?= human_size($used) ?></b><span>of <?= human_size(VIDEO_GLOBAL_CAP_BYTES) ?> used</span></div>
 </div>
 <div class="v-progress" style="max-width:420px"><div class="v-progress-bar" style="width:<?= $pct ?>%"></div></div>
+
+<h2 class="v-section">Password resets <span class="v-dim">(<?= count($resets) ?> pending)</span></h2>
+
+<?php if ($resetCred): ?>
+  <div class="v-flash">🔑 New password for <b><?= e($resetCred['username']) ?></b>: <code class="v-pw"><?= e($resetCred['password']) ?></code> — send it to them (they can change it after logging in).</div>
+<?php elseif ($resetErr): ?>
+  <div class="v-error"><?= e($resetErr) ?></div>
+<?php endif; ?>
+
+<form method="post" class="v-pwreset-form">
+  <?= csrf_field() ?>
+  <input type="hidden" name="action" value="reset_pw">
+  <input type="text" name="username" placeholder="reset any user by username" maxlength="16" autocomplete="off">
+  <button class="v-btn v-btn-accent" onsubmit="return confirm('Reset this user\'s password?');">Reset password</button>
+</form>
+
+<?php if ($resets): ?>
+  <div class="v-reports">
+    <?php foreach ($resets as $rq): ?>
+      <div class="v-report-row">
+        <div class="v-report-main">
+          <span class="v-tag">reset</span>
+          <a href="/videos/channel.php?u=<?= urlencode($rq['username']) ?>"><?= e($rq['username']) ?></a>
+          <span class="v-dim">requested <?= e(time_ago((int) $rq['created_at'])) ?></span>
+        </div>
+        <div class="v-report-buttons">
+          <form method="post" class="v-inline">
+            <?= csrf_field() ?>
+            <input type="hidden" name="action" value="reset_pw">
+            <input type="hidden" name="user_id" value="<?= (int) $rq['user_id'] ?>">
+            <button class="v-btn v-btn-accent">Approve &amp; reset</button>
+          </form>
+        </div>
+      </div>
+    <?php endforeach; ?>
+  </div>
+<?php else: ?>
+  <p class="v-dim v-empty">No pending reset requests.</p>
+<?php endif; ?>
 
 <h2 class="v-section">Reports <span class="v-dim">(<?= count($reports) ?> open)</span></h2>
 

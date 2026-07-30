@@ -19,6 +19,14 @@ if (!$U) {
 $back = '/videos/admin_user.php?id=' . $id;
 $manageable = empty($U['is_admin']);   // never moderate an admin/owner
 
+// Password reset — inline so the temp password is never put in a URL.
+$resetCred = null;
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'reset_pw') {
+    csrf_require();
+    enforceRateLimit('videos_admin_reset', 60, 60);
+    $resetCred = admin_reset_password($id);
+}
+
 $nvids = (int) $db->query("SELECT COUNT(*) FROM videos WHERE user_id = $id AND status = 'live'")->fetchColumn();
 $nsubs = (int) $db->query("SELECT COUNT(*) FROM subscriptions WHERE channel_id = $id")->fetchColumn();
 
@@ -38,6 +46,9 @@ $flash = $_GET['flash'] ?? '';
 render_header('User · ' . $U['username']);
 ?>
 <?php if ($flash): ?><div class="v-flash"><?= e($flash) ?></div><?php endif; ?>
+<?php if ($resetCred): ?>
+  <div class="v-flash">🔑 New password for <b><?= e($resetCred['username']) ?></b>: <code class="v-pw"><?= e($resetCred['password']) ?></code> — send it to them.</div>
+<?php endif; ?>
 
 <div class="v-feed-head">
   <h1>Manage user</h1>
@@ -57,6 +68,12 @@ render_header('User · ' . $U['username']);
     <?php if (trim($U['about']) !== ''): ?><p class="v-about"><?= nl2br(e($U['about'])) ?></p><?php endif; ?>
   </div>
 </div>
+
+<form method="post" class="v-inline" style="margin-bottom:14px" onsubmit="return confirm('Reset this user&#39;s password to a new temporary one?');">
+  <?= csrf_field() ?>
+  <input type="hidden" name="action" value="reset_pw">
+  <button class="v-btn v-btn-accent">🔑 Reset password (no request needed)</button>
+</form>
 
 <?php if (!$manageable): ?>
   <p class="v-dim">This is an owner/admin account and can't be moderated.</p>

@@ -130,6 +130,9 @@ h2{font-size:1.1rem}
 .v-upload{max-width:560px}
 .v-error{background:rgba(255,85,85,.1); border:1px solid rgba(255,85,85,.35); color:#ffb0b0; padding:10px 12px; border-radius:8px; font-size:.9rem; margin-bottom:14px}
 .v-flash{max-width:960px; margin:0 auto 14px; background:rgba(59,165,93,.12); border:1px solid rgba(59,165,93,.4); color:#a5e0b8; padding:10px 14px; border-radius:8px}
+.v-pw{font-family:'Consolas','Courier New',monospace; font-size:1.05rem; font-weight:700; color:#fff; background:rgba(122,162,255,.2); border:1px solid var(--border-hover); border-radius:6px; padding:2px 8px; letter-spacing:1px; user-select:all}
+.v-pwreset-form{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin:6px 0 14px}
+.v-pwreset-form input{background:var(--surface); border:1px solid var(--border); border-radius:8px; color:var(--text); font:inherit; padding:8px 11px; width:230px}
 .v-thumbwrap{display:flex; flex-direction:column; gap:8px; padding:12px; background:var(--surface); border:1px solid var(--border); border-radius:8px}
 .v-thumbwrap img{max-width:240px; border-radius:6px; border:1px solid var(--border)}
 .v-thumb-custom{font-size:.8rem}

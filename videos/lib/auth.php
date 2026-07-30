@@ -144,3 +144,57 @@ function authenticate(string $rawUser, string $password): array {
     }
     return [(int) $u['id'], null];
 }
+
+// ---- Password reset (manual, admin-approved — the site has no email) ----
+
+/** A readable temporary password (no ambiguous characters), >= 8 chars. */
+function gen_temp_password(): string {
+    $alpha = 'abcdefghijkmnpqrstuvwxyz23456789';
+    $p = '';
+    for ($i = 0; $i < 10; $i++) $p .= $alpha[random_int(0, strlen($alpha) - 1)];
+    return $p;
+}
+
+/** Queue a reset request for the admin. Silent about whether the account exists. */
+function request_password_reset(string $rawUser): void {
+    $db = videos_db();
+    $st = $db->prepare("SELECT id, username FROM users WHERE username = ?");
+    $st->execute([trim($rawUser)]);
+    $u = $st->fetch();
+    if (!$u) return;
+    $chk = $db->prepare("SELECT 1 FROM password_resets WHERE user_id = ? AND status = 'pending'");
+    $chk->execute([$u['id']]);
+    if ($chk->fetch()) return;                       // one pending request per user
+    $db->prepare("INSERT INTO password_resets (user_id, username, status, created_at) VALUES (?, ?, 'pending', ?)")
+       ->execute([$u['id'], $u['username'], time()]);
+}
+
+/** Admin action: set a new temporary password, clear pending requests. Returns
+ *  ['username','password'] to show the admin once, or null if the user is gone. */
+function admin_reset_password(int $userId): ?array {
+    $db = videos_db();
+    $st = $db->prepare("SELECT username FROM users WHERE id = ?");
+    $st->execute([$userId]);
+    $row = $st->fetch();
+    if (!$row) return null;
+    $temp = gen_temp_password();
+    $db->prepare("UPDATE users SET password_hash = ?, is_banned = is_banned WHERE id = ?")
+       ->execute([password_hash($temp, PASSWORD_DEFAULT), $userId]);
+    $db->prepare("UPDATE password_resets SET status = 'handled', resolved_at = ? WHERE user_id = ? AND status = 'pending'")
+       ->execute([time(), $userId]);
+    return ['username' => $row['username'], 'password' => $temp];
+}
+
+/** Resolve a username to an id for a direct (no-request) reset. */
+function user_id_by_name(string $rawUser): ?int {
+    $st = videos_db()->prepare("SELECT id FROM users WHERE username = ?");
+    $st->execute([trim($rawUser)]);
+    $id = $st->fetchColumn();
+    return $id === false ? null : (int) $id;
+}
+
+function pending_resets(): array {
+    return videos_db()->query(
+        "SELECT id, user_id, username, created_at FROM password_resets WHERE status = 'pending' ORDER BY created_at ASC LIMIT 200"
+    )->fetchAll();
+}

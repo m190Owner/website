@@ -35,5 +35,6 @@ render_header('Log in');
     <button type="submit" class="v-btn v-btn-accent v-btn-lg">Log in</button>
   </form>
   <p class="v-dim">No account yet? <a href="/videos/register.php">Sign up</a>.</p>
+  <p class="v-dim"><a href="/videos/reset.php">Forgot password?</a></p>
 </div>
 <?php render_footer();

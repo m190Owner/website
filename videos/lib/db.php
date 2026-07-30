@@ -86,6 +86,14 @@ function videos_db_init(PDO $db): void {
             acknowledged INTEGER NOT NULL DEFAULT 0,
             created_at   INTEGER NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS password_resets (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id     INTEGER NOT NULL,
+            username    TEXT NOT NULL,
+            status      TEXT NOT NULL DEFAULT 'pending',
+            created_at  INTEGER NOT NULL,
+            resolved_at INTEGER
+        );
         CREATE INDEX IF NOT EXISTS idx_videos_created ON videos(created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_videos_user    ON videos(user_id);
         CREATE INDEX IF NOT EXISTS idx_comments_video ON comments(video_id);
