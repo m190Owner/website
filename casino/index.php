@@ -42,6 +42,21 @@ render_casino_header('Lobby', $u);
       <div class="c-game-name">Texas Hold'em</div>
       <div class="c-game-desc">Live multiplayer tables against other players.</div>
     </a>
+    <a class="c-game" href="/casino/cases.php">
+      <div class="c-game-ico">📦</div>
+      <div class="c-game-name">Case Opening</div>
+      <div class="c-game-desc">Unbox rare guns, gloves & knives — trade them on the market.</div>
+    </a>
+    <a class="c-game" href="/casino/plinko.php">
+      <div class="c-game-ico">🔻</div>
+      <div class="c-game-name">Plinko</div>
+      <div class="c-game-desc">Drop the ball, chase the 10× edges.</div>
+    </a>
+    <a class="c-game" href="/casino/market.php">
+      <div class="c-game-ico">🛒</div>
+      <div class="c-game-name">Marketplace</div>
+      <div class="c-game-desc">Buy & sell unboxed items with other players.</div>
+    </a>
   </div>
 
   <div class="c-leaders">

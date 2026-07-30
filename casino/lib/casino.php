@@ -119,11 +119,15 @@ function render_casino_header(string $title, ?array $u = null): void {
     <a href="/casino/slots.php">Slots</a>
     <a href="/casino/blackjack.php">Blackjack</a>
     <a href="/casino/poker.php">Poker</a>
+    <a href="/casino/cases.php">Cases</a>
+    <a href="/casino/plinko.php">Plinko</a>
+    <a href="/casino/market.php">Market</a>
     <?php if ($u && !empty($u['is_admin'])): ?><a href="/casino/admin.php">🛠 Admin</a><?php endif; ?>
   </div>
   <div class="c-nav-right">
     <button id="c-mute" class="c-btn" title="Sound on/off">🔊</button>
     <?php if ($u): ?>
+      <a href="/casino/inventory.php" class="c-btn" title="Inventory">🎒</a>
       <span class="c-balance" id="c-balance">🪙 <b><?= fmt_coins($bal) ?></b> LS</span>
       <a href="/videos/logout.php" class="c-btn">Logout</a>
     <?php else: ?>
