@@ -52,6 +52,11 @@ render_casino_header('Lobby', $u);
       <div class="c-game-name">Plinko</div>
       <div class="c-game-desc">Drop the ball, chase the 10× edges.</div>
     </a>
+    <a class="c-game" href="/casino/crash.php">
+      <div class="c-game-ico">🚀</div>
+      <div class="c-game-name">Crash</div>
+      <div class="c-game-desc">Cash out before the rocket busts. Shared live rounds.</div>
+    </a>
     <a class="c-game" href="/casino/market.php">
       <div class="c-game-ico">🛒</div>
       <div class="c-game-name">Marketplace</div>
