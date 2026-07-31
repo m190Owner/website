@@ -47,6 +47,11 @@ render_casino_header('Lobby', $u);
       <div class="c-game-name">Case Opening</div>
       <div class="c-game-desc">Unbox rare guns, gloves & knives — trade them on the market.</div>
     </a>
+    <a class="c-game" href="/casino/upgrader.php">
+      <div class="c-game-ico">🔧</div>
+      <div class="c-game-name">Item Upgrader</div>
+      <div class="c-game-desc">Gamble your items for a shot at a bigger skin.</div>
+    </a>
     <a class="c-game" href="/casino/plinko.php">
       <div class="c-game-ico">🔻</div>
       <div class="c-game-name">Plinko</div>

@@ -200,6 +200,22 @@ h1{font-size:1.5rem;margin:0 0 .4em}h2{font-size:1.15rem}
 .rou-num{display:inline-block;min-width:20px;padding:1px 6px;border-radius:5px;color:#fff}
 .rou-num.green{background:#1f7a43}.rou-num.red{background:#c0392b}.rou-num.black{background:#25262c}
 
+/* Item Upgrader */
+.upg-gauge{max-width:560px;margin:14px auto 4px}
+.upg-bar{position:relative;height:24px;border-radius:13px;background:#c0392b;overflow:hidden;border:1px solid rgba(255,255,255,.12)}
+.upg-bar-green{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,#43d17a,#2f9e58);transition:width .25s}
+.upg-pointer{position:absolute;top:-5px;left:0%;width:4px;height:34px;margin-left:-2px;background:#fff;border-radius:2px;box-shadow:0 0 8px rgba(255,255,255,.8);z-index:2}
+.upg-chance{text-align:center;font-size:2rem;font-weight:800;margin-top:8px;color:#43d17a}
+.upg-cols{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:14px}
+@media(max-width:680px){.upg-cols{grid-template-columns:1fr}}
+.upg-stake,.upg-targets{grid-template-columns:repeat(auto-fill,minmax(150px,1fr));margin-top:8px}
+.upg-card{cursor:pointer;position:relative;transition:transform .08s,box-shadow .12s}
+.upg-card:hover{transform:translateY(-2px)}
+.upg-card.sel{outline:2px solid var(--gold);box-shadow:0 0 12px rgba(232,193,90,.4)}
+.upg-card.dis{opacity:.4;cursor:default}
+.upg-card.dis:hover{transform:none}
+.upg-odds{margin-top:4px;font-weight:800;color:#43d17a;font-size:.9rem}
+
 /* Admin */
 .c-flash{background:rgba(59,165,93,.12);border:1px solid rgba(59,165,93,.4);color:#a5e0b8;padding:10px 14px;border-radius:8px;margin-bottom:14px}
 .c-admin-give,.c-admin-search{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}

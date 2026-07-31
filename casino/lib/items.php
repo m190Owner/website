@@ -189,6 +189,56 @@ function item_quicksell_rarity(int $uid, string $rarity): array {
     } catch (\Throwable $e) { $db->exec('ROLLBACK'); throw $e; }
 }
 
+// ---- Trade-up / Upgrader ----
+const UPGRADE_FACTOR = 0.90;   // expected value = stake * 0.90  -> ~10% house edge
+const UPGRADE_MAX    = 0.95;   // never a sure thing
+
+/** Success chance for staking $stakeValue toward a $targetValue item (0 if not an upgrade). */
+function upgrade_chance(int $stakeValue, int $targetValue): float {
+    if ($stakeValue <= 0 || $targetValue <= $stakeValue) return 0.0;
+    return min(UPGRADE_MAX, $stakeValue / $targetValue * UPGRADE_FACTOR);
+}
+
+/**
+ * Gamble owned items for a shot at a single higher-value target. Atomic: the
+ * staked items are always consumed; on a win the target is added. The server
+ * recomputes value + odds from the catalog and rolls — the client is never
+ * trusted. Returns [result, error].
+ */
+function item_upgrade(int $uid, array $stakeIds, string $targetKey): array {
+    if (!isset(ITEMS[$targetKey])) return [null, 'Unknown target item.'];
+    $ids = array_values(array_filter(array_unique(array_map('intval', $stakeIds)), fn($x) => $x > 0));
+    if (!$ids) return [null, 'Pick at least one item to stake.'];
+    if (count($ids) > 10) return [null, 'Stake at most 10 items at once.'];
+
+    $db = videos_db();
+    $db->exec('BEGIN IMMEDIATE');
+    try {
+        $ph = implode(',', array_fill(0, count($ids), '?'));
+        $st = $db->prepare("SELECT id, item FROM casino_items WHERE owner_id = ? AND listed = 0 AND id IN ($ph)");
+        $st->execute(array_merge([$uid], $ids));
+        $rows = $st->fetchAll();
+        if (count($rows) !== count($ids)) { $db->exec('ROLLBACK'); return [null, 'Some of those items are unavailable (listed or already gone).']; }
+
+        $stakeValue = 0;
+        foreach ($rows as $r) $stakeValue += item_def($r['item'])['value'];
+        $target = item_def($targetKey);
+        if ($target['value'] <= $stakeValue) { $db->exec('ROLLBACK'); return [null, 'Pick a target worth more than your staked items.']; }
+
+        $chance = upgrade_chance($stakeValue, $target['value']);
+        $won = random_int(1, 1000000) <= (int) round($chance * 1000000);
+
+        $db->prepare("DELETE FROM casino_items WHERE owner_id = ? AND listed = 0 AND id IN ($ph)")->execute(array_merge([$uid], $ids));
+        $target['invId'] = null;
+        if ($won) {
+            $db->prepare("INSERT INTO casino_items (owner_id, item, created_at) VALUES (?, ?, ?)")->execute([$uid, $targetKey, time()]);
+            $target['invId'] = (int) $db->lastInsertId();
+        }
+        $db->exec('COMMIT');
+        return [['won' => $won, 'chance' => $chance, 'stakeValue' => $stakeValue, 'targetValue' => $target['value'], 'target' => $target], null];
+    } catch (\Throwable $e) { $db->exec('ROLLBACK'); throw $e; }
+}
+
 function market_list_item(int $uid, int $itemId, int $price): ?string {
     if ($price < 1 || $price > 100000000) return 'Enter a valid price.';
     $st = videos_db()->prepare("UPDATE casino_items SET listed = 1, price = ? WHERE id = ? AND owner_id = ? AND listed = 0");

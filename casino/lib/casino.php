@@ -122,6 +122,7 @@ function render_casino_header(string $title, ?array $u = null): void {
     <a href="/casino/crash.php">Crash</a>
     <a href="/casino/roulette.php">Roulette</a>
     <a href="/casino/cases.php">Cases</a>
+    <a href="/casino/upgrader.php">Upgrader</a>
     <a href="/casino/plinko.php">Plinko</a>
     <a href="/casino/market.php">Market</a>
     <?php if ($u && !empty($u['is_admin'])): ?><a href="/casino/admin.php">🛠 Admin</a><?php endif; ?>
