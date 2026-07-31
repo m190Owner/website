@@ -120,6 +120,7 @@ function render_casino_header(string $title, ?array $u = null): void {
     <a href="/casino/blackjack.php">Blackjack</a>
     <a href="/casino/poker.php">Poker</a>
     <a href="/casino/crash.php">Crash</a>
+    <a href="/casino/roulette.php">Roulette</a>
     <a href="/casino/cases.php">Cases</a>
     <a href="/casino/plinko.php">Plinko</a>
     <a href="/casino/market.php">Market</a>

@@ -175,6 +175,31 @@ h1{font-size:1.5rem;margin:0 0 .4em}h2{font-size:1.15rem}
 .crash-bname{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .crash-bbet{color:var(--muted)}
 
+/* Roulette */
+.rou-page{max-width:760px;margin:0 auto}
+.rou-reelwrap{position:relative;overflow:hidden;height:60px;border:1px solid var(--border);border-radius:10px;background:#0c0c10;margin:10px 0}
+.rou-reel{display:flex;height:100%;will-change:transform}
+.rou-tile{flex:0 0 48px;margin:0 3px;height:100%;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:1.15rem;color:#fff;border-radius:6px}
+.rou-tile.green{background:#1f7a43}.rou-tile.red{background:#c0392b}.rou-tile.black{background:#25262c}
+.rou-marker{position:absolute;top:0;bottom:0;left:50%;width:3px;transform:translateX(-50%);background:var(--gold);box-shadow:0 0 12px var(--gold)}
+.rou-board{user-select:none;margin-top:6px}
+.rou-main,.rou-dozens,.rou-outside{display:grid;grid-template-columns:44px repeat(12,minmax(20px,1fr)) 48px;gap:3px}
+.rou-dozens,.rou-outside{margin-top:3px}
+.rou-main{grid-auto-rows:38px}
+.rou-zeros{grid-column:1;grid-row:1/4;display:flex;flex-direction:column;gap:3px}
+.rou-zeros .rou-cell{flex:1}
+.rou-wide{grid-column:span 4}
+.rou-out{grid-column:span 2}
+.rou-dozens,.rou-outside{grid-auto-rows:34px}
+.rou-cell{position:relative;border:1px solid rgba(255,255,255,.13);border-radius:5px;color:#fff;font-weight:700;font-size:.86rem;cursor:pointer;display:flex;align-items:center;justify-content:center;background:#25262c}
+.rou-cell.red{background:#c0392b}.rou-cell.black{background:#25262c}.rou-cell.green{background:#1f7a43}
+.rou-cell.rou-side{background:#2f3038;font-size:.74rem}
+.rou-cell:hover{outline:2px solid var(--gold);z-index:1}
+.rou-cell.win{outline:3px solid var(--gold);box-shadow:0 0 12px var(--gold);z-index:2}
+.rou-chip{position:absolute;top:-7px;right:-7px;min-width:20px;height:20px;padding:0 4px;border-radius:50%;background:var(--gold);color:#1a1405;font-size:.66rem;font-weight:800;display:flex;align-items:center;justify-content:center;border:2px solid #1a1405}
+.rou-num{display:inline-block;min-width:20px;padding:1px 6px;border-radius:5px;color:#fff}
+.rou-num.green{background:#1f7a43}.rou-num.red{background:#c0392b}.rou-num.black{background:#25262c}
+
 /* Admin */
 .c-flash{background:rgba(59,165,93,.12);border:1px solid rgba(59,165,93,.4);color:#a5e0b8;padding:10px 14px;border-radius:8px;margin-bottom:14px}
 .c-admin-give,.c-admin-search{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:14px}

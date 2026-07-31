@@ -57,6 +57,11 @@ render_casino_header('Lobby', $u);
       <div class="c-game-name">Crash</div>
       <div class="c-game-desc">Cash out before the rocket busts. Shared live rounds.</div>
     </a>
+    <a class="c-game" href="/casino/roulette.php">
+      <div class="c-game-ico">🎡</div>
+      <div class="c-game-name">Roulette</div>
+      <div class="c-game-desc">American wheel — straight up, red/black, dozens & more.</div>
+    </a>
     <a class="c-game" href="/casino/market.php">
       <div class="c-game-ico">🛒</div>
       <div class="c-game-name">Marketplace</div>
