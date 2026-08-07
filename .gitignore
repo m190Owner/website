@@ -41,3 +41,6 @@ videos/avatars/*
 
 # Crackme source (private)
 crackmes/
+
+# Jellyfin dashboard secrets — never commit the server URL + API key
+jellyfin/config.php
