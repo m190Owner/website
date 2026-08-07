@@ -20,7 +20,7 @@ $configured = jf_configured();
   <div class="jf-top-l">
     <a href="/" class="jf-back" title="Back to site">&#8592;</a>
     <h1>🎬 Jellyfin</h1>
-    <span class="jf-status" id="jf-conn"><span class="jf-dot"></span> connecting…</span>
+    <span class="jf-status<?= $configured ? '' : ' err' ?>" id="jf-conn"><span class="jf-dot"></span> <?= $configured ? 'connecting…' : 'not configured' ?></span>
   </div>
   <div class="jf-top-r">
     <span class="jf-dim">signed in as <?= e($me['username']) ?></span>
