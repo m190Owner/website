@@ -133,7 +133,46 @@
     setTimeout(() => b.disabled = false, 20000);
   });
 
+  // ---- media server stack ----
+  function ctClass(c) {
+    var st = (c.state || '').toLowerCase(), h = (c.health || '').toLowerCase();
+    if (h === 'unhealthy' || h === 'starting' || st === 'restarting' || st === 'paused') return 'warn';
+    if (st === 'running') return 'up';
+    return 'down';   // exited / created / dead / removing
+  }
+  function renderStack(r) {
+    var fresh = $('jf-stack-fresh'), vpnEl = $('jf-vpn'), grid = $('jf-stack');
+    var st = r && r.stack;
+    if (!st) {
+      fresh.textContent = 'waiting for agent…'; fresh.className = 'jf-dim';
+      vpnEl.innerHTML = ''; vpnEl.className = '';
+      grid.innerHTML = '<p class="jf-empty">No report yet — once the status agent on the media-server box is running, its containers show up here.</p>';
+      return;
+    }
+    var age = st.ageSec || 0, stale = age > 120;
+    fresh.textContent = 'updated ' + (age < 60 ? age + 's' : Math.round(age / 60) + 'm') + ' ago' + (stale ? ' · stale' : '');
+    fresh.className = 'jf-dim jf-stack-fresh' + (stale ? ' stale' : '');
+
+    var v = st.vpn || {}, vok = v.ok && v.ip;
+    vpnEl.className = 'jf-vpn' + (vok ? '' : ' bad');
+    vpnEl.innerHTML = '<span class="jf-vpn-ico">' + (vok ? '🔒' : '⚠️') + '</span><div class="jf-vpn-main">' +
+      '<div class="jf-vpn-title">VPN ' + (vok ? 'connected' : 'not confirmed') + '</div>' +
+      '<div class="jf-vpn-sub">' + (vok
+        ? 'torrent egress <span class="jf-vpn-ip">' + esc(v.ip) + '</span>' + (v.country ? ' · ' + esc(v.country) : '')
+        : 'gluetun egress IP could not be read') + '</div></div>';
+
+    var cs = st.containers || [];
+    grid.innerHTML = cs.length ? cs.map(function (c) {
+      var sub = (c.uptime || c.state || '') + (c.health && c.health !== 'none' ? ' · ' + c.health : '');
+      return '<div class="jf-ct ' + ctClass(c) + '"><span class="jf-ct-dot"></span><div class="jf-ct-body">' +
+        '<div class="jf-ct-name">' + esc(c.name) + '</div><div class="jf-ct-sub">' + esc(sub) + '</div></div></div>';
+    }).join('') : '<p class="jf-empty">No containers reported.</p>';
+  }
+  async function loadStack() { var r = await api('stack'); if (r && r.ok) renderStack(r); }
+
   loadOverview();
+  loadStack();
   setInterval(loadOverview, 30000);
   setInterval(loadSessions, 5000);
+  setInterval(loadStack, 20000);
 })();

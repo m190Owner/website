@@ -55,6 +55,12 @@ $configured = jf_configured();
     <div class="jf-nowplaying" id="jf-nowplaying"><p class="jf-dim">Loading…</p></div>
   </section>
 
+  <section class="jf-section">
+    <div class="jf-sec-head"><h2>Media server stack</h2><span class="jf-dim" id="jf-stack-fresh"></span></div>
+    <div id="jf-vpn"></div>
+    <div class="jf-stack-grid" id="jf-stack"><p class="jf-dim">Loading…</p></div>
+  </section>
+
   <div class="jf-grid2">
     <section class="jf-section">
       <div class="jf-sec-head"><h2>Recent activity</h2></div>

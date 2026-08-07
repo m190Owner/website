@@ -77,6 +77,29 @@ function jf_request(string $method, string $path, array $query = [], ?array $bod
 function jf_get(string $path, array $query = []): array { return jf_request('GET', $path, $query); }
 function jf_post(string $path, ?array $body = null): array { return jf_request('POST', $path, [], $body); }
 
+// ---- Stack status store (snapshots pushed by the media-server agent) ----
+function jf_stack_path(): string { return __DIR__ . '/data/stack.json'; }
+
+/** Persist a validated stack snapshot atomically, stamped with server time. */
+function jf_stack_write(array $snapshot): bool {
+    $dir = dirname(jf_stack_path());
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $snapshot['storedAt'] = time();
+    $tmp = jf_stack_path() . '.' . getmypid() . '.tmp';
+    if (file_put_contents($tmp, json_encode($snapshot)) === false) return false;
+    return @rename($tmp, jf_stack_path());
+}
+
+/** Read the latest snapshot + how many seconds ago it landed, or null. */
+function jf_stack_read(): ?array {
+    $raw = @file_get_contents(jf_stack_path());
+    if ($raw === false) return null;
+    $d = json_decode($raw, true);
+    if (!is_array($d)) return null;
+    $d['ageSec'] = max(0, time() - (int) ($d['storedAt'] ?? 0));
+    return $d;
+}
+
 const JF_TICKS_PER_SEC = 10000000; // Jellyfin RunTime/Position ticks are 100-ns units
 
 /** Reduce a raw Jellyfin session to just what the dashboard shows. */

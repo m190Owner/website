@@ -8,6 +8,11 @@ return [
     'url'     => 'https://your-jellyfin-host.example.com',  // base URL, no trailing slash
     'api_key' => 'YOUR_JELLYFIN_API_KEY',
 
+    // Optional: shared secret for the media-server status agent (the "Stack"
+    // panel). Must match setup/status-agent.conf on the box. Leave empty to
+    // disable the stack ingest endpoint. Generate one with: openssl rand -hex 32
+    'ingest_secret' => '',
+
     // Optional. The cert is always verified. If your host's PHP has no CA bundle
     // configured and you get an "unable to get local issuer certificate" error,
     // point this at a CA bundle file (e.g. /etc/ssl/certs/ca-certificates.crt).

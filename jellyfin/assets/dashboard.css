@@ -78,3 +78,23 @@ code{background:var(--elevated);padding:1px 6px;border-radius:5px;font-size:.85e
 .jf-danger{border-color:rgba(229,85,95,.25)}
 .jf-controls{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .jf-empty{color:var(--dim);padding:6px 2px}
+
+/* Stack panel */
+.jf-stack-fresh.stale{color:var(--red)}
+.jf-vpn{display:flex;align-items:center;gap:12px;background:linear-gradient(90deg,rgba(67,209,122,.09),transparent);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px}
+.jf-vpn.bad{background:linear-gradient(90deg,rgba(229,85,95,.1),transparent)}
+.jf-vpn-ico{font-size:1.3rem;line-height:1}
+.jf-vpn-main{flex:1;min-width:0}
+.jf-vpn-title{font-weight:700;font-size:.9rem}
+.jf-vpn-sub{color:var(--muted);font-size:.8rem}
+.jf-vpn-ip{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--green)}
+.jf-vpn.bad .jf-vpn-ip{color:var(--red)}
+.jf-stack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:8px}
+.jf-ct{display:flex;align-items:center;gap:9px;background:var(--elevated);border:1px solid var(--border);border-radius:9px;padding:8px 11px}
+.jf-ct-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--dim)}
+.jf-ct.up .jf-ct-dot{background:var(--green);box-shadow:0 0 7px var(--green)}
+.jf-ct.warn .jf-ct-dot{background:var(--amber);box-shadow:0 0 7px var(--amber)}
+.jf-ct.down .jf-ct-dot{background:var(--red);box-shadow:0 0 7px var(--red)}
+.jf-ct-body{min-width:0}
+.jf-ct-name{font-weight:600;font-size:.88rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jf-ct-sub{color:var(--dim);font-size:.74rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

@@ -44,3 +44,6 @@ crackmes/
 
 # Jellyfin dashboard secrets — never commit the server URL + API key
 jellyfin/config.php
+# Stack status snapshots pushed by the media-server agent (keep the deny .htaccess)
+jellyfin/data/*
+!jellyfin/data/.htaccess
