@@ -57,7 +57,7 @@ $configured = jf_configured();
 
   <section class="jf-section">
     <div class="jf-sec-head"><h2>Media server stack</h2><span class="jf-dim" id="jf-stack-fresh"></span></div>
-    <div id="jf-vpn"></div>
+    <div class="jf-cards2"><div id="jf-vpn"></div><div id="jf-qbit"></div></div>
     <div class="jf-stack-grid" id="jf-stack"><p class="jf-dim">Loading…</p></div>
   </section>
 

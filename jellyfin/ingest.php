@@ -44,9 +44,30 @@ $vpn = [
     'city'    => $s($vpnIn['city'] ?? '', 64),
 ];
 
+// Per-service detail — whitelist a fixed set of numeric/string fields per service.
+$svcIn = is_array($in['services'] ?? null) ? $in['services'] : [];
+$services = [];
+foreach (['qbit', 'sonarr', 'radarr', 'lidarr', 'prowlarr'] as $name) {
+    $x = is_array($svcIn[$name] ?? null) ? $svcIn[$name] : null;
+    if ($x === null) continue;
+    $services[$name] = [
+        'ok'         => (bool) ($x['ok'] ?? false),
+        'connection' => $s($x['connection'] ?? '', 20),
+        'down'       => max(0, (int) ($x['down'] ?? 0)),
+        'up'         => max(0, (int) ($x['up'] ?? 0)),
+        'torrents'   => max(0, (int) ($x['torrents'] ?? 0)),
+        'dl'         => max(0, (int) ($x['dl'] ?? 0)),
+        'ul'         => max(0, (int) ($x['ul'] ?? 0)),
+        'queue'      => max(0, (int) ($x['queue'] ?? 0)),
+        'indexers'   => max(0, (int) ($x['indexers'] ?? 0)),
+        'health'     => max(0, (int) ($x['health'] ?? 0)),
+    ];
+}
+
 jf_stack_write([
     'containers' => $containers,
     'vpn'        => $vpn,
+    'services'   => $services,
     'host'       => $s($in['host'] ?? '', 40),
     'agentTime'  => (int) ($in['agentTime'] ?? 0),
 ]);

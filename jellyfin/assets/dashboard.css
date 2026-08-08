@@ -89,6 +89,10 @@ code{background:var(--elevated);padding:1px 6px;border-radius:5px;font-size:.85e
 .jf-vpn-sub{color:var(--muted);font-size:.8rem}
 .jf-vpn-ip{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--green)}
 .jf-vpn.bad .jf-vpn-ip{color:var(--red)}
+.jf-cards2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+@media(max-width:640px){.jf-cards2{grid-template-columns:1fr}}
+.jf-cards2 .jf-vpn{margin-bottom:0;height:100%}
+.jf-cards2 > div:empty{display:none}
 .jf-stack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:8px}
 .jf-ct{display:flex;align-items:center;gap:9px;background:var(--elevated);border:1px solid var(--border);border-radius:9px;padding:8px 11px}
 .jf-ct-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--dim)}

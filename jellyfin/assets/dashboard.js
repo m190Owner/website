@@ -140,18 +140,26 @@
     if (st === 'running') return 'up';
     return 'down';   // exited / created / dead / removing
   }
+  function fmtSpeed(bps) {
+    bps = bps || 0;
+    if (bps >= 1e6) return (bps / 1e6).toFixed(1) + ' MB/s';
+    if (bps >= 1e3) return Math.round(bps / 1e3) + ' KB/s';
+    return bps + ' B/s';
+  }
+  var SVC_OF = { qbittorrent: 'qbit', sonarr: 'sonarr', radarr: 'radarr', lidarr: 'lidarr', prowlarr: 'prowlarr' };
   function renderStack(r) {
-    var fresh = $('jf-stack-fresh'), vpnEl = $('jf-vpn'), grid = $('jf-stack');
+    var fresh = $('jf-stack-fresh'), vpnEl = $('jf-vpn'), qbitEl = $('jf-qbit'), grid = $('jf-stack');
     var st = r && r.stack;
     if (!st) {
       fresh.textContent = 'waiting for agent…'; fresh.className = 'jf-dim';
-      vpnEl.innerHTML = ''; vpnEl.className = '';
+      vpnEl.innerHTML = ''; vpnEl.className = ''; qbitEl.innerHTML = ''; qbitEl.className = '';
       grid.innerHTML = '<p class="jf-empty">No report yet — once the status agent on the media-server box is running, its containers show up here.</p>';
       return;
     }
     var age = st.ageSec || 0, stale = age > 120;
     fresh.textContent = 'updated ' + (age < 60 ? age + 's' : Math.round(age / 60) + 'm') + ' ago' + (stale ? ' · stale' : '');
     fresh.className = 'jf-dim jf-stack-fresh' + (stale ? ' stale' : '');
+    var svcs = st.services || {};
 
     var v = st.vpn || {}, vok = v.ok && v.ip;
     vpnEl.className = 'jf-vpn' + (vok ? '' : ' bad');
@@ -161,9 +169,26 @@
         ? 'torrent egress <span class="jf-vpn-ip">' + esc(v.ip) + '</span>' + (v.country ? ' · ' + esc(v.country) : '')
         : 'gluetun egress IP could not be read') + '</div></div>';
 
+    var qb = svcs.qbit;
+    if (qb && qb.ok) {
+      var conn = (qb.connection || '') === 'connected';
+      qbitEl.className = 'jf-vpn' + (conn ? '' : ' bad');
+      qbitEl.innerHTML = '<span class="jf-vpn-ico">🌊</span><div class="jf-vpn-main">' +
+        '<div class="jf-vpn-title">qBittorrent · ' + esc(qb.connection || 'unknown') + '</div>' +
+        '<div class="jf-vpn-sub">↓ <span class="jf-vpn-ip">' + fmtSpeed(qb.down) + '</span> · ↑ ' + fmtSpeed(qb.up) +
+        ' · ' + (qb.torrents || 0) + ' torrents' + (qb.dl ? ' · ' + qb.dl + ' downloading' : '') + (qb.ul ? ' · ' + qb.ul + ' seeding' : '') + '</div></div>';
+    } else { qbitEl.className = ''; qbitEl.innerHTML = ''; }
+
     var cs = st.containers || [];
     grid.innerHTML = cs.length ? cs.map(function (c) {
       var sub = (c.uptime || c.state || '') + (c.health && c.health !== 'none' ? ' · ' + c.health : '');
+      var svc = svcs[SVC_OF[c.name]];
+      if (svc && svc.ok) {
+        if (c.name === 'sonarr' || c.name === 'radarr' || c.name === 'lidarr') sub += ' · queue ' + svc.queue;
+        else if (c.name === 'prowlarr') sub += ' · ' + svc.indexers + ' indexers';
+        else if (c.name === 'qbittorrent') sub += ' · ↓ ' + fmtSpeed(svc.down);
+        if (svc.health > 0) sub += ' · ⚠' + svc.health;
+      }
       return '<div class="jf-ct ' + ctClass(c) + '"><span class="jf-ct-dot"></span><div class="jf-ct-body">' +
         '<div class="jf-ct-name">' + esc(c.name) + '</div><div class="jf-ct-sub">' + esc(sub) + '</div></div></div>';
     }).join('') : '<p class="jf-empty">No containers reported.</p>';
