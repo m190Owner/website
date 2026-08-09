@@ -143,6 +143,19 @@ function jf_compute_alerts(?array $old, array $new, int $diskPct): array {
     return $alerts;
 }
 
+// Small persisted flag so the staleness check alerts once per transition.
+function jf_alert_state_path(): string { return __DIR__ . '/data/alert-state.json'; }
+function jf_alert_state_read(): array { $r = @file_get_contents(jf_alert_state_path()); $d = $r === false ? null : json_decode($r, true); return is_array($d) ? $d : []; }
+function jf_alert_state_write(array $st): void { @file_put_contents(jf_alert_state_path(), json_encode($st)); }
+
+/** Edge decision for the "server offline" alert. Pure/testable. */
+function jf_stale_decision(int $ageSec, int $staleSec, bool $wasOffline): string {
+    $stale = $ageSec > $staleSec;
+    if ($stale && !$wasOffline) return 'offline';
+    if (!$stale && $wasOffline) return 'online';
+    return 'none';
+}
+
 /** Best-effort post of one alert embed to a Discord webhook. Only ever posts to
  *  a real Discord webhook URL (guards against a misconfigured target). */
 function jf_discord_alert(string $webhook, array $a): void {

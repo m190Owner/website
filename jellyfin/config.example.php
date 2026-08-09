@@ -18,6 +18,8 @@ return [
     // Only Discord webhook URLs are accepted.
     'alert_webhook'  => '',
     'disk_alert_pct' => 90,   // alert when a volume crosses this %, recovers 5% below
+    'stale_alert_sec' => 300, // "server offline" alert if no agent report for this long
+                              // (needs a host cron hitting alert-check.php — see README/setup)
 
     // Optional. The cert is always verified. If your host's PHP has no CA bundle
     // configured and you get an "unable to get local issuer certificate" error,
