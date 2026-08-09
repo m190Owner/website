@@ -100,6 +100,76 @@ function jf_stack_read(): ?array {
     return $d;
 }
 
+// ---- Alerting (container down / disk threshold -> Discord) ----
+const JF_DISK_RECOVER_MARGIN = 5;   // a volume "recovers" once it drops this many % below the alert line
+
+/** Diff the previous snapshot against the new one; return alert embeds for the
+ *  transitions worth notifying about. Pure + testable — edge-triggered, so it
+ *  only fires on the change, never repeatedly while something stays down. */
+function jf_compute_alerts(?array $old, array $new, int $diskPct): array {
+    if ($old === null) return [];                 // no baseline yet
+    $alerts = [];
+    $recover = max(1, $diskPct - JF_DISK_RECOVER_MARGIN);
+    $up = fn($c) => ($c['state'] ?? '') === 'running' && ($c['health'] ?? '') !== 'unhealthy';
+
+    $oldByName = [];
+    foreach ($old['containers'] ?? [] as $c) $oldByName[$c['name']] = $c;
+    foreach ($new['containers'] ?? [] as $c) {
+        $o = $oldByName[$c['name']] ?? null;
+        if ($o === null) continue;                // a container appearing is not an alert
+        if ($up($o) && !$up($c)) {
+            $why = ($c['state'] ?? '') !== 'running' ? (($c['state'] ?? '') ?: 'stopped') : 'unhealthy';
+            $alerts[] = ['color' => 0xE5555F, 'title' => '🔴 ' . $c['name'] . ' is down',
+                         'desc' => '**' . $c['name'] . '** is now `' . $why . '` (was running).'];
+        } elseif (!$up($o) && $up($c)) {
+            $alerts[] = ['color' => 0x43D17A, 'title' => '🟢 ' . $c['name'] . ' recovered',
+                         'desc' => '**' . $c['name'] . '** is running again.'];
+        }
+    }
+
+    foreach (['media' => 'Media volume', 'host' => 'Host drive (C:)'] as $k => $label) {
+        $on = $old['disk'][$k]['pct'] ?? null;
+        $nn = $new['disk'][$k]['pct'] ?? null;
+        if ($on === null || $nn === null) continue;
+        $free = round(($new['disk'][$k]['free'] ?? 0) / 1e9) . ' GB free';
+        if ($on < $diskPct && $nn >= $diskPct) {
+            $alerts[] = ['color' => 0xE8B53F, 'title' => '🟠 ' . $label . ' at ' . $nn . '%',
+                         'desc' => $label . ' crossed **' . $diskPct . '%** — ' . $free . '.'];
+        } elseif ($on >= $recover && $nn < $recover) {
+            $alerts[] = ['color' => 0x43D17A, 'title' => '🟢 ' . $label . ' back to ' . $nn . '%',
+                         'desc' => $label . ' dropped below ' . $recover . '% — ' . $free . '.'];
+        }
+    }
+    return $alerts;
+}
+
+/** Best-effort post of one alert embed to a Discord webhook. Only ever posts to
+ *  a real Discord webhook URL (guards against a misconfigured target). */
+function jf_discord_alert(string $webhook, array $a): void {
+    if (!preg_match('#^https://(canary\.|ptb\.)?discord(app)?\.com/api/webhooks/#', $webhook)) return;
+    $cfg = jf_config();
+    $body = json_encode(['username' => 'media-server', 'embeds' => [[
+        'title' => mb_substr($a['title'], 0, 250),
+        'description' => mb_substr($a['desc'], 0, 1500),
+        'color' => (int) ($a['color'] ?? 0),
+    ]]]);
+    if (function_exists('curl_init')) {
+        $ch = curl_init($webhook);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json'],
+            CURLOPT_CONNECTTIMEOUT => 4, CURLOPT_TIMEOUT => 6, CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
+        ]);
+        if (is_array($cfg) && !empty($cfg['cainfo']) && is_file($cfg['cainfo'])) curl_setopt($ch, CURLOPT_CAINFO, $cfg['cainfo']);
+        curl_exec($ch);
+        curl_close($ch);
+    } else {
+        $ctx = stream_context_create(['http' => ['method' => 'POST', 'header' => "Content-Type: application/json\r\n", 'content' => $body, 'timeout' => 6, 'ignore_errors' => true]]);
+        @file_get_contents($webhook, false, $ctx);
+    }
+}
+
 const JF_TICKS_PER_SEC = 10000000; // Jellyfin RunTime/Position ticks are 100-ns units
 
 /** Reduce a raw Jellyfin session to just what the dashboard shows. */

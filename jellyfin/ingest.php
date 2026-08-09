@@ -104,7 +104,7 @@ $diskOne = function ($d) {
 $diskIn = is_array($in['disk'] ?? null) ? $in['disk'] : [];
 $disk = ['media' => $diskOne($diskIn['media'] ?? null), 'host' => $diskOne($diskIn['host'] ?? null)];
 
-jf_stack_write([
+$snapshot = [
     'containers' => $containers,
     'vpn'        => $vpn,
     'services'   => $services,
@@ -112,6 +112,14 @@ jf_stack_write([
     'disk'       => $disk,
     'host'       => $s($in['host'] ?? '', 40),
     'agentTime'  => (int) ($in['agentTime'] ?? 0),
-]);
+];
 
+// Alerting: diff against the previous snapshot, notify Discord on transitions.
+$webhook = (string) ($cfg['alert_webhook'] ?? '');
+if ($webhook !== '') {
+    $diskPct = (int) (($cfg['disk_alert_pct'] ?? 0) ?: 90);
+    foreach (jf_compute_alerts(jf_stack_read(), $snapshot, $diskPct) as $a) jf_discord_alert($webhook, $a);
+}
+
+jf_stack_write($snapshot);
 echo 'ok';

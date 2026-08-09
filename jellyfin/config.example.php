@@ -13,6 +13,12 @@ return [
     // disable the stack ingest endpoint. Generate one with: openssl rand -hex 32
     'ingest_secret' => '',
 
+    // Optional: alerts. If set, the ingest endpoint posts to this Discord webhook
+    // when a container goes down/recovers or a disk volume crosses the threshold.
+    // Only Discord webhook URLs are accepted.
+    'alert_webhook'  => '',
+    'disk_alert_pct' => 90,   // alert when a volume crosses this %, recovers 5% below
+
     // Optional. The cert is always verified. If your host's PHP has no CA bundle
     // configured and you get an "unable to get local issuer certificate" error,
     // point this at a CA bundle file (e.g. /etc/ssl/certs/ca-certificates.crt).
