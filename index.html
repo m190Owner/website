@@ -87,6 +87,7 @@
                 <a href="lab/" class="nav-link" title="Browser-based RE crackme lab">Pwn Lab</a>
                 <a href="game/" class="nav-link" title="RoF Survivors — real-firearm auto-battler">Game</a>
                 <a href="videos/" class="nav-link" title="Upload & watch videos">Videos</a>
+                <a href="youtube/" class="nav-link" title="Latest videos from my YouTube channel">YouTube</a>
                 <a href="canvas.html" class="nav-link" title="Shared pixel canvas — paint together live">Canvas</a>
                 <a href="casino/" class="nav-link" title="Play slots, blackjack & poker for LS coins">Casino</a>
             </div>
@@ -112,6 +113,7 @@
         <a href="lab/" class="nav-link" title="Browser-based RE crackme lab">Pwn Lab</a>
         <a href="game/" class="nav-link" title="RoF Survivors — real-firearm auto-battler">Game</a>
         <a href="videos/" class="nav-link" title="Upload & watch videos">Videos</a>
+        <a href="youtube/" class="nav-link" title="Latest videos from my YouTube channel">YouTube</a>
         <a href="canvas.html" class="nav-link" title="Shared pixel canvas — paint together live">Canvas</a>
         <a href="casino/" class="nav-link" title="Play slots, blackjack & poker for LS coins">Casino</a>
     </div>
@@ -194,6 +196,18 @@
         </div>
     </section>
 
+    <!-- Latest YouTube Videos — mirrors the channel via youtube_latest.php.
+         Hidden by js/youtube.js unless the feed loads. -->
+    <section id="youtube" hidden>
+        <div class="youtube-inner">
+            <div class="youtube-head">
+                <h2 class="section-label">Latest Videos</h2>
+                <a href="youtube/" class="youtube-all">View all &rarr;</a>
+            </div>
+            <div class="youtube-strip" id="youtube-strip"></div>
+        </div>
+    </section>
+
     <!-- Chat Wall Input -->
     <div class="chat-input-container">
         <input type="text" class="chat-input" id="chat-input" placeholder="Leave a message..." maxlength="100" autocomplete="off">
@@ -240,5 +254,6 @@
     <script src="js/modes.js"></script>
     <script src="js/world.js"></script>
     <script src="js/activity.js"></script>
+    <script src="js/youtube.js"></script>
 </body>
 </html>

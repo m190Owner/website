@@ -1,0 +1,155 @@
+/* Self-contained dark theme for the /youtube/ mirror. Tokens mirror the main
+   site's :root (css/styles.css) but this page stands alone — it does NOT pull in
+   the site's global stylesheet (which hides the cursor for the custom-cursor JS). */
+:root {
+  --bg:            #0b0b0f;
+  --surface:       #111118;
+  --elevated:      #16161f;
+  --border:        rgba(122, 162, 255, 0.15);
+  --border-hover:  rgba(122, 162, 255, 0.40);
+  --accent:        #7aa2ff;
+  --accent-light:  #a8c0ff;
+  --text:          #e5e5e5;
+  --muted:         #8a96b8;
+  --dim:           #5a6480;
+  --yt-red:        #ff3b3b;
+  --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  --font-mono: 'Consolas', 'Courier New', monospace;
+  --radius: 10px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: inherit; }
+
+/* ---- Top nav ---- */
+.yt-nav {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px;
+  height: 56px; padding: 0 20px;
+  background: rgba(11, 11, 15, 0.85);
+  backdrop-filter: blur(10px);
+  border-bottom: 1px solid var(--border);
+}
+.yt-nav-left { display: flex; align-items: center; gap: 14px; }
+.yt-back {
+  text-decoration: none; color: var(--muted); font-size: 1.3rem; line-height: 1;
+  padding: 4px 8px; border-radius: 8px; transition: color .2s, background .2s;
+}
+.yt-back:hover { color: var(--text); background: var(--elevated); }
+.yt-brand {
+  display: flex; align-items: center; gap: 9px;
+  text-decoration: none; color: var(--text);
+  font-weight: 700; font-size: 1.05rem; letter-spacing: .3px;
+}
+.yt-logo {
+  display: inline-block; width: 30px; height: 21px; border-radius: 6px;
+  background: var(--yt-red); position: relative;
+}
+.yt-logo::after {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  transform: translate(-42%, -50%);
+  border-style: solid; border-width: 5px 0 5px 8px;
+  border-color: transparent transparent transparent #fff;
+}
+
+/* ---- Buttons ---- */
+.yt-btn {
+  text-decoration: none; font-size: .85rem; font-weight: 600;
+  padding: 8px 14px; border-radius: 8px;
+  border: 1px solid var(--border); color: var(--text);
+  transition: border-color .2s, background .2s, color .2s; white-space: nowrap;
+}
+.yt-btn:hover { border-color: var(--border-hover); background: var(--elevated); }
+.yt-btn-accent { border-color: transparent; background: var(--yt-red); color: #fff; }
+.yt-btn-accent:hover { background: #ff5555; color: #fff; }
+
+/* ---- Layout ---- */
+.yt-main { max-width: 1200px; margin: 0 auto; padding: 32px 20px 80px; }
+.yt-head { margin-bottom: 28px; }
+.yt-head h1 { font-size: 1.6rem; font-weight: 700; letter-spacing: .3px; }
+.yt-head p { color: var(--muted); margin-top: 8px; font-size: .95rem; }
+.yt-head a { color: var(--accent-light); text-decoration: none; }
+.yt-head a:hover { text-decoration: underline; }
+
+/* ---- Grid ---- */
+.yt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 22px 18px;
+}
+
+.yt-card {
+  display: flex; flex-direction: column; gap: 10px;
+  text-decoration: none; color: inherit;
+  border-radius: var(--radius);
+}
+.yt-thumb {
+  position: relative; aspect-ratio: 16 / 9; overflow: hidden;
+  border-radius: var(--radius);
+  background: var(--elevated); border: 1px solid var(--border);
+  transition: border-color .2s, box-shadow .2s, transform .2s;
+}
+.yt-thumb img {
+  width: 100%; height: 100%; object-fit: cover; display: block;
+  /* hqdefault is 4:3 letterboxed; cover crops the ~12.5% bars top/bottom. */
+}
+.yt-card:hover .yt-thumb {
+  border-color: var(--border-hover);
+  box-shadow: 0 6px 26px rgba(255, 59, 59, 0.14);
+  transform: translateY(-2px);
+}
+/* Play glyph overlay on hover */
+.yt-play {
+  position: absolute; inset: 0; margin: auto;
+  width: 54px; height: 54px; border-radius: 50%;
+  background: rgba(20, 20, 26, 0.72);
+  opacity: 0; transition: opacity .2s;
+  display: grid; place-items: center;
+}
+.yt-play::after {
+  content: ""; border-style: solid;
+  border-width: 9px 0 9px 15px; border-color: transparent transparent transparent #fff;
+  margin-left: 3px;
+}
+.yt-card:hover .yt-play { opacity: 1; }
+
+.yt-title {
+  font-size: .95rem; font-weight: 600; line-height: 1.35; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.yt-card:hover .yt-title { color: var(--accent-light); }
+.yt-meta { font-size: .8rem; color: var(--dim); font-family: var(--font-mono); }
+
+/* ---- Skeleton / states ---- */
+.yt-skel {
+  height: 0; padding-bottom: calc(56.25% + 44px);
+  border-radius: var(--radius);
+  background: linear-gradient(100deg, var(--surface) 30%, var(--elevated) 50%, var(--surface) 70%);
+  background-size: 200% 100%;
+  animation: yt-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes yt-shimmer { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+
+.yt-state {
+  grid-column: 1 / -1; text-align: center; color: var(--muted);
+  padding: 60px 20px; font-size: .95rem;
+}
+.yt-state a { color: var(--accent-light); }
+
+@media (max-width: 560px) {
+  .yt-grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 16px 12px; }
+  .yt-main { padding: 22px 14px 60px; }
+  .yt-head h1 { font-size: 1.3rem; }
+  .yt-title { font-size: .85rem; }
+}
