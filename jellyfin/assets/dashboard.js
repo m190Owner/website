@@ -147,6 +147,37 @@
     return bps + ' B/s';
   }
   var SVC_OF = { qbittorrent: 'qbit', sonarr: 'sonarr', radarr: 'radarr', lidarr: 'lidarr', prowlarr: 'prowlarr' };
+  var torrentsOpen = false;
+  function fmtSize(b) { b = b || 0; if (b >= 1e12) return (b / 1e12).toFixed(2) + ' TB'; if (b >= 1e9) return (b / 1e9).toFixed(1) + ' GB'; if (b >= 1e6) return (b / 1e6).toFixed(0) + ' MB'; return (b / 1e3).toFixed(0) + ' KB'; }
+  function fmtEta(s) { if (!s || s >= 8640000) return ''; if (s >= 3600) return Math.floor(s / 3600) + 'h ' + Math.floor((s % 3600) / 60) + 'm'; if (s >= 60) return Math.floor(s / 60) + 'm'; return s + 's'; }
+  function torrentRow(t) {
+    var pct = Math.round((t.progress || 0) * 100);
+    var speed = t.dl > 0 ? '↓ ' + fmtSpeed(t.dl) : (t.up > 0 ? '↑ ' + fmtSpeed(t.up) : '');
+    var eta = t.dl > 0 ? fmtEta(t.eta) : '';
+    return '<div class="jf-tor"><div class="jf-tor-main"><div class="jf-tor-name">' + esc(t.name) + '</div>' +
+      '<div class="jf-tor-bar"><div class="jf-tor-fill' + (t.dl > 0 ? ' dl' : '') + '" style="width:' + pct + '%"></div></div></div>' +
+      '<div class="jf-tor-meta"><b>' + pct + '%</b>' + (speed ? '<span>' + speed + '</span>' : '') +
+      '<span class="jf-dim">' + fmtSize(t.size) + (t.cat ? ' · ' + esc(t.cat) : '') + (eta ? ' · ' + eta : '') + '</span></div></div>';
+  }
+  function diskBar(label, d) {
+    if (!d || !d.total) return '';
+    var pct = d.pct || Math.round(d.used / d.total * 100);
+    var cls = pct >= 90 ? 'crit' : pct >= 78 ? 'warn' : '';
+    return '<div class="jf-diskrow"><div class="jf-diskrow-top"><span>' + label + '</span>' +
+      '<span class="jf-dim">' + fmtSize(d.used) + ' / ' + fmtSize(d.total) + ' · ' + fmtSize(d.free) + ' free</span></div>' +
+      '<div class="jf-diskbar"><div class="jf-diskfill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
+  }
+  function renderDisk(disk) { $('jf-disk').innerHTML = disk ? (diskBar('Media volume', disk.media) + diskBar('Host drive (C:)', disk.host)) : ''; }
+  function renderGrabs(hist) {
+    var sec = $('jf-grabs-sec'), ul = $('jf-grabs');
+    if (!hist || !hist.length) { sec.style.display = 'none'; return; }
+    sec.style.display = '';
+    var ICON = { sonarr: '📺', radarr: '🎬', lidarr: '🎵' };
+    ul.innerHTML = hist.map(function (h) {
+      return '<li><span class="jf-act-name">' + (ICON[h.svc] || '') + ' ' + esc(h.event) + '</span> ' +
+        '<span class="jf-act-meta">' + esc(h.title) + '</span><div class="jf-act-meta">' + ago(h.date) + '</div></li>';
+    }).join('');
+  }
   function renderStack(r) {
     var fresh = $('jf-stack-fresh'), vpnEl = $('jf-vpn'), qbitEl = $('jf-qbit'), grid = $('jf-stack');
     var st = r && r.stack;
@@ -169,16 +200,20 @@
         ? 'torrent egress <span class="jf-vpn-ip">' + esc(v.ip) + '</span>' + (v.country ? ' · ' + esc(v.country) : '')
         : 'gluetun egress IP could not be read') + '</div></div>';
 
-    var qb = svcs.qbit;
+    var qb = svcs.qbit, tl = $('jf-torrents');
     if (qb && qb.ok) {
       var conn = (qb.connection || '') === 'connected';
-      qbitEl.className = 'jf-vpn' + (conn ? '' : ' bad');
+      var hasList = qb.list && qb.list.length;
+      qbitEl.className = 'jf-vpn' + (conn ? '' : ' bad') + (hasList ? ' jf-clickable' : '');
       qbitEl.innerHTML = '<span class="jf-vpn-ico">🌊</span><div class="jf-vpn-main">' +
-        '<div class="jf-vpn-title">qBittorrent · ' + esc(qb.connection || 'unknown') + '</div>' +
+        '<div class="jf-vpn-title">qBittorrent · ' + esc(qb.connection || 'unknown') + (hasList ? ' <span class="jf-caret">' + (torrentsOpen ? '▾' : '▸') + '</span>' : '') + '</div>' +
         '<div class="jf-vpn-sub">↓ <span class="jf-vpn-ip">' + fmtSpeed(qb.down) + '</span> · ↑ ' + fmtSpeed(qb.up) +
         ' · ' + (qb.torrents || 0) + ' torrents' + (qb.dl ? ' · ' + qb.dl + ' downloading' : '') + (qb.ul ? ' · ' + qb.ul + ' seeding' : '') + '</div></div>';
-    } else { qbitEl.className = ''; qbitEl.innerHTML = ''; }
+      tl.innerHTML = hasList ? qb.list.map(torrentRow).join('') : '';
+      tl.style.display = (torrentsOpen && hasList) ? 'block' : 'none';
+    } else { qbitEl.className = ''; qbitEl.innerHTML = ''; tl.innerHTML = ''; tl.style.display = 'none'; }
 
+    renderDisk(st.disk);
     var cs = st.containers || [];
     grid.innerHTML = cs.length ? cs.map(function (c) {
       var sub = (c.uptime || c.state || '') + (c.health && c.health !== 'none' ? ' · ' + c.health : '');
@@ -192,8 +227,19 @@
       return '<div class="jf-ct ' + ctClass(c) + '"><span class="jf-ct-dot"></span><div class="jf-ct-body">' +
         '<div class="jf-ct-name">' + esc(c.name) + '</div><div class="jf-ct-sub">' + esc(sub) + '</div></div></div>';
     }).join('') : '<p class="jf-empty">No containers reported.</p>';
+
+    renderGrabs(st.history);
   }
   async function loadStack() { var r = await api('stack'); if (r && r.ok) renderStack(r); }
+
+  // qBittorrent card → expand/collapse the per-torrent list
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('#jf-qbit')) return;
+    var tl = $('jf-torrents'); if (!tl || !tl.innerHTML) return;
+    torrentsOpen = !torrentsOpen;
+    tl.style.display = torrentsOpen ? 'block' : 'none';
+    var car = document.querySelector('#jf-qbit .jf-caret'); if (car) car.textContent = torrentsOpen ? '▾' : '▸';
+  });
 
   loadOverview();
   loadStack();

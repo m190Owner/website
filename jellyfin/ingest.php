@@ -64,10 +64,52 @@ foreach (['qbit', 'sonarr', 'radarr', 'lidarr', 'prowlarr'] as $name) {
     ];
 }
 
+// qBittorrent per-torrent detail (for the expand-on-click list).
+if (isset($services['qbit']) && is_array($svcIn['qbit']['list'] ?? null)) {
+    $list = [];
+    foreach (array_slice($svcIn['qbit']['list'], 0, 50) as $t) {
+        if (!is_array($t)) continue;
+        $list[] = [
+            'name'     => $s($t['name'] ?? '', 120),
+            'progress' => max(0.0, min(1.0, (float) ($t['progress'] ?? 0))),
+            'dl'       => max(0, (int) ($t['dl'] ?? 0)),
+            'up'       => max(0, (int) ($t['up'] ?? 0)),
+            'state'    => $s($t['state'] ?? '', 20),
+            'size'     => max(0, (int) ($t['size'] ?? 0)),
+            'eta'      => max(0, (int) ($t['eta'] ?? 0)),
+            'cat'      => $s($t['cat'] ?? '', 16),
+        ];
+    }
+    $services['qbit']['list'] = $list;
+}
+
+// Recent grabs/imports across the *arrs (nested under services on the wire).
+$history = [];
+foreach (array_slice(is_array($svcIn['history'] ?? null) ? $svcIn['history'] : [], 0, 15) as $h) {
+    if (!is_array($h)) continue;
+    $history[] = [
+        'svc'   => $s($h['svc'] ?? '', 12),
+        'event' => $s($h['event'] ?? '', 24),
+        'title' => $s($h['title'] ?? '', 120),
+        'date'  => $s($h['date'] ?? '', 30),
+    ];
+}
+
+// Disk usage (media volume + host drive).
+$diskOne = function ($d) {
+    if (!is_array($d)) return null;
+    return ['total' => max(0, (int) ($d['total'] ?? 0)), 'used' => max(0, (int) ($d['used'] ?? 0)),
+            'free' => max(0, (int) ($d['free'] ?? 0)), 'pct' => max(0, min(100, (int) ($d['pct'] ?? 0)))];
+};
+$diskIn = is_array($in['disk'] ?? null) ? $in['disk'] : [];
+$disk = ['media' => $diskOne($diskIn['media'] ?? null), 'host' => $diskOne($diskIn['host'] ?? null)];
+
 jf_stack_write([
     'containers' => $containers,
     'vpn'        => $vpn,
     'services'   => $services,
+    'history'    => $history,
+    'disk'       => $disk,
     'host'       => $s($in['host'] ?? '', 40),
     'agentTime'  => (int) ($in['agentTime'] ?? 0),
 ]);

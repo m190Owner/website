@@ -93,6 +93,24 @@ code{background:var(--elevated);padding:1px 6px;border-radius:5px;font-size:.85e
 @media(max-width:640px){.jf-cards2{grid-template-columns:1fr}}
 .jf-cards2 .jf-vpn{margin-bottom:0;height:100%}
 .jf-cards2 > div:empty{display:none}
+.jf-clickable{cursor:pointer}.jf-clickable:hover{border-color:rgba(255,255,255,.24)}
+.jf-caret{color:var(--muted);font-size:.78rem}
+.jf-torrents{background:var(--elevated);border:1px solid var(--border);border-radius:10px;padding:6px;margin-bottom:12px;max-height:340px;overflow-y:auto;display:flex;flex-direction:column;gap:2px}
+.jf-tor{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:6px 8px;border-radius:7px}
+.jf-tor:nth-child(odd){background:rgba(255,255,255,.025)}
+.jf-tor-main{min-width:0}
+.jf-tor-name{font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jf-tor-bar{height:4px;border-radius:3px;background:rgba(255,255,255,.08);margin-top:4px;overflow:hidden}
+.jf-tor-fill{height:100%;background:var(--dim)}
+.jf-tor-fill.dl{background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.jf-tor-meta{display:flex;flex-direction:column;align-items:flex-end;gap:1px;font-size:.72rem;white-space:nowrap;font-variant-numeric:tabular-nums}
+.jf-tor-meta b{color:var(--text);font-weight:700}
+.jf-disk{display:flex;flex-direction:column;gap:9px;margin-bottom:14px}
+.jf-diskrow-top{display:flex;justify-content:space-between;font-size:.82rem;margin-bottom:3px}
+.jf-diskbar{height:8px;border-radius:5px;background:rgba(255,255,255,.08);overflow:hidden}
+.jf-diskfill{height:100%;background:linear-gradient(90deg,var(--green),#3aa76a)}
+.jf-diskfill.warn{background:linear-gradient(90deg,var(--amber),#d19a2e)}
+.jf-diskfill.crit{background:linear-gradient(90deg,var(--red),#c0392b)}
 .jf-stack-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(184px,1fr));gap:8px}
 .jf-ct{display:flex;align-items:center;gap:9px;background:var(--elevated);border:1px solid var(--border);border-radius:9px;padding:8px 11px}
 .jf-ct-dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto;background:var(--dim)}
