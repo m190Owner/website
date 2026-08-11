@@ -32,6 +32,12 @@ function csrf_field(): string {
 function csrf_require(bool $viaJson = false): void {
     $sent = $_POST['csrf'] ?? ($_SERVER['HTTP_X_CSRF'] ?? '');
     if (!is_string($sent) || !hash_equals(csrf_token(), $sent)) {
+        if (function_exists('audit_log')) {
+            audit_log('csrf_fail', 'warn', [
+                'actor_uid' => $_SESSION['uid'] ?? null,
+                'detail'    => 'CSRF token mismatch on ' . ($_SERVER['REQUEST_URI'] ?? ''),
+            ]);
+        }
         if ($viaJson) json_out(['ok' => false, 'error' => 'bad csrf token'], 403);
         http_response_code(403);
         exit('Bad CSRF token.');

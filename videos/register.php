@@ -14,6 +14,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     [$uid, $error] = register_user($_POST['username'] ?? '', $_POST['password'] ?? '');
     if ($uid) {
         login_user($uid);
+        audit_log('register', 'info', [
+            'actor'     => trim((string) ($_POST['username'] ?? '')),
+            'actor_uid' => $uid,
+            'push'      => true,
+            'detail'    => 'New account registered',
+        ]);
         redirect($next);
     }
 }

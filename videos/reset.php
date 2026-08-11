@@ -8,6 +8,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     csrf_require();
     enforceRateLimit('videos_pwreset', 5, 3600);
     request_password_reset($_POST['username'] ?? '');
+    audit_log('pw_reset_request', 'info', [
+        'actor'  => trim((string) ($_POST['username'] ?? '')),
+        'detail' => 'Password reset requested',
+    ]);
     $sent = true;   // always show the same message (don't reveal whether the account exists)
 }
 

@@ -11,6 +11,10 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     if ($error === '') {
         videos_session_start();
         session_regenerate_id(true);   // rotate the session after a credential change
+        audit_log('pw_change', 'info', [
+            'actor' => $u['username'], 'actor_uid' => (int) $u['id'],
+            'detail' => 'User changed their own password',
+        ]);
         $ok = true;
     }
 }

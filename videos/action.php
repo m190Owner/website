@@ -124,10 +124,15 @@ switch ($action) {
 
     case 'ban':
     case 'unban': {
-        require_admin();
+        $me = require_admin();
         $uid = (int) ($_POST['user_id'] ?? 0);
         $db->prepare("UPDATE users SET is_banned = ? WHERE id = ? AND is_admin = 0")
            ->execute([$action === 'ban' ? 1 : 0, $uid]);
+        audit_log('user_' . $action, $action === 'ban' ? 'crit' : 'warn', [
+            'actor' => $me['username'], 'actor_uid' => (int) $me['id'],
+            'target' => mod_target($db, $uid),
+            'detail' => ($action === 'ban' ? 'Banned' : 'Unbanned') . ' user',
+        ]);
         redirect($back);
     }
 
@@ -150,29 +155,47 @@ switch ($action) {
                ->execute([$uid, $me['id'], $reason, time()]);
             // Auto-ban once the warning count reaches the threshold.
             $cnt = (int) $db->query("SELECT COUNT(*) FROM warnings WHERE user_id = " . $uid)->fetchColumn();
+            $autobanned = false;
             if ($cnt >= WARN_BAN_THRESHOLD) {
                 $db->prepare("UPDATE users SET is_banned = 1 WHERE id = ?")->execute([$uid]);
+                $autobanned = true;
             }
+            audit_log('user_warn', 'warn', [
+                'actor' => $me['username'], 'actor_uid' => (int) $me['id'],
+                'target' => mod_target($db, $uid),
+                'detail' => 'Warning issued' . ($reason !== '' ? ': ' . $reason : '') . ($autobanned ? ' (auto-banned at threshold)' : ''),
+            ]);
         }
         redirect($back);
     }
 
     case 'mute':
     case 'unmute': {
-        require_admin();
+        $me = require_admin();
         $uid = (int) ($_POST['user_id'] ?? 0);
         $db->prepare("UPDATE users SET is_muted = ? WHERE id = ? AND is_admin = 0")
            ->execute([$action === 'mute' ? 1 : 0, $uid]);
+        audit_log('user_' . $action, 'warn', [
+            'actor' => $me['username'], 'actor_uid' => (int) $me['id'],
+            'target' => mod_target($db, $uid),
+            'detail' => ($action === 'mute' ? 'Muted' : 'Unmuted') . ' user',
+        ]);
         redirect($back);
     }
 
     case 'delete_user_videos': {
-        require_admin();
+        $me = require_admin();
         $uid = (int) ($_POST['user_id'] ?? 0);
         $vs = $db->prepare("SELECT * FROM videos WHERE user_id = ? AND status = 'live'");
         $vs->execute([$uid]);
-        foreach ($vs->fetchAll() as $v) remove_video_files($v);
+        $removed = 0;
+        foreach ($vs->fetchAll() as $v) { remove_video_files($v); $removed++; }
         $db->prepare("UPDATE videos SET status = 'removed' WHERE user_id = ?")->execute([$uid]);
+        audit_log('videos_purge', 'warn', [
+            'actor' => $me['username'], 'actor_uid' => (int) $me['id'],
+            'target' => mod_target($db, $uid),
+            'detail' => "Removed all videos by user ($removed)",
+        ]);
         redirect($back);
     }
 
@@ -187,6 +210,14 @@ switch ($action) {
 }
 
 // ---- helpers ----
+/** Resolve a user id to a display name for audit-log targets. */
+function mod_target(PDO $db, int $uid): string {
+    $st = $db->prepare("SELECT username FROM users WHERE id = ?");
+    $st->execute([$uid]);
+    $n = $st->fetchColumn();
+    return $n !== false ? (string) $n : ('#' . $uid);
+}
+
 function video_exists(PDO $db, string $id): bool {
     $st = $db->prepare("SELECT 1 FROM videos WHERE id = ? AND status = 'live'");
     $st->execute([$id]);

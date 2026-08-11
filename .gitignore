@@ -48,3 +48,9 @@ jellyfin/config.php
 # Stack status snapshots pushed by the media-server agent (keep the deny .htaccess)
 jellyfin/data/*
 !jellyfin/data/.htaccess
+
+# Owner console secrets (password hash + #security webhook) — never commit
+owner/config.php
+# Audit-log SQLite (runtime) — keep the deny .htaccess
+owner/data/*
+!owner/data/.htaccess

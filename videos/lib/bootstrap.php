@@ -53,3 +53,7 @@ const THUMB_MIME_EXT = [
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/util.php';
 require_once __DIR__ . '/auth.php';
+
+// Security audit log (owner console). Cross-cutting: makes audit_log() available
+// to every videos endpoint. Defensive by design — audit_log() never throws.
+require_once __DIR__ . '/../../owner/lib/audit.php';

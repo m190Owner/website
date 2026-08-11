@@ -25,6 +25,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '')
     csrf_require();
     enforceRateLimit('videos_admin_reset', 60, 60);
     $resetCred = admin_reset_password($id);
+    if ($resetCred) {
+        audit_log('pw_reset_admin', 'warn', [
+            'actor' => $me['username'], 'actor_uid' => (int) $me['id'],
+            'target' => $resetCred['username'],
+            'detail' => 'Admin issued a temporary password',
+        ]);
+    }
 }
 
 $nvids = (int) $db->query("SELECT COUNT(*) FROM videos WHERE user_id = $id AND status = 'live'")->fetchColumn();

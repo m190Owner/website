@@ -1,0 +1,2 @@
+# The owner audit SQLite lives here. Never serve it over the web.
+Require all denied
