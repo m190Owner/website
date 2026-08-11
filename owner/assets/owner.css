@@ -101,3 +101,28 @@ a { color: inherit; }
   .ow-main { padding: 16px 12px 60px; }
   .ow-filters input { min-width: 0; flex: 1; }
 }
+
+/* ---- 2FA page ---- */
+.ow-narrow { max-width: 720px; }
+.ow-main h1 { font-size: 1.4rem; font-weight: 700; margin-bottom: 6px; }
+.ow-flash { border-radius: 8px; padding: 11px 14px; font-size: .9rem; margin-bottom: 18px; }
+.ow-flash a { color: inherit; font-weight: 600; }
+.ow-flash-ok   { background: rgba(59, 214, 122, .12); border: 1px solid rgba(59, 214, 122, .4); color: #86e5a9; }
+.ow-flash-warn { background: rgba(250, 166, 26, .12); border: 1px solid rgba(250, 166, 26, .4); color: #ffcf7a; }
+.ow-dot-warn { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); margin-left: 2px; vertical-align: middle; }
+
+.ow-steps { color: var(--muted); font-size: .9rem; line-height: 1.7; margin: 14px 0 20px 18px; }
+.ow-enroll { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+.ow-qr { background: #fff; padding: 10px; border-radius: 10px; line-height: 0; flex: 0 0 auto; }
+.ow-qr svg { display: block; width: 200px; height: 200px; }
+.ow-enroll-side { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 12px; }
+.ow-key { display: inline-block; font-family: var(--font-mono); font-size: 1rem; letter-spacing: 1px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; color: var(--accent-light); word-break: break-all; }
+.ow-hint { margin-top: 16px; }
+
+.ow-form { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.ow-form label { display: flex; flex-direction: column; gap: 6px; font-size: .82rem; color: var(--muted); width: 100%; max-width: 260px; }
+.ow-form input { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: 1.1rem; letter-spacing: 2px; padding: 10px 12px; outline: none; transition: border-color .2s; }
+.ow-form input:focus { border-color: var(--border-hover); }
+
+.ow-codes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-width: 420px; margin: 8px 0 22px; }
+.ow-codes code { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-family: var(--font-mono); font-size: 1rem; letter-spacing: 1px; text-align: center; color: var(--text); }

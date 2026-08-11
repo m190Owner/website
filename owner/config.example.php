@@ -15,7 +15,6 @@ return [
     // Optional. Local dev only: if your PHP has no CA bundle and the webhook TLS
     // verify fails, point this at one (e.g. Git's ca-bundle.crt). Prod hosts have one.
     // 'cainfo' => '/etc/ssl/certs/ca-certificates.crt',
-
-    // Reserved for the TOTP 2FA feature. Leave empty for now.
-    'totp_secret' => '',
 ];
+// Note: 2FA (TOTP secret + backup codes) is managed by /owner/2fa.php and stored
+// in the gitignored owner/data/owner_2fa.json — nothing to configure here.

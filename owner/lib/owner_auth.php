@@ -43,6 +43,17 @@ function owner_is_authed(): bool {
     return !empty($_SESSION['owner_ok']);
 }
 
+// ---- 2FA pending state: password OK, awaiting the code. A partial session that
+//      does NOT satisfy owner_is_authed(), so it can't reach /owner/. ----
+function owner_pending_begin(): void {
+    owner_session_start();
+    $_SESSION['owner_pending'] = time();
+}
+function owner_pending_active(int $ttl = 300): bool {
+    owner_session_start();
+    return !empty($_SESSION['owner_pending']) && (time() - (int) $_SESSION['owner_pending']) < $ttl;
+}
+
 /** Verify a submitted password against the configured hash (constant-time). */
 function owner_check_password(string $pw): bool {
     $hash = (string) (owner_config()['pass_hash'] ?? '');
@@ -53,6 +64,7 @@ function owner_check_password(string $pw): bool {
 function owner_login_ok(): void {
     owner_session_start();
     session_regenerate_id(true);
+    unset($_SESSION['owner_pending']);
     $_SESSION['owner_ok']    = true;
     $_SESSION['owner_since'] = time();
     $_SESSION['owner_csrf']  = bin2hex(random_bytes(32));

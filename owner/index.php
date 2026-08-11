@@ -1,6 +1,7 @@
 <?php
 // Owner console — security audit log viewer. Owner-gated.
 require __DIR__ . '/lib/audit.php';
+require __DIR__ . '/lib/owner_2fa.php';
 owner_require();
 
 $filters = [
@@ -41,11 +42,15 @@ function ow_qs(array $over): string {
   <div class="ow-brand"><span class="ow-lock-sm" aria-hidden="true">&#128274;</span> Owner Console <span class="ow-sep">/</span> Security Log</div>
   <div class="ow-nav-right">
     <span class="ow-dim"><?= number_format($total) ?> events</span>
+    <a class="ow-btn" href="/owner/2fa.php">&#128274; 2FA<?= owner_2fa_enabled() ? '' : ' <span class="ow-dot-warn" title="not enabled"></span>' ?></a>
     <a class="ow-btn" href="/owner/logout.php">Sign out</a>
   </div>
 </nav>
 
 <main class="ow-main">
+  <?php if (!owner_2fa_enabled()): ?>
+    <div class="ow-flash ow-flash-warn">Two-factor auth isn&rsquo;t enabled on this console. <a href="/owner/2fa.php">Set it up &rarr;</a></div>
+  <?php endif; ?>
   <form class="ow-filters" method="get">
     <select name="event" aria-label="Event type">
       <option value="">All events</option>

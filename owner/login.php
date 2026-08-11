@@ -1,26 +1,54 @@
 <?php
-// Owner console login. Password-only for now; the TOTP 2FA feature adds a second
-// step here. Independent of the videos accounts.
+// Owner console login. Two-step when 2FA is enrolled: password, then a TOTP or
+// backup code. Password-only until you enrol (so you can't lock yourself out).
 require __DIR__ . '/lib/audit.php';           // pulls owner_auth + gives audit_log()
+require __DIR__ . '/lib/owner_2fa.php';
 
 owner_session_start();
 if (owner_is_authed()) { header('Location: /owner/'); exit; }
 
 $error = '';
+$stage = owner_pending_active() ? 'code' : 'password';
+
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     owner_csrf_require();
-    enforceRateLimit('owner_login', 8, 600);   // 8 tries / 10 min
-    $pw = (string) ($_POST['password'] ?? '');
 
-    if (!owner_is_configured()) {
-        $error = 'The owner console has no password set yet. Create owner/config.php from config.example.php.';
-    } elseif (owner_check_password($pw)) {
-        owner_login_ok();
-        audit_log('owner_login', 'crit', ['actor' => 'owner', 'detail' => 'Owner console sign-in']);
-        header('Location: /owner/'); exit;
+    if (($_POST['step'] ?? '') === 'code' && owner_pending_active()) {
+        // Second step: verify the 2FA / backup code.
+        enforceRateLimit('owner_2fa', 6, 600);
+        $res = owner_2fa_check((string) ($_POST['code'] ?? ''));
+        if ($res['ok']) {
+            owner_login_ok();
+            audit_log('owner_login', 'crit', ['actor' => 'owner',
+                'detail' => 'Owner console sign-in (2FA' . ($res['backup'] ? ' backup code' : '') . ')']);
+            if ($res['backup']) {
+                audit_log('twofa_backup_used', 'warn', ['actor' => 'owner',
+                    'detail' => 'Backup code used — ' . owner_2fa_backup_remaining() . ' remaining']);
+            }
+            header('Location: /owner/'); exit;
+        }
+        $error = 'Invalid code. Try again.';
+        $stage = 'code';
+        audit_log('twofa_fail', 'warn', ['actor' => 'owner', 'detail' => 'Failed owner 2FA code']);
     } else {
-        $error = 'Incorrect password.';
-        audit_log('owner_login_fail', 'warn', ['detail' => 'Failed owner console sign-in']);
+        // First step: password.
+        enforceRateLimit('owner_login', 8, 600);
+        $pw = (string) ($_POST['password'] ?? '');
+        if (!owner_is_configured()) {
+            $error = 'The owner console has no password set yet. Create owner/config.php from config.example.php.';
+        } elseif (owner_check_password($pw)) {
+            if (owner_2fa_enabled()) {
+                owner_pending_begin();
+                $stage = 'code';
+            } else {
+                owner_login_ok();
+                audit_log('owner_login', 'crit', ['actor' => 'owner', 'detail' => 'Owner console sign-in']);
+                header('Location: /owner/'); exit;
+            }
+        } else {
+            $error = 'Incorrect password.';
+            audit_log('owner_login_fail', 'warn', ['detail' => 'Failed owner console sign-in']);
+        }
     }
 }
 ?><!DOCTYPE html>
@@ -39,11 +67,21 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <h1>Owner Console</h1>
     <?php if ($error): ?><div class="ow-error"><?= oe($error) ?></div><?php endif; ?>
     <?= owner_csrf_field() ?>
-    <label>Password
-      <input type="password" name="password" autofocus required maxlength="200">
-    </label>
-    <button type="submit">Sign in</button>
-    <p class="ow-dim">Private area. Access attempts are logged.</p>
+    <?php if ($stage === 'code'): ?>
+      <input type="hidden" name="step" value="code">
+      <label>Authenticator code
+        <input type="text" name="code" inputmode="numeric" autocomplete="one-time-code"
+               autofocus required maxlength="14" placeholder="6-digit code" pattern="[0-9A-Za-z \-]{6,14}">
+      </label>
+      <button type="submit">Verify</button>
+      <p class="ow-dim">Enter the 6-digit code from your authenticator, or a backup code.</p>
+    <?php else: ?>
+      <label>Password
+        <input type="password" name="password" autofocus required maxlength="200">
+      </label>
+      <button type="submit">Sign in</button>
+      <p class="ow-dim">Private area. Access attempts are logged.</p>
+    <?php endif; ?>
   </form>
 </body>
 </html>
