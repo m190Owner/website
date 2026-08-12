@@ -160,6 +160,30 @@ h2{font-size:1.1rem}
 .v-stat b{display:block; font-size:1.4rem}
 .v-stat span{color:var(--dim); font-size:.78rem}
 .v-section{margin:26px 0 12px; border-bottom:1px solid var(--border); padding-bottom:6px}
+
+/* ---- Personal dashboard (me.php) ---- */
+.v-dash-head{display:flex; align-items:center; gap:18px; margin-bottom:6px; flex-wrap:wrap}
+.v-dash-id{flex:1; min-width:200px}
+.v-dash-id h1{font-size:1.6rem; display:flex; align-items:center; gap:8px}
+.v-dash-actions{display:flex; gap:10px; flex-wrap:wrap}
+.v-stats{display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:12px; margin:18px 0 6px}
+.v-stat{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px 16px; display:flex; flex-direction:column; gap:4px}
+.v-stat-num{font-size:1.2rem; font-weight:700; white-space:nowrap}
+.v-stat-lbl{font-size:.7rem; color:var(--muted); text-transform:uppercase; letter-spacing:.5px}
+.v-dash-sec{margin-top:10px}
+.v-sec-head{display:flex; align-items:center; justify-content:space-between; gap:12px; margin:26px 0 14px; border-bottom:1px solid var(--border); padding-bottom:8px; flex-wrap:wrap}
+.v-sec-head .v-section{margin:0; border:none; padding:0}
+.v-sec-actions{display:flex; gap:8px; flex-wrap:wrap}
+.v-wallet{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:18px; display:flex; flex-direction:column; gap:9px}
+.v-wallet-bal{font-size:1.5rem}
+.v-wallet-bal b{color:var(--accent)}
+.v-net{color:var(--accent)}
+.v-items{display:flex; flex-wrap:wrap; gap:8px; margin-top:6px}
+.v-item-chip{display:inline-flex; align-items:center; gap:7px; background:var(--elevated); border:1px solid var(--border); border-radius:999px; padding:6px 12px; font-size:.82rem}
+.v-item-dot{width:8px; height:8px; border-radius:50%; flex:0 0 auto}
+.v-item-name{color:var(--text)}
+.v-item-val{color:var(--muted); font-size:.76rem}
+.v-item-more{align-self:center; color:var(--accent); font-size:.82rem; text-decoration:none; padding:6px 4px}
 .v-report-row{display:flex; justify-content:space-between; gap:14px; padding:14px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); margin-bottom:10px; flex-wrap:wrap}
 .v-report-main{flex:1; min-width:220px}
 .v-report-quote,.v-report-reason{margin:5px 0; font-size:.85rem}

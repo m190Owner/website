@@ -174,7 +174,7 @@ function render_header(string $title, string $active = ''): void {
       <a href="/videos/upload.php" class="v-btn v-btn-accent">↑ Upload</a>
       <?php if (!empty($u['is_admin'])): ?><a href="/videos/admin.php" class="v-btn">Admin</a><?php endif; ?>
       <a href="/videos/subscriptions.php" class="v-btn">Subs</a>
-      <a href="/videos/channel.php?u=<?= urlencode($u['username']) ?>" class="v-btn v-me"><?= e($u['username']) ?></a>
+      <a href="/videos/me.php" class="v-btn v-me" title="Your dashboard"><?= e($u['username']) ?></a>
       <a href="/videos/logout.php" class="v-btn">Logout</a>
     <?php else: ?>
       <a href="/videos/login.php" class="v-btn">Log in</a>

@@ -145,6 +145,13 @@ function inventory_list(int $uid): array {
     return $out;
 }
 
+/** Total base value of a user's inventory, in LS coins (single source of truth). */
+function inventory_value(int $uid): int {
+    $total = 0;
+    foreach (inventory_list($uid) as $it) $total += (int) $it['value'];
+    return $total;
+}
+
 /** Quick-sell an owned, unlisted item to the house for its base value. */
 function item_quicksell(int $uid, int $itemId): array {
     $st = videos_db()->prepare("SELECT item, listed FROM casino_items WHERE id = ? AND owner_id = ?");
