@@ -157,6 +157,31 @@ function jf_history_view(): array {
     return ['series' => $series, 'projection' => jf_disk_projection($hist)];
 }
 
+/** Build the weekly-digest embed from a snapshot (pure — testable). */
+function jf_digest_build(array $st): array {
+    $cs = $st['containers'] ?? [];
+    $up  = count(array_filter($cs, fn($c) => ($c['state'] ?? '') === 'running' && ($c['health'] ?? '') !== 'unhealthy'));
+    $tot = count($cs);
+    $v = $st['vpn'] ?? [];
+    $vpnStr = !empty($v['leak']) ? '🚨 LEAK — torrents ' . (!empty($v['killed']) ? 'auto-paused' : 'NOT paused')
+            : (!empty($v['ok']) ? 'connected' . (!empty($v['country']) ? ' (' . $v['country'] . ')' : '') : 'not confirmed');
+    $proj = jf_disk_projection(jf_history_read());
+    $md = $st['disk']['media'] ?? []; $hd = $st['disk']['host'] ?? [];
+    $diskLine = 'Media **' . (int) ($md['pct'] ?? 0) . '%**';
+    if ($proj['trend'] === 'filling' && $proj['daysToFull'] !== null) $diskLine .= ' · filling ~' . round(($proj['ratePerDay'] ?? 0) / 1e9, 1) . ' GB/day · full in **~' . $proj['daysToFull'] . 'd**';
+    elseif ($proj['trend'] === 'stable')    $diskLine .= ' · stable';
+    elseif ($proj['trend'] === 'shrinking') $diskLine .= ' · shrinking';
+    $diskLine .= ' · Host ' . (int) ($hd['pct'] ?? 0) . '%';
+    $js = $st['jellyseerr'] ?? null;
+    $reqLine = ($js && !empty($js['ok'])) ? (($js['counts']['total'] ?? 0) . ' requests (' . ($js['counts']['pending'] ?? 0) . ' pending, ' . ($js['counts']['processing'] ?? 0) . ' processing)') : '—';
+    $qerr = (int) ($st['services']['qbit']['err'] ?? 0);
+    $age = (int) ($st['ageSec'] ?? 0);
+    $desc = "**Containers:** {$up}/{$tot} up\n**VPN:** {$vpnStr}\n**Disk:** {$diskLine}\n**Requests:** {$reqLine}\n"
+          . ($qerr > 0 ? "**qBittorrent:** ⚠ {$qerr} errored torrent(s)\n" : '')
+          . '**Last agent report:** ' . ($age < 120 ? 'live' : round($age / 60) . 'm ago');
+    return ['color' => 0x5B8CFF, 'title' => '📊 Weekly media-server digest', 'desc' => $desc];
+}
+
 // ---- Alerting (container down / disk threshold -> Discord) ----
 const JF_DISK_RECOVER_MARGIN = 5;   // a volume "recovers" once it drops this many % below the alert line
 
@@ -209,6 +234,30 @@ function jf_compute_alerts(?array $old, array $new, int $diskPct): array {
     } elseif ($ol && !$nl) {
         $alerts[] = ['color' => 0x43D17A, 'title' => '🟢 VPN leak cleared',
                      'desc' => 'Torrent egress is back on the tunnel. Torrents stay paused until you resume them.'];
+    }
+
+    // qBittorrent errored torrents (error / missing-files), edge-triggered on the count.
+    $oe = (int) ($old['services']['qbit']['err'] ?? 0);
+    $ne = (int) ($new['services']['qbit']['err'] ?? 0);
+    if ($oe === 0 && $ne > 0) {
+        $alerts[] = ['color' => 0xE8B53F, 'title' => '🟠 ' . $ne . ' torrent' . ($ne === 1 ? '' : 's') . ' errored',
+                     'desc' => 'qBittorrent reports **' . $ne . '** torrent(s) in an error / missing-files state.'];
+    } elseif ($oe > 0 && $ne === 0) {
+        $alerts[] = ['color' => 0x43D17A, 'title' => '🟢 Torrent errors cleared', 'desc' => 'No more errored torrents in qBittorrent.'];
+    }
+
+    // New failed grabs/imports in the *arrs — one alert per newly-seen failure.
+    $failEv = ['failed', 'import failed'];
+    $oldFails = [];
+    foreach ($old['history'] ?? [] as $h) {
+        if (in_array($h['event'] ?? '', $failEv, true)) $oldFails[($h['svc'] ?? '') . '|' . ($h['title'] ?? '') . '|' . ($h['date'] ?? '')] = true;
+    }
+    foreach ($new['history'] ?? [] as $h) {
+        if (!in_array($h['event'] ?? '', $failEv, true)) continue;
+        $sig = ($h['svc'] ?? '') . '|' . ($h['title'] ?? '') . '|' . ($h['date'] ?? '');
+        if (isset($oldFails[$sig])) continue;
+        $alerts[] = ['color' => 0xE5555F, 'title' => '🔴 ' . ($h['svc'] ?? 'arr') . ': ' . ($h['event'] ?? 'failed'),
+                     'desc' => '**' . ($h['title'] ?: 'a release') . '** — ' . ($h['event'] ?? 'failed') . ' in ' . ($h['svc'] ?? 'the *arr') . '.'];
     }
     return $alerts;
 }

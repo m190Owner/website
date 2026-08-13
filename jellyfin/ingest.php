@@ -60,6 +60,7 @@ foreach (['qbit', 'sonarr', 'radarr', 'lidarr', 'prowlarr'] as $name) {
         'torrents'   => max(0, (int) ($x['torrents'] ?? 0)),
         'dl'         => max(0, (int) ($x['dl'] ?? 0)),
         'ul'         => max(0, (int) ($x['ul'] ?? 0)),
+        'err'        => max(0, (int) ($x['err'] ?? 0)),
         'queue'      => max(0, (int) ($x['queue'] ?? 0)),
         'indexers'   => max(0, (int) ($x['indexers'] ?? 0)),
         'health'     => max(0, (int) ($x['health'] ?? 0)),
