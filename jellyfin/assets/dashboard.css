@@ -99,6 +99,19 @@ code{background:var(--elevated);padding:1px 6px;border-radius:5px;font-size:.85e
 .jf-trend-proj{font-size:.82rem;color:var(--muted)}
 .jf-trend-proj b{color:var(--text)}
 
+/* Playback: recently watched + most-watched */
+.jf-playback{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.jf-pb-h{font-size:.72rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:0 0 8px}
+.jf-pb-recent,.jf-pb-top{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+.jf-pb-item{display:flex;gap:9px;align-items:center}
+.jf-pb-poster{width:34px;height:51px;object-fit:cover;border-radius:4px;background:var(--elevated);flex:0 0 auto}
+.jf-pb-main{min-width:0;display:flex;flex-direction:column;gap:1px}
+.jf-pb-title{font-size:.85rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jf-pb-topitem{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border)}
+.jf-pb-tt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.85rem}
+.jf-pb-plays{flex:0 0 auto;font-size:.82rem;color:var(--accent2);font-weight:700}
+@media (max-width:640px){.jf-playback{grid-template-columns:1fr}}
+
 /* Stack panel */
 .jf-stack-fresh.stale{color:var(--red)}
 .jf-vpn{display:flex;align-items:center;gap:12px;background:linear-gradient(90deg,rgba(67,209,122,.09),transparent);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:12px}

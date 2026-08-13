@@ -277,6 +277,24 @@
     renderRequests(st.jellyseerr);
   }
   async function loadStack() { var r = await api('stack'); if (r && r.ok) renderStack(r); }
+  // ---- playback stats (recently watched + most-watched) ----
+  function renderPlayback(pb) {
+    var sec = $('jf-playback-sec');
+    var recent = (pb && pb.recent) || [], top = (pb && pb.top) || [];
+    if (!recent.length && !top.length) { sec.style.display = 'none'; return; }
+    sec.style.display = '';
+    $('jf-pb-recent').innerHTML = recent.map(function (r) {
+      var img = r.id ? '/jellyfin/api.php?action=image&item=' + encodeURIComponent(r.id) + (r.tag ? '&tag=' + encodeURIComponent(r.tag) : '') : '';
+      return '<li class="jf-pb-item">' +
+        (img ? '<img class="jf-pb-poster" src="' + img + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">' : '<span class="jf-pb-poster"></span>') +
+        '<span class="jf-pb-main"><span class="jf-pb-title">' + (r.type === 'tv' ? '📺' : '🎬') + ' ' + esc(r.title) + '</span>' +
+        '<span class="jf-act-meta">👤 ' + esc(r.user) + ' · ' + ago(r.when) + '</span></span></li>';
+    }).join('') || '<li class="jf-empty">No recent plays.</li>';
+    $('jf-pb-top').innerHTML = top.map(function (t) {
+      return '<li class="jf-pb-topitem"><span class="jf-pb-tt">' + (t.type === 'tv' ? '📺' : '🎬') + ' ' + esc(t.title) + '</span><span class="jf-pb-plays">' + t.plays + '</span></li>';
+    }).join('') || '<li class="jf-empty">—</li>';
+  }
+  async function loadPlayback() { var r = await api('playback'); if (r && r.ok) renderPlayback(r.playback); }
 
   // qBittorrent card → expand/collapse the per-torrent list
   document.addEventListener('click', function (e) {
@@ -290,8 +308,10 @@
   loadOverview();
   loadStack();
   loadHistory();
+  loadPlayback();
   setInterval(loadOverview, 30000);
   setInterval(loadSessions, 5000);
   setInterval(loadStack, 20000);
   setInterval(loadHistory, 300000);
+  setInterval(loadPlayback, 300000);
 })();

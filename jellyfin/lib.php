@@ -377,6 +377,48 @@ function jf_sessions(): array {
 }
 
 /** Everything the dashboard needs in one call (used as the connection test too). */
+// ---- Playback stats: recently watched + most-watched, aggregated across users ----
+function jf_playback(): array {
+    $users = jf_get('/Users')['data'] ?? [];
+    if (!is_array($users)) return ['recent' => [], 'top' => []];
+    $recent = []; $agg = [];
+    foreach ($users as $u) {
+        $uid = $u['Id'] ?? ''; $uname = $u['Name'] ?? '?';
+        if ($uid === '') continue;
+        $r = jf_get("/Users/$uid/Items", ['SortBy' => 'PlayCount,DatePlayed', 'SortOrder' => 'Descending',
+            'Filters' => 'IsPlayed', 'Recursive' => 'true', 'IncludeItemTypes' => 'Movie,Episode',
+            'Limit' => 15, 'Fields' => 'UserData,SeriesName']);
+        foreach ($r['data']['Items'] ?? [] as $it) {
+            $ud = $it['UserData'] ?? [];
+            $isEp = ($it['Type'] ?? '') === 'Episode';
+            $series = (string) ($it['SeriesName'] ?? '');
+            $title = $isEp ? trim($series . ' · ' . ($it['Name'] ?? ''), ' ·') : (string) ($it['Name'] ?? '');
+            $recent[] = ['title' => mb_substr($title, 0, 100), 'user' => mb_substr((string) $uname, 0, 40),
+                'when' => (string) ($ud['LastPlayedDate'] ?? ''), 'type' => $isEp ? 'tv' : 'movie',
+                'id' => (string) ($it['Id'] ?? ''), 'tag' => (string) ($it['ImageTags']['Primary'] ?? '')];
+            $key = $isEp ? 's:' . $series : 'm:' . ($it['Name'] ?? '');
+            if (!isset($agg[$key])) $agg[$key] = ['title' => $isEp ? $series : (string) ($it['Name'] ?? ''), 'type' => $isEp ? 'tv' : 'movie', 'plays' => 0];
+            $agg[$key]['plays'] += (int) ($ud['PlayCount'] ?? 0);
+        }
+    }
+    usort($recent, fn($a, $b) => strcmp($b['when'], $a['when']));
+    $seen = []; $dedup = [];                                   // one row per (user,title) — keep newest
+    foreach ($recent as $r0) { $sig = $r0['user'] . '|' . $r0['title']; if (isset($seen[$sig])) continue; $seen[$sig] = 1; $dedup[] = $r0; }
+    $top = array_values(array_filter($agg, fn($p) => $p['plays'] > 0));
+    usort($top, fn($a, $b) => $b['plays'] <=> $a['plays']);
+    return ['recent' => array_slice($dedup, 0, 12), 'top' => array_slice($top, 0, 8)];
+}
+
+/** Cached playback stats (several API calls → cache ~10 min). */
+function jf_playback_cached(int $ttl = 600): array {
+    $path = __DIR__ . '/data/playback-cache.json';
+    $raw = @file_get_contents($path);
+    if ($raw !== false) { $c = json_decode($raw, true); if (is_array($c) && isset($c['data']) && (time() - (int) ($c['at'] ?? 0)) < $ttl) return $c['data']; }
+    $data = jf_playback();
+    @file_put_contents($path, json_encode(['at' => time(), 'data' => $data]));
+    return $data;
+}
+
 function jf_overview(): array {
     $info = jf_get('/System/Info');
     if (!$info['ok']) {

@@ -30,6 +30,9 @@ switch ($action) {
     case 'history':
         json_out(['ok' => true] + jf_history_view());
 
+    case 'playback':
+        json_out(['ok' => true, 'playback' => jf_playback_cached()]);
+
     // Poster/image proxy: GET so it can back an <img>. Read-only, admin-gated,
     // ids are sanitised, and only the Primary image is ever fetched.
     case 'image': {

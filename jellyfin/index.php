@@ -74,6 +74,14 @@ $configured = jf_configured();
     <ul class="jf-activity" id="jf-grabs"></ul>
   </section>
 
+  <section class="jf-section" id="jf-playback-sec" style="display:none">
+    <div class="jf-sec-head"><h2>Playback</h2></div>
+    <div class="jf-playback">
+      <div class="jf-pb-col"><h3 class="jf-pb-h">Recently watched</h3><ul class="jf-pb-recent" id="jf-pb-recent"></ul></div>
+      <div class="jf-pb-col"><h3 class="jf-pb-h">Most-watched</h3><ul class="jf-pb-top" id="jf-pb-top"></ul></div>
+    </div>
+  </section>
+
   <div class="jf-grid2">
     <section class="jf-section">
       <div class="jf-sec-head"><h2>Recent activity</h2></div>
