@@ -182,6 +182,23 @@ function jf_digest_build(array $st): array {
     return ['color' => 0x5B8CFF, 'title' => '📊 Weekly media-server digest', 'desc' => $desc];
 }
 
+// Weekly-digest cadence, driven by the agent's ingest heartbeat — no host cron.
+const JF_DIGEST_INTERVAL = 7 * 86400;
+function jf_digest_state_path(): string { return __DIR__ . '/data/digest-state.json'; }
+
+/** Send the digest if a week has elapsed since the last one; records the time.
+ *  Called from ingest.php on every agent report, so it fires ~once per week
+ *  without any external scheduler. (First report after deploy sends one.) */
+function jf_digest_maybe_send(string $webhook, array $st): void {
+    if ($webhook === '') return;
+    $path = jf_digest_state_path();
+    $raw  = @file_get_contents($path);
+    $last = $raw !== false ? (int) (json_decode($raw, true)['lastSent'] ?? 0) : 0;
+    if (time() - $last < JF_DIGEST_INTERVAL) return;               // not due yet
+    jf_discord_alert($webhook, jf_digest_build($st));             // domain-guarded internally
+    @file_put_contents($path, json_encode(['lastSent' => time()]));
+}
+
 // ---- Alerting (container down / disk threshold -> Discord) ----
 const JF_DISK_RECOVER_MARGIN = 5;   // a volume "recovers" once it drops this many % below the alert line
 

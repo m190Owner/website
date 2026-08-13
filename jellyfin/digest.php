@@ -1,8 +1,8 @@
 <?php
-// Weekly media-server digest → Discord. Run by a cron ON THE WEBSITE HOST (CLI =
-// trusted, no secret) or hit over HTTP with the shared secret. Reads the latest
-// snapshot + trend history and posts a one-embed summary. Composition lives in
-// jf_digest_build() (testable); this file just gates access and sends.
+// Manual / on-demand media-server digest → Discord. The AUTOMATIC weekly digest
+// is sent by ingest.php (jf_digest_maybe_send) off the agent's heartbeat — no
+// cron, nothing on the host. Hit this (CLI, or HTTP with the shared secret) only
+// to send one NOW, e.g. to test. Composition lives in jf_digest_build().
 require __DIR__ . '/../videos/lib/bootstrap.php';
 require __DIR__ . '/lib.php';
 
