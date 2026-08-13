@@ -140,6 +140,19 @@ function jf_compute_alerts(?array $old, array $new, int $diskPct): array {
                          'desc' => $label . ' dropped below ' . $recover . '% — ' . $free . '.'];
         }
     }
+
+    // VPN leak — torrent egress is not going through the tunnel (agent kill-switch).
+    $ol = !empty($old['vpn']['leak']);
+    $nl = !empty($new['vpn']['leak']);
+    if (!$ol && $nl) {
+        $killed = !empty($new['vpn']['killed']);
+        $alerts[] = ['color' => 0xE5555F, 'title' => '🔴 VPN leak detected',
+                     'desc' => 'Torrent egress IP matches the host — traffic is **not** going through the VPN.'
+                             . ($killed ? ' qBittorrent was **auto-paused** (kill-switch).' : ' qBittorrent could **not** be paused — check it now.')];
+    } elseif ($ol && !$nl) {
+        $alerts[] = ['color' => 0x43D17A, 'title' => '🟢 VPN leak cleared',
+                     'desc' => 'Torrent egress is back on the tunnel. Torrents stay paused until you resume them.'];
+    }
     return $alerts;
 }
 

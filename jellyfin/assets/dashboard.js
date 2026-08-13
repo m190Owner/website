@@ -213,13 +213,15 @@
     fresh.className = 'jf-dim jf-stack-fresh' + (stale ? ' stale' : '');
     var svcs = st.services || {};
 
-    var v = st.vpn || {}, vok = v.ok && v.ip;
-    vpnEl.className = 'jf-vpn' + (vok ? '' : ' bad');
-    vpnEl.innerHTML = '<span class="jf-vpn-ico">' + (vok ? '🔒' : '⚠️') + '</span><div class="jf-vpn-main">' +
-      '<div class="jf-vpn-title">VPN ' + (vok ? 'connected' : 'not confirmed') + '</div>' +
-      '<div class="jf-vpn-sub">' + (vok
-        ? 'torrent egress <span class="jf-vpn-ip">' + esc(v.ip) + '</span>' + (v.country ? ' · ' + esc(v.country) : '')
-        : 'gluetun egress IP could not be read') + '</div></div>';
+    var v = st.vpn || {}, vok = v.ok && v.ip, leak = !!v.leak;
+    vpnEl.className = 'jf-vpn' + ((leak || !vok) ? ' bad' : '');
+    vpnEl.innerHTML = '<span class="jf-vpn-ico">' + (leak ? '🚨' : vok ? '🔒' : '⚠️') + '</span><div class="jf-vpn-main">' +
+      '<div class="jf-vpn-title">' + (leak ? 'VPN LEAK' : 'VPN ' + (vok ? 'connected' : 'not confirmed')) + '</div>' +
+      '<div class="jf-vpn-sub">' + (leak
+        ? 'egress not tunneled' + (v.killed ? ' · qBittorrent auto-paused' : ' · qBittorrent NOT paused — act now')
+        : vok
+          ? 'torrent egress <span class="jf-vpn-ip">' + esc(v.ip) + '</span>' + (v.country ? ' · ' + esc(v.country) : '')
+          : 'gluetun egress IP could not be read') + '</div></div>';
 
     var qb = svcs.qbit, tl = $('jf-torrents');
     if (qb && qb.ok) {

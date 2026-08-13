@@ -42,6 +42,8 @@ $vpn = [
     'ip'      => $s($vpnIn['ip'] ?? '', 45),
     'country' => $s($vpnIn['country'] ?? '', 8),
     'city'    => $s($vpnIn['city'] ?? '', 64),
+    'leak'    => (bool) ($vpnIn['leak'] ?? false),   // torrent egress not tunneled
+    'killed'  => (bool) ($vpnIn['killed'] ?? false), // agent auto-paused qBittorrent
 ];
 
 // Per-service detail — whitelist a fixed set of numeric/string fields per service.
