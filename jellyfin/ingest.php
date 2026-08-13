@@ -104,12 +104,47 @@ $diskOne = function ($d) {
 $diskIn = is_array($in['disk'] ?? null) ? $in['disk'] : [];
 $disk = ['media' => $diskOne($diskIn['media'] ?? null), 'host' => $diskOne($diskIn['host'] ?? null)];
 
+// Jellyseerr request overview (read-only monitor). Nested under services on the
+// wire (like history). Whitelist counts + a capped list of {title,type,status,
+// user,poster}. Only tmdb poster PATHS are stored.
+$jsIn = is_array($svcIn['jellyseerr'] ?? null) ? $svcIn['jellyseerr'] : null;
+$jellyseerr = null;
+if ($jsIn !== null) {
+    $cIn = is_array($jsIn['counts'] ?? null) ? $jsIn['counts'] : [];
+    $reqs = [];
+    foreach (array_slice(is_array($jsIn['requests'] ?? null) ? $jsIn['requests'] : [], 0, 15) as $r) {
+        if (!is_array($r)) continue;
+        $reqs[] = [
+            'title'       => $s($r['title'] ?? '', 120),
+            'type'        => ($r['type'] ?? '') === 'tv' ? 'tv' : 'movie',
+            'mediaStatus' => max(0, min(5, (int) ($r['mediaStatus'] ?? 0))),
+            'reqStatus'   => max(0, min(5, (int) ($r['reqStatus'] ?? 0))),
+            'user'        => $s($r['user'] ?? '', 40),
+            'poster'      => $s($r['poster'] ?? '', 80),
+            'createdAt'   => $s($r['createdAt'] ?? '', 30),
+        ];
+    }
+    $jellyseerr = [
+        'ok'     => (bool) ($jsIn['ok'] ?? false),
+        'counts' => [
+            'total'      => max(0, (int) ($cIn['total'] ?? 0)),
+            'pending'    => max(0, (int) ($cIn['pending'] ?? 0)),
+            'processing' => max(0, (int) ($cIn['processing'] ?? 0)),
+            'available'  => max(0, (int) ($cIn['available'] ?? 0)),
+            'approved'   => max(0, (int) ($cIn['approved'] ?? 0)),
+            'declined'   => max(0, (int) ($cIn['declined'] ?? 0)),
+        ],
+        'requests' => $reqs,
+    ];
+}
+
 $snapshot = [
     'containers' => $containers,
     'vpn'        => $vpn,
     'services'   => $services,
     'history'    => $history,
     'disk'       => $disk,
+    'jellyseerr' => $jellyseerr,
     'host'       => $s($in['host'] ?? '', 40),
     'agentTime'  => (int) ($in['agentTime'] ?? 0),
 ];

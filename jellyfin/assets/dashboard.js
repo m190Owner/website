@@ -178,6 +178,27 @@
         '<span class="jf-act-meta">' + esc(h.title) + '</span><div class="jf-act-meta">' + ago(h.date) + '</div></li>';
     }).join('');
   }
+  // ---- Jellyseerr requests (read-only monitor) ----
+  function reqStatusLabel(ms) {
+    return ms >= 5 ? ['available', 'ok'] : ms === 4 ? ['partial', 'warn'] : ms === 3 ? ['processing', 'proc'] : ms === 2 ? ['pending', 'pend'] : ['requested', 'pend'];
+  }
+  function renderRequests(js) {
+    var sec = $('jf-req-sec'), wrap = $('jf-requests'), cnt = $('jf-req-counts');
+    if (!js || !js.ok || !(js.requests && js.requests.length)) { sec.style.display = 'none'; return; }
+    sec.style.display = '';
+    var c = js.counts || {};
+    cnt.textContent = (c.total || 0) + ' total' + (c.processing ? ' · ' + c.processing + ' processing' : '') + (c.pending ? ' · ' + c.pending + ' pending approval' : '') + (c.available ? ' · ' + c.available + ' available' : '');
+    wrap.innerHTML = js.requests.map(function (r) {
+      var st = reqStatusLabel(r.mediaStatus);
+      var poster = r.poster ? 'https://image.tmdb.org/t/p/w92' + r.poster : '';
+      return '<div class="jf-req">' +
+        (poster ? '<img class="jf-req-poster" src="' + esc(poster) + '" alt="" loading="lazy" onerror="this.style.visibility=\'hidden\'">' : '<div class="jf-req-poster"></div>') +
+        '<div class="jf-req-main"><div class="jf-req-title">' + (r.type === 'tv' ? '📺' : '🎬') + ' ' + esc(r.title) + '</div>' +
+        '<div class="jf-req-sub"><span class="jf-req-badge ' + st[1] + '">' + st[0] + '</span>' +
+        (r.reqStatus === 1 ? '<span class="jf-req-badge pend">needs approval</span>' : '') +
+        '<span class="jf-dim">👤 ' + esc(r.user) + ' · ' + ago(r.createdAt) + '</span></div></div></div>';
+    }).join('');
+  }
   function renderStack(r) {
     var fresh = $('jf-stack-fresh'), vpnEl = $('jf-vpn'), qbitEl = $('jf-qbit'), grid = $('jf-stack');
     var st = r && r.stack;
@@ -229,6 +250,7 @@
     }).join('') : '<p class="jf-empty">No containers reported.</p>';
 
     renderGrabs(st.history);
+    renderRequests(st.jellyseerr);
   }
   async function loadStack() { var r = await api('stack'); if (r && r.ok) renderStack(r); }
 

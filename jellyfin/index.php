@@ -63,6 +63,11 @@ $configured = jf_configured();
     <div class="jf-stack-grid" id="jf-stack"><p class="jf-dim">Loading…</p></div>
   </section>
 
+  <section class="jf-section" id="jf-req-sec" style="display:none">
+    <div class="jf-sec-head"><h2>Media requests</h2><span class="jf-dim" id="jf-req-counts"></span></div>
+    <div class="jf-requests" id="jf-requests"></div>
+  </section>
+
   <section class="jf-section" id="jf-grabs-sec" style="display:none">
     <div class="jf-sec-head"><h2>Recent downloads</h2></div>
     <ul class="jf-activity" id="jf-grabs"></ul>
