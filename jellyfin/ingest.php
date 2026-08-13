@@ -159,4 +159,5 @@ if ($webhook !== '') {
 }
 
 jf_stack_write($snapshot);
+jf_history_append($snapshot);   // rolling trend series (throttled to ~10 min)
 echo 'ok';

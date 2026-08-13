@@ -27,6 +27,9 @@ switch ($action) {
     case 'stack':
         json_out(['ok' => true, 'stack' => jf_stack_read()]);
 
+    case 'history':
+        json_out(['ok' => true] + jf_history_view());
+
     // Poster/image proxy: GET so it can back an <img>. Read-only, admin-gated,
     // ids are sanitised, and only the Primary image is ever fetched.
     case 'image': {

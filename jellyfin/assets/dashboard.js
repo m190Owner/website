@@ -168,6 +168,28 @@
       '<div class="jf-diskbar"><div class="jf-diskfill ' + cls + '" style="width:' + pct + '%"></div></div></div>';
   }
   function renderDisk(disk) { $('jf-disk').innerHTML = disk ? (diskBar('Media volume', disk.media) + diskBar('Host drive (C:)', disk.host)) : ''; }
+  // ---- trends: media-disk sparkline + fill projection ----
+  function sparkline(vals, w, h, color) {
+    if (!vals.length) return '';
+    var min = Math.min.apply(null, vals), max = Math.max.apply(null, vals), rng = (max - min) || 1;
+    var pts = vals.map(function (v, i) { var x = (i / ((vals.length - 1) || 1)) * w; var y = h - ((v - min) / rng) * (h - 4) - 2; return x.toFixed(1) + ',' + y.toFixed(1); }).join(' ');
+    return '<svg class="jf-spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '" preserveAspectRatio="none"><polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.5"/></svg>';
+  }
+  function renderTrends(r) {
+    var el = $('jf-trends'); if (!el) return;
+    var s = (r && r.series) || [], p = (r && r.projection) || {};
+    if (s.length < 2) { el.innerHTML = ''; return; }
+    var mp = s.map(function (x) { return x.mp; }), lastPct = mp[mp.length - 1];
+    var color = lastPct >= 90 ? 'var(--red)' : lastPct >= 78 ? 'var(--amber)' : 'var(--accent2)';
+    var proj = (p.trend === 'filling' && p.daysToFull != null)
+        ? 'Filling · ~' + fmtSize(p.ratePerDay) + '/day · <b>full in ~' + p.daysToFull + ' day' + (p.daysToFull === 1 ? '' : 's') + '</b>'
+      : p.trend === 'stable' ? 'Media disk usage is stable'
+      : p.trend === 'shrinking' ? 'Media disk usage is shrinking'
+      : 'Gathering trend data…';
+    el.innerHTML = '<span class="jf-dim jf-trend-lbl">Media disk trend</span>' + sparkline(mp, 180, 32, color) +
+      '<span class="jf-trend-proj">' + proj + '</span>';
+  }
+  async function loadHistory() { var r = await api('history'); if (r && r.ok) renderTrends(r); }
   function renderGrabs(hist) {
     var sec = $('jf-grabs-sec'), ul = $('jf-grabs');
     if (!hist || !hist.length) { sec.style.display = 'none'; return; }
@@ -267,7 +289,9 @@
 
   loadOverview();
   loadStack();
+  loadHistory();
   setInterval(loadOverview, 30000);
   setInterval(loadSessions, 5000);
   setInterval(loadStack, 20000);
+  setInterval(loadHistory, 300000);
 })();

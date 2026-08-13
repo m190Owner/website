@@ -100,6 +100,63 @@ function jf_stack_read(): ?array {
     return $d;
 }
 
+// ---- Trends: a rolling time-series for sparklines + a disk-fill projection ----
+function jf_history_path(): string { return __DIR__ . '/data/history.json'; }
+const JF_HISTORY_MIN_GAP = 600;    // append at most one point per 10 minutes
+const JF_HISTORY_MAX     = 2500;   // ~17 days at that spacing
+
+function jf_history_read(): array {
+    $r = @file_get_contents(jf_history_path());
+    $d = $r === false ? null : json_decode($r, true);
+    return is_array($d) ? $d : [];
+}
+
+/** Append a compact metrics point from a snapshot — throttled + pruned. */
+function jf_history_append(array $snap): void {
+    $hist = jf_history_read();
+    $now  = time();
+    $last = $hist ? end($hist) : null;
+    if ($last && ($now - (int) ($last['t'] ?? 0)) < JF_HISTORY_MIN_GAP) return;   // throttle
+    $m = $snap['disk']['media'] ?? [];
+    if (empty($m['total'])) return;                                                // no disk reading → skip
+    $h = $snap['disk']['host'] ?? [];
+    $q = $snap['services']['qbit'] ?? [];
+    $hist[] = ['t' => $now,
+        'mu' => (int) ($m['used'] ?? 0), 'mt' => (int) ($m['total'] ?? 0), 'mp' => (int) ($m['pct'] ?? 0),
+        'hp' => (int) ($h['pct'] ?? 0), 'qd' => (int) ($q['down'] ?? 0), 'qu' => (int) ($q['up'] ?? 0)];
+    if (count($hist) > JF_HISTORY_MAX) $hist = array_slice($hist, -JF_HISTORY_MAX);
+    $tmp = jf_history_path() . '.' . getmypid() . '.tmp';
+    if (file_put_contents($tmp, json_encode($hist)) !== false) @rename($tmp, jf_history_path());
+}
+
+/** Least-squares projection of when the media volume fills, from the recent series. */
+function jf_disk_projection(array $series): array {
+    $cutoff = time() - 7 * 86400;
+    $pts = array_values(array_filter($series, fn($p) => ($p['t'] ?? 0) >= $cutoff && !empty($p['mt'])));
+    if (count($pts) < 4) return ['trend' => 'gathering', 'daysToFull' => null, 'ratePerDay' => 0];
+    $t0 = (int) $pts[0]['t'];
+    if (((int) end($pts)['t'] - $t0) < 6 * 3600) return ['trend' => 'gathering', 'daysToFull' => null, 'ratePerDay' => 0];
+    $n = count($pts); $sx = $sy = $sxx = $sxy = 0.0;
+    foreach ($pts as $p) { $x = (int) $p['t'] - $t0; $y = (float) $p['mu']; $sx += $x; $sy += $y; $sxx += $x * $x; $sxy += $x * $y; }
+    $den = $n * $sxx - $sx * $sx;
+    $slope = $den != 0.0 ? ($n * $sxy - $sx * $sy) / $den : 0.0;      // bytes/sec
+    $ratePerDay = (int) ($slope * 86400);
+    if ($slope <= 0 || $ratePerDay < 1e8) {                          // < ~0.1 GB/day → stable
+        return ['trend' => $slope < 0 ? 'shrinking' : 'stable', 'daysToFull' => null, 'ratePerDay' => $ratePerDay];
+    }
+    $last = end($pts);
+    $days = ((float) $last['mt'] - (float) $last['mu']) / $slope / 86400;
+    return ['trend' => 'filling', 'daysToFull' => max(0, (int) round($days)), 'ratePerDay' => $ratePerDay];
+}
+
+/** Client-facing trends: a capped series (for sparklines) + the disk projection. */
+function jf_history_view(): array {
+    $hist = jf_history_read();
+    $series = array_map(fn($p) => ['t' => (int) ($p['t'] ?? 0), 'mp' => (int) ($p['mp'] ?? 0),
+        'hp' => (int) ($p['hp'] ?? 0), 'qd' => (int) ($p['qd'] ?? 0)], array_slice($hist, -300));
+    return ['series' => $series, 'projection' => jf_disk_projection($hist)];
+}
+
 // ---- Alerting (container down / disk threshold -> Discord) ----
 const JF_DISK_RECOVER_MARGIN = 5;   // a volume "recovers" once it drops this many % below the alert line
 

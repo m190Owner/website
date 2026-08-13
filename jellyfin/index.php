@@ -60,6 +60,7 @@ $configured = jf_configured();
     <div class="jf-cards2"><div id="jf-vpn"></div><div id="jf-qbit"></div></div>
     <div class="jf-torrents" id="jf-torrents" style="display:none"></div>
     <div class="jf-disk" id="jf-disk"></div>
+    <div class="jf-trends" id="jf-trends"></div>
     <div class="jf-stack-grid" id="jf-stack"><p class="jf-dim">Loading…</p></div>
   </section>
 
