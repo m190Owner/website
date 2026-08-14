@@ -199,6 +199,58 @@ function jf_digest_maybe_send(string $webhook, array $st): void {
     @file_put_contents($path, json_encode(['lastSent' => time()]));
 }
 
+// ---- Jellyfin access → owner security audit log (throttled, ingest-driven) ----
+function jf_access_state_path(): string { return __DIR__ . '/data/access-sync.json'; }
+const JF_ACCESS_SYNC_GAP = 300;   // poll Jellyfin's activity log at most every 5 min
+
+/** Pull new Jellyfin session / failed-auth events and record them in the owner
+ *  audit log — with new-device detection. Best-effort; never breaks the caller.
+ *  Called from ingest.php off the agent heartbeat, so no host cron is needed. */
+function jf_sync_access(): void {
+    try {
+        if (!function_exists('audit_log') || !jf_configured()) return;
+        $path = jf_access_state_path();
+        $raw = @file_get_contents($path);
+        $state = ($raw !== false && is_array($d = json_decode($raw, true))) ? $d : [];
+        if (time() - (int) ($state['at'] ?? 0) < JF_ACCESS_SYNC_GAP) return;
+
+        $lastId   = (int) ($state['lastId'] ?? 0);
+        $known    = is_array($state['devices'] ?? null) ? $state['devices'] : [];
+        $firstRun = ($raw === false);                        // no state file yet → seed only
+
+        $items = jf_get('/System/ActivityLog/Entries', ['limit' => 40])['data']['Items'] ?? [];
+        if (!is_array($items)) return;
+        usort($items, fn($a, $b) => ((int) ($a['Id'] ?? 0)) <=> ((int) ($b['Id'] ?? 0)));  // oldest first
+        $maxId = $lastId;
+        foreach ($items as $e) {
+            $id = (int) ($e['Id'] ?? 0);
+            if ($id <= $lastId) continue;
+            $maxId = max($maxId, $id);
+            $type = (string) ($e['Type'] ?? '');
+            $name = (string) ($e['Name'] ?? '');
+            if ($type === 'SessionStarted' || $type === 'AuthenticationSucceeded') {
+                $user = $name; $device = '';
+                if (preg_match('/^(.+?) is online from (.+)$/', $name, $m)) { $user = $m[1]; $device = $m[2]; }
+                $devKey = strtolower($user . '|' . $device);
+                $isNew = $device !== '' && !isset($known[$devKey]);
+                if ($device !== '') $known[$devKey] = 1;
+                if ($firstRun) continue;                     // seed known devices, don't backfill old sessions
+                audit_log($isNew ? 'jellyfin_new_device' : 'jellyfin_session', $isNew ? 'warn' : 'info', [
+                    'actor' => mb_substr($user, 0, 60), 'target' => mb_substr($device, 0, 80), 'ip' => '',
+                    'detail' => ($isNew ? '🆕 NEW device — ' : '') . 'Jellyfin session' . ($device !== '' ? ' from ' . $device : ''),
+                    'push' => $isNew,
+                ]);
+            } elseif ($type === 'AuthenticationFailed') {
+                if ($firstRun) continue;
+                audit_log('jellyfin_login_fail', 'warn', ['ip' => '', 'detail' => 'Jellyfin: ' . mb_substr($name, 0, 200), 'push' => true]);
+            }
+        }
+        @file_put_contents($path, json_encode(['at' => time(), 'lastId' => $maxId, 'devices' => $known]));
+    } catch (\Throwable $e) {
+        // best-effort — must never break ingest
+    }
+}
+
 // ---- Alerting (container down / disk threshold -> Discord) ----
 const JF_DISK_RECOVER_MARGIN = 5;   // a volume "recovers" once it drops this many % below the alert line
 

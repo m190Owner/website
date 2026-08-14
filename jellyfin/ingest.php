@@ -162,4 +162,5 @@ if ($webhook !== '') {
 jf_stack_write($snapshot);
 jf_history_append($snapshot);              // rolling trend series (throttled to ~10 min)
 jf_digest_maybe_send($webhook, $snapshot); // weekly digest, ingest-driven (no host cron)
+jf_sync_access();                          // Jellyfin logins/new devices → owner audit log
 echo 'ok';
