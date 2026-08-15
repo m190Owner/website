@@ -5,7 +5,8 @@
 require __DIR__ . '/../videos/lib/bootstrap.php';
 require __DIR__ . '/lib.php';
 
-require_admin();                       // 403 for anyone who isn't the owner
+// Owner 2FA session once the owner console is configured, else the videos admin.
+if (owner_is_configured()) owner_require(); else require_admin();
 enforceRateLimit('jf_api', 300, 60);
 
 $action = $_REQUEST['action'] ?? '';
@@ -53,7 +54,7 @@ switch ($action) {
 // ---- writes (state-changing): admin + CSRF ----
 $writes = ['stop', 'pause', 'unpause', 'message', 'scan', 'restart'];
 if (in_array($action, $writes, true)) {
-    csrf_require(true);
+    if (owner_is_configured()) owner_csrf_require(); else csrf_require(true);
     enforceRateLimit('jf_write', 60, 60);
 
     switch ($action) {

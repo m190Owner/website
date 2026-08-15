@@ -30,7 +30,7 @@ function owner_session_start(): void {
     session_name('ownersess');                    // distinct from the videos 'vidsess'
     session_set_cookie_params([
         'lifetime' => 0,
-        'path'     => '/owner/',                  // scope the cookie to the console only
+        'path'     => '/',                        // site-wide so it can also gate /jellyfin/ (owner 2FA)
         'httponly' => true,
         'samesite' => 'Lax',
         'secure'   => owner_https(),

@@ -2,7 +2,10 @@
 require __DIR__ . '/../videos/lib/bootstrap.php';
 require __DIR__ . '/lib.php';
 
-$me = require_admin();     // owner only
+// Gate on the 2FA-protected owner session once the owner console is configured;
+// fall back to the videos admin until then (so this can't lock you out pre-setup).
+if (owner_is_configured()) { owner_require(); $who = 'owner'; $csrf = owner_csrf_token(); }
+else { $me = require_admin(); $who = $me['username']; $csrf = csrf_token(); }
 $configured = jf_configured();
 ?><!DOCTYPE html>
 <html lang="en">
@@ -12,7 +15,7 @@ $configured = jf_configured();
 <title>Jellyfin · Logan Sandivar</title>
 <meta name="robots" content="noindex,nofollow">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<meta name="csrf" content="<?= e(csrf_token()) ?>">
+<meta name="csrf" content="<?= e($csrf) ?>">
 <link rel="stylesheet" href="/jellyfin/assets/dashboard.css?v=<?= @filemtime(__DIR__ . '/assets/dashboard.css') ?: 1 ?>">
 </head>
 <body>
@@ -23,7 +26,7 @@ $configured = jf_configured();
     <span class="jf-status<?= $configured ? '' : ' err' ?>" id="jf-conn"><span class="jf-dot"></span> <?= $configured ? 'connecting…' : 'not configured' ?></span>
   </div>
   <div class="jf-top-r">
-    <span class="jf-dim">signed in as <?= e($me['username']) ?></span>
+    <span class="jf-dim">signed in as <?= e($who) ?></span>
     <a href="https://logansandivar.duckdns.org" target="_blank" rel="noopener" class="jf-btn jf-btn-sm">Open Jellyfin ↗</a>
   </div>
 </header>
