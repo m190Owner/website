@@ -42,7 +42,8 @@ function ow_qs(array $over): string {
   <div class="ow-brand"><span class="ow-lock-sm" aria-hidden="true">&#128274;</span> Owner Console <span class="ow-sep">/</span> Security Log</div>
   <div class="ow-nav-right">
     <span class="ow-dim"><?= number_format($total) ?> events</span>
-    <a class="ow-btn" href="/owner/media.php">🎬 Media</a>
+    <a class="ow-btn" href="/jellyfin/">🎬 Dashboard</a>
+    <a class="ow-btn" href="/owner/media.php">🎛 Controls</a>
     <a class="ow-btn" href="/owner/2fa.php">&#128274; 2FA<?= owner_2fa_enabled() ? '' : ' <span class="ow-dot-warn" title="not enabled"></span>' ?></a>
     <a class="ow-btn" href="/owner/logout.php">Sign out</a>
   </div>

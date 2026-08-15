@@ -5,7 +5,8 @@ require __DIR__ . '/lib/audit.php';           // pulls owner_auth + gives audit_
 require __DIR__ . '/lib/owner_2fa.php';
 
 owner_session_start();
-if (owner_is_authed()) { header('Location: /owner/'); exit; }
+$next = owner_safe_next($_REQUEST['next'] ?? '');
+if (owner_is_authed()) { header('Location: ' . $next); exit; }
 
 $error = '';
 $stage = owner_pending_active() ? 'code' : 'password';
@@ -25,7 +26,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
                 audit_log('twofa_backup_used', 'warn', ['actor' => 'owner',
                     'detail' => 'Backup code used — ' . owner_2fa_backup_remaining() . ' remaining']);
             }
-            header('Location: /owner/'); exit;
+            header('Location: ' . $next); exit;
         }
         $error = 'Invalid code. Try again.';
         $stage = 'code';
@@ -43,7 +44,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
             } else {
                 owner_login_ok();
                 audit_log('owner_login', 'crit', ['actor' => 'owner', 'detail' => 'Owner console sign-in']);
-                header('Location: /owner/'); exit;
+                header('Location: ' . $next); exit;
             }
         } else {
             $error = 'Incorrect password.';
@@ -67,6 +68,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     <h1>Owner Console</h1>
     <?php if ($error): ?><div class="ow-error"><?= oe($error) ?></div><?php endif; ?>
     <?= owner_csrf_field() ?>
+    <input type="hidden" name="next" value="<?= oe($next) ?>">
     <?php if ($stage === 'code'): ?>
       <input type="hidden" name="step" value="code">
       <label>Authenticator code

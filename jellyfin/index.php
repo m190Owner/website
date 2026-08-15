@@ -27,6 +27,7 @@ $configured = jf_configured();
   </div>
   <div class="jf-top-r">
     <span class="jf-dim">signed in as <?= e($who) ?></span>
+    <?php if ($who === 'owner'): ?><a href="/owner/media.php" class="jf-btn jf-btn-sm">🎛 Controls</a><a href="/owner/" class="jf-btn jf-btn-sm">🛡 Security</a><?php endif; ?>
     <a href="https://logansandivar.duckdns.org" target="_blank" rel="noopener" class="jf-btn jf-btn-sm">Open Jellyfin ↗</a>
   </div>
 </header>

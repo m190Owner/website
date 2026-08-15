@@ -75,17 +75,36 @@ function owner_logout(): void {
     $_SESSION = [];
     if (ini_get('session.use_cookies')) {
         $p = session_get_cookie_params();
-        setcookie(session_name(), '', time() - 42000, $p['path'], $p['domain'] ?? '', $p['secure'], $p['httponly']);
+        // Expire the cookie at the current site-wide path AND the legacy /owner/ path,
+        // so a stale narrow cookie from before the path change can't linger and shadow it.
+        foreach (['/', '/owner/'] as $path) {
+            setcookie(session_name(), '', time() - 42000, $path, $p['domain'] ?? '', $p['secure'], $p['httponly']);
+        }
     }
     session_destroy();
 }
 
-/** Gate a page: send to the login if not authenticated. */
+/** Gate a page: send to the login if not authenticated, remembering where to return. */
 function owner_require(): void {
     if (!owner_is_authed()) {
-        header('Location: /owner/login.php');
+        $q = '';
+        $uri = (string) ($_SERVER['REQUEST_URI'] ?? '');
+        // Only bounce back to a real page (GET) and only to a local same-site path.
+        if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'GET' && owner_safe_next($uri) !== '/owner/') {
+            $q = '?next=' . rawurlencode($uri);
+        }
+        header('Location: /owner/login.php' . $q);
         exit;
     }
+}
+
+/** Validate a post-login redirect target: a local same-site path only (no open redirect). */
+function owner_safe_next(?string $n): string {
+    $n = (string) $n;
+    if ($n !== '' && $n[0] === '/' && !str_starts_with($n, '//') && !str_starts_with($n, '/\\')) {
+        return $n;
+    }
+    return '/owner/';
 }
 
 // ---- CSRF (owner area) ----
