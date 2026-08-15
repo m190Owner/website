@@ -52,6 +52,10 @@ jellyfin/config.php
 jellyfin/data/*
 !jellyfin/data/.htaccess
 
+# Threat map runtime cache (aggregated public feeds) — keep the deny .htaccess
+threatmap/data/*
+!threatmap/data/.htaccess
+
 # Owner console secrets (password hash + #security webhook) — never commit
 owner/config.php
 # Audit-log SQLite (runtime) — keep the deny .htaccess
