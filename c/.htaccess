@@ -1,0 +1,10 @@
+# Route /c/{id} → index.php?t={id} (booby-trapped canary links). No secrets here.
+Options -Indexes
+RewriteEngine On
+RewriteBase /c/
+# Already the handler or a real file? leave it alone.
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_URI} =/c/index.php
+RewriteRule ^ - [L]
+# /c/<token> (optionally with a trailing slash or a fake extension) → handler.
+RewriteRule ^([A-Za-z0-9_-]+)(?:\.[A-Za-z0-9]+)?/?$ index.php?t=$1 [L,QSA]

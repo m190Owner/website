@@ -1,0 +1,8 @@
+# Route /t/{id}.gif → index.php?t={id} (tracking pixels). No secrets here.
+Options -Indexes
+RewriteEngine On
+RewriteBase /t/
+RewriteCond %{REQUEST_URI} =/t/index.php
+RewriteRule ^ - [L]
+# /t/<token>.gif (or bare /t/<token>) → handler.
+RewriteRule ^([A-Za-z0-9_-]+)(?:\.gif)?$ index.php?t=$1 [L,QSA]

@@ -3,6 +3,9 @@
 # Allow lab access-control .htaccess files (no secrets, just headers/Require rules)
 !lab/.htaccess
 !lab/*/.htaccess
+# Honeytoken routing .htaccess (no secrets, just rewrite rules for /c/ and /t/)
+!c/.htaccess
+!t/.htaccess
 
 # Runtime data
 github_cache.json

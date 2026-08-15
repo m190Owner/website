@@ -145,3 +145,46 @@ a { color: inherit; }
 .ow-sev-ok { background: rgba(59,214,122,.16); color: #86e5a9; border: 1px solid rgba(59,214,122,.4); }
 .ow-sev-pend { background: rgba(255,255,255,.08); color: var(--muted); border: 1px solid var(--border); }
 @media (max-width: 560px) { .ow-ctl-row { flex-wrap: wrap; } .ow-cgrid { grid-template-columns: 1fr; } }
+
+/* ---- Honeytokens page ---- */
+.ow-btn-sm { padding: 6px 11px; font-size: .78rem; }
+.ow-btn-danger { border-color: rgba(229,85,95,.4); color: #ff9ba0; }
+.ow-btn-danger:hover { border-color: var(--crit); background: rgba(229,85,95,.12); }
+
+.ow-tok-intro { font-size: .84rem; line-height: 1.5; margin: 4px 0 8px; max-width: 780px; }
+.ow-tok-intro b { color: var(--accent-light); }
+
+.ow-tok-mint { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 6px; }
+.ow-tok-mint select, .ow-tok-mint input { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-size: .88rem; padding: 9px 11px; outline: none; }
+.ow-tok-mint select:focus, .ow-tok-mint input:focus { border-color: var(--border-hover); }
+.ow-tok-memo { flex: 1 1 320px; min-width: 200px; }
+
+.ow-tok { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 10px; }
+.ow-tok-off { opacity: .6; }
+.ow-tok-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.ow-tok-title { font-size: .9rem; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ow-tok-title .ow-dim { font-weight: 400; }
+.ow-tok-ico { font-size: 1.05rem; }
+.ow-tok-head-r { display: flex; gap: 6px; flex: 0 0 auto; align-items: center; }
+
+.ow-tok-art { margin: 12px 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.ow-tok-lbl { font-size: .78rem; color: var(--muted); }
+.ow-tok-lbl code { font-family: var(--font-mono); background: var(--bg); padding: 1px 5px; border-radius: 4px; }
+.ow-copy { display: flex; gap: 6px; max-width: 640px; }
+.ow-copy input { flex: 1 1 auto; min-width: 0; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--accent-light); font-family: var(--font-mono); font-size: .8rem; padding: 8px 10px; outline: none; }
+.ow-copy-btn { flex: 0 0 auto; }
+.ow-tok-qr { background: #fff; display: inline-block; padding: 8px; border-radius: 8px; width: max-content; }
+.ow-tok-qr svg { display: block; width: 132px; height: 132px; }
+
+.ow-tok-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-top: 1px solid var(--border); padding-top: 10px; }
+.ow-tok-foot-r { display: flex; gap: 6px; }
+
+.ow-tok-hits { margin-top: 10px; }
+.ow-tok-hits summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
+.ow-tok-hits .ow-table { margin-top: 8px; }
+
+@media (max-width: 560px) {
+  .ow-tok-mint { flex-direction: column; align-items: stretch; }
+  .ow-tok-memo { flex-basis: auto; }
+  .ow-copy { flex-wrap: wrap; }
+}

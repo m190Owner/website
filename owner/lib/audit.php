@@ -18,6 +18,7 @@ const AUDIT_THROTTLE = [
     'owner_login_fail' => 900,
     'twofa_fail'       => 900,
     'csrf_fail'        => 1800,
+    'honeytoken'       => 300,   // a scanner hammering a tripwire pings once per 5 min
 ];
 
 function owner_audit_db(): ?PDO {
