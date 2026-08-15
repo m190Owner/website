@@ -35,7 +35,7 @@ function ow_qs(array $over): string {
 <meta name="robots" content="noindex, nofollow">
 <title>Security Log · Owner Console</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/owner/assets/owner.css">
+<link rel="stylesheet" href="/owner/assets/owner.css?v=<?= @filemtime(__DIR__ . '/assets/owner.css') ?: 1 ?>">
 </head>
 <body>
 <nav class="ow-nav">

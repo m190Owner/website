@@ -59,7 +59,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <meta name="robots" content="noindex, nofollow">
 <title>Owner Console</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/owner/assets/owner.css">
+<link rel="stylesheet" href="/owner/assets/owner.css?v=<?= @filemtime(__DIR__ . '/assets/owner.css') ?: 1 ?>">
 </head>
 <body class="ow-centered">
   <form class="ow-login" method="post" autocomplete="off">

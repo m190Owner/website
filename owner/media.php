@@ -58,7 +58,7 @@ $statusCls = ['done' => 'ok', 'failed' => 'crit', 'queued' => 'pend', 'claimed' 
 <meta name="robots" content="noindex, nofollow">
 <title>Media Control · Owner Console</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
-<link rel="stylesheet" href="/owner/assets/owner.css">
+<link rel="stylesheet" href="/owner/assets/owner.css?v=<?= @filemtime(__DIR__ . '/assets/owner.css') ?: 1 ?>">
 </head>
 <body>
 <nav class="ow-nav">
@@ -86,11 +86,12 @@ $statusCls = ['done' => 'ok', 'failed' => 'crit', 'queued' => 'pend', 'claimed' 
     <?php endif; ?>
 
     <h2 class="ow-mh">Containers <span class="ow-dim">(restart)</span></h2>
-    <div class="ow-ctl-list">
+    <div class="ow-cgrid">
       <?php foreach ($containers as $c): $n = $c['name'] ?? ''; if (!in_array($n, JF_CONTAINERS, true)) continue;
         $running = ($c['state'] ?? '') === 'running'; ?>
-        <div class="ow-ctl-row"><span class="ow-ctl-name"><span class="ow-cdot <?= $running ? 'up' : 'down' ?>"></span><?= oe($n) ?> <span class="ow-dim"><?= oe($c['state'] ?? '') ?></span></span>
-          <span class="ow-ctl-btns"><?= cbtn('container_restart', ['name' => $n, 'label' => $n], '↻ Restart', 'ow-btn', 'Restart ' . $n . '? Streams from it drop briefly.') ?></span>
+        <div class="ow-ccard">
+          <span class="ow-ccard-name"><span class="ow-cdot <?= $running ? 'up' : 'down' ?>" title="<?= oe($c['state'] ?? '') ?>"></span><?= oe($n) ?></span>
+          <?= cbtn('container_restart', ['name' => $n, 'label' => $n], '↻ Restart', 'ow-btn', 'Restart ' . $n . '? Streams from it drop briefly.') ?>
         </div>
       <?php endforeach; ?>
     </div>
