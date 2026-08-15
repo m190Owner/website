@@ -251,6 +251,98 @@ function jf_sync_access(): void {
     }
 }
 
+// ---- Owner control channel: an allowlisted command queue. Enqueued ONLY by the
+//      owner console (2FA-gated), pulled + executed locally by the agent, audited.
+//      Never carries shell — actions + args are validated against a fixed list.
+function jf_cmd_path(): string { return __DIR__ . '/data/commands.json'; }
+const JF_CONTAINERS = ['sonarr', 'radarr', 'lidarr', 'prowlarr', 'bazarr', 'qbittorrent', 'gluetun', 'jellyseerr', 'jellyfin', 'flaresolverr'];
+
+/** Validate + normalise an action against the fixed allowlist. Null = rejected. */
+function jf_cmd_validate(string $action, array $args): ?array {
+    switch ($action) {
+        case 'jellyseerr_approve':
+        case 'jellyseerr_decline':
+            $id = (int) ($args['id'] ?? 0);
+            return $id > 0 ? ['id' => $id] : null;
+        case 'container_restart':
+            $n = (string) ($args['name'] ?? '');
+            return in_array($n, JF_CONTAINERS, true) ? ['name' => $n] : null;
+        case 'torrent_pause':
+        case 'torrent_resume':
+        case 'torrent_delete':
+            $h = strtolower((string) ($args['hash'] ?? ''));
+            return preg_match('/^[a-f0-9]{40}$/', $h) ? ['hash' => $h] : null;
+        default:
+            return null;
+    }
+}
+
+function jf_cmd_read(): array {
+    $r = @file_get_contents(jf_cmd_path());
+    $d = $r === false ? null : json_decode($r, true);
+    return is_array($d) ? $d : [];
+}
+function jf_cmd_write(array $cmds): void {
+    $tmp = jf_cmd_path() . '.' . getmypid() . '.tmp';
+    if (file_put_contents($tmp, json_encode(array_values($cmds))) !== false) @rename($tmp, jf_cmd_path());
+}
+
+/** Drop finished commands after 30 min; expire queued/claimed ones after 15 min. */
+function jf_cmd_prune(array $cmds): array {
+    $now = time(); $out = [];
+    foreach ($cmds as $c) {
+        $age = $now - (int) ($c['createdAt'] ?? 0);
+        $st = $c['status'] ?? '';
+        if (($st === 'done' || $st === 'failed' || $st === 'expired') && $age > 1800) continue;
+        if (($st === 'queued' || $st === 'claimed') && $age > 900) $c['status'] = 'expired';
+        $out[] = $c;
+    }
+    return $out;
+}
+
+/** Enqueue an allowlisted command (owner-console only). Returns id, or null. */
+function jf_cmd_enqueue(string $action, array $args, string $by = 'owner'): ?string {
+    $norm = jf_cmd_validate($action, $args);
+    if ($norm === null) return null;
+    $cmds = jf_cmd_prune(jf_cmd_read());
+    $id = bin2hex(random_bytes(8));
+    $cmds[] = ['id' => $id, 'action' => $action, 'args' => $norm, 'status' => 'queued',
+               'createdAt' => time(), 'by' => $by, 'result' => '', 'doneAt' => 0];
+    jf_cmd_write($cmds);
+    return $id;
+}
+
+/** Agent pull: return queued commands, marking them 'claimed' so they run once. */
+function jf_cmd_claim_pending(): array {
+    $cmds = jf_cmd_prune(jf_cmd_read());
+    $pending = [];
+    foreach ($cmds as &$c) {
+        if (($c['status'] ?? '') === 'queued') {
+            $c['status'] = 'claimed'; $c['claimedAt'] = time();
+            $pending[] = ['id' => $c['id'], 'action' => $c['action'], 'args' => $c['args']];
+        }
+    }
+    unset($c);
+    jf_cmd_write($cmds);
+    return $pending;
+}
+
+/** Agent report: mark a command done/failed with a short result message. */
+function jf_cmd_report(string $id, bool $ok, string $result): bool {
+    $cmds = jf_cmd_read(); $found = false;
+    foreach ($cmds as &$c) {
+        if (($c['id'] ?? '') === $id && in_array($c['status'] ?? '', ['claimed', 'queued'], true)) {
+            $c['status'] = $ok ? 'done' : 'failed';
+            $c['result'] = mb_substr($result, 0, 200);
+            $c['doneAt'] = time();
+            $found = true;
+        }
+    }
+    unset($c);
+    if ($found) jf_cmd_write($cmds);
+    return $found;
+}
+
 // ---- Alerting (container down / disk threshold -> Discord) ----
 const JF_DISK_RECOVER_MARGIN = 5;   // a volume "recovers" once it drops this many % below the alert line
 

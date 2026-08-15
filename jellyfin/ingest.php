@@ -81,6 +81,7 @@ if (isset($services['qbit']) && is_array($svcIn['qbit']['list'] ?? null)) {
             'size'     => max(0, (int) ($t['size'] ?? 0)),
             'eta'      => max(0, (int) ($t['eta'] ?? 0)),
             'cat'      => $s($t['cat'] ?? '', 16),
+            'hash'     => preg_match('/^[a-f0-9]{40}$/i', (string) ($t['hash'] ?? '')) ? strtolower($t['hash']) : '',
         ];
     }
     $services['qbit']['list'] = $list;
@@ -118,6 +119,7 @@ if ($jsIn !== null) {
     foreach (array_slice(is_array($jsIn['requests'] ?? null) ? $jsIn['requests'] : [], 0, 15) as $r) {
         if (!is_array($r)) continue;
         $reqs[] = [
+            'id'          => max(0, (int) ($r['id'] ?? 0)),
             'title'       => $s($r['title'] ?? '', 120),
             'type'        => ($r['type'] ?? '') === 'tv' ? 'tv' : 'movie',
             'mediaStatus' => max(0, min(5, (int) ($r['mediaStatus'] ?? 0))),

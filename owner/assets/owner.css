@@ -126,3 +126,17 @@ a { color: inherit; }
 
 .ow-codes { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; max-width: 420px; margin: 8px 0 22px; }
 .ow-codes code { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-family: var(--font-mono); font-size: 1rem; letter-spacing: 1px; text-align: center; color: var(--text); }
+
+/* ---- Media control page ---- */
+.ow-mh { font-size: 1rem; font-weight: 700; margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.ow-ctl-list { display: flex; flex-direction: column; gap: 6px; }
+.ow-ctl-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; flex-wrap: wrap; }
+.ow-ctl-name { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: .9rem; overflow: hidden; }
+.ow-ctl-btns { display: flex; gap: 6px; flex: 0 0 auto; }
+.ow-cbtn { display: inline; margin: 0; }
+.ow-cbtn button { font-size: .8rem; padding: 6px 11px; }
+.ow-cdot { width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+.ow-cdot.up { background: #3ba55d; }
+.ow-cdot.down { background: var(--crit); }
+.ow-sev-ok { background: rgba(59,214,122,.16); color: #86e5a9; border: 1px solid rgba(59,214,122,.4); }
+.ow-sev-pend { background: rgba(255,255,255,.08); color: var(--muted); border: 1px solid var(--border); }
