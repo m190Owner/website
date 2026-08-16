@@ -534,8 +534,8 @@ function scan_multi_get(array $tasks, int $cap = 262144): array {
             CURLOPT_HTTPHEADER     => $t['headers'] ?? [],
             CURLOPT_FOLLOWLOCATION => !empty($t['follow']),
             CURLOPT_MAXREDIRS      => 3,
-            CURLOPT_CONNECTTIMEOUT => 5,
-            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_CONNECTTIMEOUT => $t['contimeout'] ?? 5,
+            CURLOPT_TIMEOUT        => $t['timeout'] ?? 8,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_ENCODING       => '',
@@ -563,6 +563,101 @@ function scan_multi_get(array $tasks, int $cap = 262144): array {
     }
     curl_multi_close($mh);
     return $out;
+}
+
+// ---- domain footprint (DNS + email security + certificate transparency) ----
+/** Extract record data of a given numeric type from a Google DoH JSON response. */
+function scan_doh_answers(?array $r, int $type): array {
+    if (!$r || $r['err']) return [];
+    $j = json_decode($r['body'], true);
+    if (!is_array($j) || empty($j['Answer'])) return [];
+    $out = [];
+    foreach ($j['Answer'] as $a) if ((int) ($a['type'] ?? 0) === $type) $out[] = trim((string) ($a['data'] ?? ''), '"');
+    return $out;
+}
+/** The DNSSEC 'authenticated data' flag on a DoH response. */
+function scan_doh_ad(?array $r): bool {
+    if (!$r || $r['err']) return false;
+    $j = json_decode($r['body'], true);
+    return is_array($j) && !empty($j['AD']);
+}
+/** Subdomains for $domain out of a crt.sh JSON body (robust to truncation). Capped. */
+function scan_crt_subdomains(?array $r, string $domain): array {
+    if (!$r || $r['err'] || $r['code'] !== 200) return [];
+    $set = [];
+    if (preg_match_all('/"(?:name_value|common_name)":"([^"]*)"/', $r['body'], $m)) {
+        foreach ($m[1] as $chunk) {
+            foreach (preg_split('/\\\\n|\n/', $chunk) as $name) {
+                $name = ltrim(strtolower(trim($name, ". \t")), '*.');
+                if ($name !== '' && ($name === $domain || substr($name, -strlen('.' . $domain)) === '.' . $domain)) $set[$name] = true;
+            }
+        }
+    }
+    unset($set[$domain]);
+    $list = array_keys($set);
+    sort($list);
+    return array_slice($list, 0, 100);
+}
+
+/** Live DNS / email-security / subdomain footprint for a domain (all keyless). */
+function scan_domain_lookup(string $domainRaw): array {
+    $domain = scan_domain_normalize($domainRaw);
+    if ($domain === null) return ['error' => 'Not a valid domain.'];
+    $doh = fn($name, $type) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($name) . '&type=' . $type,
+                                'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true];
+    $tasks = [
+        'A' => $doh($domain, 'A'), 'AAAA' => $doh($domain, 'AAAA'), 'MX' => $doh($domain, 'MX'),
+        'NS' => $doh($domain, 'NS'), 'TXT' => $doh($domain, 'TXT'), 'DMARC' => $doh('_dmarc.' . $domain, 'TXT'),
+        'DS' => $doh($domain, 'DS'),
+        'CRT' => ['url' => 'https://crt.sh/?q=' . rawurlencode('%.' . $domain) . '&output=json',
+                  'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 22, 'contimeout' => 8],
+    ];
+    $res = scan_multi_get($tasks, 4194304);   // 4 MB — crt.sh can be large
+
+    $A = scan_doh_answers($res['A'] ?? null, 1);
+    $AAAA = scan_doh_answers($res['AAAA'] ?? null, 28);
+    $MX = scan_doh_answers($res['MX'] ?? null, 15);
+    $NS = scan_doh_answers($res['NS'] ?? null, 2);
+    $TXT = array_map(fn($t) => str_replace('"', '', $t), scan_doh_answers($res['TXT'] ?? null, 16));
+    $DMARCtxt = array_map(fn($t) => str_replace('"', '', $t), scan_doh_answers($res['DMARC'] ?? null, 16));
+    $DS = scan_doh_answers($res['DS'] ?? null, 43);
+
+    $spf = null;
+    foreach ($TXT as $t) if (stripos($t, 'v=spf1') === 0) { $spf = $t; break; }
+    $dmarc = null;
+    foreach ($DMARCtxt as $t) if (stripos($t, 'v=DMARC1') === 0) { $dmarc = $t; break; }
+    $dmarcPolicy = ($dmarc && preg_match('/\bp=([a-z]+)/i', $dmarc, $mm)) ? strtolower($mm[1]) : null;
+
+    return [
+        'domain' => $domain, 'ts' => time(),
+        'a' => $A, 'aaaa' => $AAAA, 'mx' => $MX, 'ns' => $NS, 'txt' => $TXT,
+        'spf' => $spf, 'dmarc' => $dmarc, 'dmarc_policy' => $dmarcPolicy,
+        'dnssec' => scan_doh_ad($res['A'] ?? null) || !empty($DS),
+        'subdomains' => scan_crt_subdomains($res['CRT'] ?? null, $domain),
+        'crt_ok' => isset($res['CRT']) && !$res['CRT']['err'] && (int) $res['CRT']['code'] === 200,
+        'resolves' => !empty($A) || !empty($AAAA), 'has_mail' => !empty($MX),
+    ];
+}
+
+function scan_domain_cache_get(int $uid, string $domain): ?array {
+    $db = scan_db(); if (!$db) return null;
+    try {
+        $st = $db->prepare("SELECT json, updated_at FROM osint_domain_cache WHERE user_id = ? AND domain = ?");
+        $st->execute([$uid, $domain]);
+        $r = $st->fetch();
+        if (!$r) return null;
+        $d = json_decode($r['json'], true);
+        if (is_array($d)) { $d['ts'] = (int) $r['updated_at']; return $d; }
+        return null;
+    } catch (\Throwable $e) { return null; }
+}
+function scan_domain_cache_set(int $uid, string $domain, array $data): void {
+    $db = scan_db(); if (!$db) return;
+    try {
+        $db->prepare("INSERT INTO osint_domain_cache (user_id,domain,json,updated_at) VALUES (?,?,?,?)
+                      ON CONFLICT(user_id,domain) DO UPDATE SET json=excluded.json, updated_at=excluded.updated_at")
+           ->execute([$uid, $domain, json_encode($data), time()]);
+    } catch (\Throwable $e) {}
 }
 
 // ---- read side ----
