@@ -4,7 +4,7 @@
   var DPR = Math.min(2, window.devicePixelRatio || 1);
   var W = 0, H = 0, cx = 0, cy = 0, R = 0;
 
-  var yaw = 0.6, pitch = -0.32, spin = 0.0015, drag = null, idle = 0;
+  var yaw = 0.3, pitch = 0.35, drag = null;
   var land = [], threats = [], nodes = [], arcs = [], feedRows = [];
   var hovered = null, pinned = null;
 
@@ -15,7 +15,7 @@
     ['BR', -10, -52], ['AU', -25, 133], ['CA', 56, -106]
   ].map(function (t) { return { cc: t[0], v: vec(t[1], t[2]), flash: 0 }; });
 
-  function vec(lat, lon) { var a = lat * Math.PI / 180, b = lon * Math.PI / 180, c = Math.cos(a); return [c * Math.cos(b), Math.sin(a), c * Math.sin(b)]; }
+  function vec(lat, lon) { var a = lat * Math.PI / 180, b = lon * Math.PI / 180, c = Math.cos(a); return [c * Math.sin(b), Math.sin(a), c * Math.cos(b)]; }
   function rot(v) {
     var x = v[0], y = v[1], z = v[2], cw = Math.cos(yaw), sw = Math.sin(yaw);
     var x1 = x * cw + z * sw, z1 = -x * sw + z * cw;
@@ -125,7 +125,6 @@
   }
 
   function frame(now) {
-    if (!drag) { idle++; if (idle > 90) yaw += spin; }
     ctx.clearRect(0, 0, W, H);
     drawSphere(); drawGraticule(); drawLand(); drawArcs(); drawTargets(); drawNodes(now || 0);
     requestAnimationFrame(frame);
@@ -192,7 +191,6 @@
       drag.moved += Math.abs(e.clientX - drag.x) + Math.abs(e.clientY - drag.y);
       yaw = drag.yaw + (e.clientX - drag.x) * 0.005;
       pitch = Math.max(-1.2, Math.min(1.2, drag.pitch + (e.clientY - drag.y) * 0.005));
-      idle = 0;
     } else {
       var n = pick(e.clientX, e.clientY); hovered = n; cvs.style.cursor = n ? 'pointer' : 'grab';
       if (n && !pinned) showPanel(n); else if (!n && !pinned) showPanel(null);
@@ -200,7 +198,7 @@
   });
   cvs.addEventListener('pointerup', function (e) {
     if (drag && drag.moved < 5) { var n = pick(e.clientX, e.clientY); pinned = n; showPanel(n); }
-    drag = null; idle = 0;
+    drag = null;
   });
   cvs.addEventListener('pointerleave', function () { if (!pinned) { hovered = null; showPanel(null); } });
   document.getElementById('tm-panel-x').addEventListener('click', function () { pinned = null; showPanel(null); });
