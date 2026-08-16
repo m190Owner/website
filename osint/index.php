@@ -55,8 +55,17 @@ $siteCount = count(scan_sites());
         <p class="os-dim">Add at least one username or email first.</p>
       <?php else: ?>
         <p class="os-dim">Around <?= (int) (count($p['usernames']) * $siteCount + count($p['emails']) * 3) ?> checks. Takes a minute or two — keep this tab open.</p>
-        <?php if ($p['emails']): $deepNames = implode(', ', array_map(fn($m) => $m['name'], osint_deep_modules())); ?>
-          <label class="os-deeprow"><input type="checkbox" id="os-deep"> <span>Deep email checks <span class="os-dim">— also ask <?= ose($deepNames) ?> whether your email has an account there. Slower, and a site may notice or (rarely) notify the address.</span></span></label>
+        <?php if ($p['emails']):
+          $mods = osint_deep_modules();
+          $deepNames  = implode(', ', array_map(fn($m) => $m['name'], array_filter($mods, fn($m) => empty($m['emails']))));
+          $probeNames = implode(', ', array_map(fn($m) => $m['name'], array_filter($mods, fn($m) => !empty($m['emails']))));
+        ?>
+          <?php if ($deepNames): ?>
+          <label class="os-deeprow"><input type="checkbox" id="os-deep"> <span>Deep email checks <span class="os-dim">— also ask <?= ose($deepNames) ?> whether your email has an account there. Slower; a site may notice the lookup.</span></span></label>
+          <?php endif; ?>
+          <?php if ($probeNames): ?>
+          <label class="os-deeprow os-deeprow-warn"><input type="checkbox" id="os-probe"> <span>Aggressive checks <span class="os-dim">— probe <?= ose($probeNames) ?> via password reset. <b>This sends a real password-reset email to your address</b> if an account exists. Usually blocked from servers (shows &ldquo;couldn&rsquo;t check&rdquo;).</span></span></label>
+          <?php endif; ?>
         <?php endif; ?>
         <button id="os-run" class="os-btn os-btn-accent" style="margin-top:12px">Start scan</button>
       <?php endif; ?>

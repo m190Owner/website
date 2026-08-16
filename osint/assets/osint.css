@@ -126,3 +126,6 @@ a.os-fcard-main:hover{text-decoration:none}
 
 .os-deeprow{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:.82rem;color:var(--os-ink);cursor:pointer;line-height:1.45}
 .os-deeprow input{margin-top:3px;flex:0 0 auto}
+
+.os-deeprow-warn{margin-top:10px;border:1px solid rgba(224,168,58,.4);background:rgba(224,168,58,.06);border-radius:8px;padding:8px 10px}
+.os-deeprow-warn b{color:var(--os-warn)}

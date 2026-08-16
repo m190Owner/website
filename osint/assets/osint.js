@@ -49,7 +49,8 @@
     progress.hidden = false; live.hidden = false; ptext.textContent = 'Starting…';
     foundTotal = 0; list.innerHTML = ''; livecount.textContent = '0';
     var deep = (document.getElementById('os-deep') || {}).checked ? '1' : '0';
-    post({ action: 'start', deep: deep }).then(function (r) {
+    var probe = (document.getElementById('os-probe') || {}).checked ? '1' : '0';
+    post({ action: 'start', deep: deep, probe: probe }).then(function (r) {
       if (!r.ok) { ptext.textContent = r.error || 'Could not start.'; return reset(); }
       ptext.textContent = 'Scanning…';
       loop(r.id, r.total, 0);

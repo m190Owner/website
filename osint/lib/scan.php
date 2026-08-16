@@ -47,8 +47,10 @@ function scan_db(): ?PDO {
         }
         // Per-finding triage the user sets: new | attention | false | done.
         try { $db->exec("ALTER TABLE osint_findings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'"); } catch (\Throwable $e) {}
-        // Whether the scan included the opt-in deep (extra-site) email checks.
+        // Whether the scan included the opt-in deep (extra-site) email checks, and the
+        // separate opt-in emailing "probe" checks (password-reset based).
         try { $db->exec("ALTER TABLE osint_scans ADD COLUMN deep INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
+        try { $db->exec("ALTER TABLE osint_scans ADD COLUMN probe INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
         // Persistent "not me" — keyed by a hash of the finding title, so future scans
         // auto-mark the same account/breach false. Survives "clear results".
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
@@ -141,14 +143,42 @@ function osint_deep_modules(): array {
             'build' => fn($e) => ['url' => 'https://www.plurk.com/Users/isEmailFound?email=' . rawurlencode($e), 'headers' => [$ua], 'follow' => true],
             'parse' => function ($code, $body) { $b = trim($body); if ($b === 'True') return true; if ($b === 'False') return false; return null; },
         ],
+        // --- emailing modules: a real hit SENDS a password-reset email to the address.
+        //     Gated behind the separate "aggressive" opt-in. A blocked request 429s before
+        //     any email fires (safe); most datacenter IPs are blocked, so expect "couldn't
+        //     check" from a server. 'prep' runs once to grab a CSRF token from the page.
+        'instagram' => [
+            'name' => 'Instagram', 'url' => 'https://www.instagram.com/', 'emails' => true,
+            'prep'  => function () use ($ua) {
+                $r = scan_multi_get([0 => ['url' => 'https://www.instagram.com/accounts/login/', 'headers' => [$ua], 'follow' => true]]);
+                return preg_match('/"csrf_token":"([^"]+)"/', $r[0]['body'] ?? '', $mm) ? $mm[1] : '';
+            },
+            'build' => function ($e, $csrf = null) use ($ua) {
+                if (!$csrf) return null;
+                return ['url' => 'https://www.instagram.com/api/v1/web/accounts/account_recovery_send_ajax/',
+                        'headers' => [$ua, 'X-CSRFToken: ' . $csrf, 'X-Requested-With: XMLHttpRequest',
+                                      'Content-Type: application/x-www-form-urlencoded', 'Referer: https://www.instagram.com/accounts/password/reset/'],
+                        'post' => 'email_or_username=' . rawurlencode($e), 'follow' => true];
+            },
+            'parse' => function ($code, $body) {
+                $j = json_decode($body, true);
+                if (!is_array($j)) return null;
+                if (($j['status'] ?? '') === 'ok') return true;                       // reset link sent => exists
+                if (stripos(json_encode($j), 'no users found') !== false) return false;
+                return null;                                                          // rate-limited / unclear
+            },
+        ],
     ];
     return $m;
 }
 
-/** Per-email checks in order. Deep adds the extra-site modules (kind = "deep:<id>"). */
-function scan_email_checks(bool $deep): array {
+/** Per-email checks in order. $deep adds the no-email modules, $probe adds emailing ones. */
+function scan_email_checks(bool $deep, bool $probe): array {
     $c = ['breach', 'gravatar', 'duolingo'];
-    if ($deep) foreach (array_keys(osint_deep_modules()) as $id) $c[] = 'deep:' . $id;
+    foreach (osint_deep_modules() as $id => $m) {
+        $emailing = !empty($m['emails']);
+        if (($emailing && $probe) || (!$emailing && $deep)) $c[] = 'deep:' . $id;
+    }
     return $c;
 }
 
@@ -171,13 +201,13 @@ function scan_task_at(int $i, array $U, array $S, array $E, array $checks): ?arr
 }
 
 /** Start a scan. Returns [scan, null] or [null, error]. */
-function scan_start(int $uid, bool $deep = false): array {
+function scan_start(int $uid, bool $deep = false, bool $probe = false): array {
     $p = scan_profile_get($uid);
     if (!$p['usernames'] && !$p['emails']) return [null, 'Add at least one username or email to your profile first.'];
     $db = scan_db(); if (!$db) return [null, 'Service unavailable.'];
-    $total = scan_total(count($p['usernames']), count(scan_sites()), count($p['emails']), count(scan_email_checks($deep)));
-    $db->prepare("INSERT INTO osint_scans (user_id,started_at,total,usernames,emails,deep) VALUES (?,?,?,?,?,?)")
-       ->execute([$uid, time(), $total, json_encode($p['usernames']), json_encode($p['emails']), $deep ? 1 : 0]);
+    $total = scan_total(count($p['usernames']), count(scan_sites()), count($p['emails']), count(scan_email_checks($deep, $probe)));
+    $db->prepare("INSERT INTO osint_scans (user_id,started_at,total,usernames,emails,deep,probe) VALUES (?,?,?,?,?,?,?)")
+       ->execute([$uid, time(), $total, json_encode($p['usernames']), json_encode($p['emails']), $deep ? 1 : 0, $probe ? 1 : 0]);
     $scanId = (int) $db->lastInsertId();
 
     // A Gmail/Googlemail address inherently has a Google account — record it up front
@@ -211,7 +241,7 @@ function scan_chunk(int $uid, int $scanId): array {
     $U = (array) json_decode($scan['usernames'], true);
     $E = (array) json_decode($scan['emails'], true);
     $S = scan_sites();
-    $checks = scan_email_checks((bool) ($scan['deep'] ?? 0));
+    $checks = scan_email_checks((bool) ($scan['deep'] ?? 0), (bool) ($scan['probe'] ?? 0));
     $cursor = (int) $scan['cursor'];
     $total  = (int) $scan['total'];
     $end    = min($cursor + OSINT_BATCH, $total);
@@ -219,6 +249,7 @@ function scan_chunk(int $uid, int $scanId): array {
     // Build this batch's HTTP tasks.
     $tasks = [];
     $meta  = [];
+    $prep  = [];   // per-module prep (e.g. a CSRF token), fetched once per batch
     for ($i = $cursor; $i < $end; $i++) {
         $t = scan_task_at($i, $U, $S, $E, $checks);
         if (!$t) continue;
@@ -237,8 +268,14 @@ function scan_chunk(int $uid, int $scanId): array {
         } elseif ($t['kind'] === 'duolingo') { // public users API by email, no email is sent
             $tasks[$i] = ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } else { // deep:<module>
-            $mod = osint_deep_modules()[substr($t['kind'], 5)] ?? null;
-            if ($mod) $tasks[$i] = ($mod['build'])($t['email']);
+            $id  = substr($t['kind'], 5);
+            $mod = osint_deep_modules()[$id] ?? null;
+            if ($mod) {
+                $pv = null;
+                if (isset($mod['prep'])) { if (!array_key_exists($id, $prep)) $prep[$id] = ($mod['prep'])(); $pv = $prep[$id]; }
+                $built = ($mod['build'])($t['email'], $pv);
+                if ($built) $tasks[$i] = $built;   // null build (e.g. no CSRF) → left unbuilt = couldn't check
+            }
         }
     }
 
@@ -287,7 +324,10 @@ function scan_chunk(int $uid, int $scanId): array {
             $exists = ($mod['parse'])($r['code'], $r['body']);
             if ($exists === null) { $unreachInc++; continue; }   // couldn't tell (rate-limited / blocked)
             if ($exists === false) continue;                     // not registered there
-            $emit('account', $t['email'] . ' — ' . $mod['name'] . ' account', $mod['url'], 'email,account', '', 'Email is registered on ' . $mod['name'] . '.');
+            $note = !empty($mod['emails'])
+                  ? 'Registered on ' . $mod['name'] . ' — a password-reset email was sent to the address.'
+                  : 'Email is registered on ' . $mod['name'] . '.';
+            $emit('account', $t['email'] . ' — ' . $mod['name'] . ' account', $mod['url'], 'email,account', '', $note);
         }
     }
 
