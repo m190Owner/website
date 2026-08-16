@@ -47,6 +47,8 @@ function scan_db(): ?PDO {
         }
         // Per-finding triage the user sets: new | attention | false | done.
         try { $db->exec("ALTER TABLE osint_findings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'"); } catch (\Throwable $e) {}
+        // Whether the scan included the opt-in deep (extra-site) email checks.
+        try { $db->exec("ALTER TABLE osint_scans ADD COLUMN deep INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
         // Persistent "not me" — keyed by a hash of the finding title, so future scans
         // auto-mark the same account/breach false. Survives "clear results".
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
@@ -116,33 +118,61 @@ function scan_profile_set(int $uid, array $usernames, array $emails): array {
 }
 
 // ---- scan lifecycle ----
-// Per email: breach + gravatar + duolingo = 3 checks.
-function scan_total(int $nUser, int $nSite, int $nEmail): int { return $nUser * $nSite + $nEmail * 3; }
+// ---- deep (opt-in) email checks: extra sites' account APIs. These particular ones do
+//      NOT send an email to the address; the opt-in gate keeps them off by default anyway
+//      (slower + probes third parties), and lets emailing modules be added under it later.
+function osint_deep_modules(): array {
+    static $m = null;
+    if ($m !== null) return $m;
+    $ua = 'User-Agent: ' . OSINT_UA;
+    $m = [
+        'spotify' => [
+            'name' => 'Spotify', 'url' => 'https://www.spotify.com/',
+            'build' => fn($e) => ['url' => 'https://spclient.wg.spotify.com/signup/public/v1/account?validate=1&email=' . rawurlencode($e), 'headers' => [$ua], 'follow' => true],
+            'parse' => function ($code, $body) { $j = json_decode($body, true); $s = is_array($j) ? ($j['status'] ?? null) : null; if ($s === 20) return true; if ($s === 1) return false; return null; },
+        ],
+        'twitter' => [
+            'name' => 'X (Twitter)', 'url' => 'https://twitter.com/',
+            'build' => fn($e) => ['url' => 'https://api.twitter.com/i/users/email_available.json?email=' . rawurlencode($e), 'headers' => [$ua], 'follow' => true],
+            'parse' => function ($code, $body) { $j = json_decode($body, true); return (is_array($j) && isset($j['taken'])) ? (bool) $j['taken'] : null; },
+        ],
+    ];
+    return $m;
+}
 
-/** Map a global task index to a concrete task using the scan's snapshot. */
-function scan_task_at(int $i, array $U, array $S, array $E): ?array {
+/** Per-email checks in order. Deep adds the extra-site modules (kind = "deep:<id>"). */
+function scan_email_checks(bool $deep): array {
+    $c = ['breach', 'gravatar', 'duolingo'];
+    if ($deep) foreach (array_keys(osint_deep_modules()) as $id) $c[] = 'deep:' . $id;
+    return $c;
+}
+
+// ---- scan lifecycle ----
+function scan_total(int $nUser, int $nSite, int $nEmail, int $nEmailChecks): int { return $nUser * $nSite + $nEmail * $nEmailChecks; }
+
+/** Map a global task index to a concrete task using the scan's snapshot + per-email checks. */
+function scan_task_at(int $i, array $U, array $S, array $E, array $checks): ?array {
     $acc = count($U) * count($S);
     if ($i < $acc) {
         $ns = count($S);
         return ['kind' => 'account', 'user' => $U[intdiv($i, $ns)], 'site' => $S[$i % $ns]];
     }
-    $j = $i - $acc;
-    if ($j < count($E)) return ['kind' => 'breach', 'email' => $E[$j]];
-    $j -= count($E);
-    if ($j < count($E)) return ['kind' => 'gravatar', 'email' => $E[$j]];
-    $j -= count($E);
-    if ($j < count($E)) return ['kind' => 'duolingo', 'email' => $E[$j]];
-    return null;
+    $K = count($checks);
+    if ($K === 0) return null;
+    $j  = $i - $acc;
+    $ei = intdiv($j, $K);
+    if ($ei >= count($E)) return null;
+    return ['kind' => $checks[$j % $K], 'email' => $E[$ei]];
 }
 
 /** Start a scan. Returns [scan, null] or [null, error]. */
-function scan_start(int $uid): array {
+function scan_start(int $uid, bool $deep = false): array {
     $p = scan_profile_get($uid);
     if (!$p['usernames'] && !$p['emails']) return [null, 'Add at least one username or email to your profile first.'];
     $db = scan_db(); if (!$db) return [null, 'Service unavailable.'];
-    $total = scan_total(count($p['usernames']), count(scan_sites()), count($p['emails']));
-    $db->prepare("INSERT INTO osint_scans (user_id,started_at,total,usernames,emails) VALUES (?,?,?,?,?)")
-       ->execute([$uid, time(), $total, json_encode($p['usernames']), json_encode($p['emails'])]);
+    $total = scan_total(count($p['usernames']), count(scan_sites()), count($p['emails']), count(scan_email_checks($deep)));
+    $db->prepare("INSERT INTO osint_scans (user_id,started_at,total,usernames,emails,deep) VALUES (?,?,?,?,?,?)")
+       ->execute([$uid, time(), $total, json_encode($p['usernames']), json_encode($p['emails']), $deep ? 1 : 0]);
     $scanId = (int) $db->lastInsertId();
 
     // A Gmail/Googlemail address inherently has a Google account — record it up front
@@ -176,6 +206,7 @@ function scan_chunk(int $uid, int $scanId): array {
     $U = (array) json_decode($scan['usernames'], true);
     $E = (array) json_decode($scan['emails'], true);
     $S = scan_sites();
+    $checks = scan_email_checks((bool) ($scan['deep'] ?? 0));
     $cursor = (int) $scan['cursor'];
     $total  = (int) $scan['total'];
     $end    = min($cursor + OSINT_BATCH, $total);
@@ -184,7 +215,7 @@ function scan_chunk(int $uid, int $scanId): array {
     $tasks = [];
     $meta  = [];
     for ($i = $cursor; $i < $end; $i++) {
-        $t = scan_task_at($i, $U, $S, $E);
+        $t = scan_task_at($i, $U, $S, $E, $checks);
         if (!$t) continue;
         $meta[$i] = $t;
         if ($t['kind'] === 'account') {
@@ -198,8 +229,11 @@ function scan_chunk(int $uid, int $scanId): array {
             $tasks[$i] = ['url' => OSINT_XPOSED . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } elseif ($t['kind'] === 'gravatar') { // avatar existence (?d=404 => 200 only when it exists)
             $tasks[$i] = ['url' => OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?d=404&s=200', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
-        } else { // duolingo — public users API by email, no email is sent
+        } elseif ($t['kind'] === 'duolingo') { // public users API by email, no email is sent
             $tasks[$i] = ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
+        } else { // deep:<module>
+            $mod = osint_deep_modules()[substr($t['kind'], 5)] ?? null;
+            if ($mod) $tasks[$i] = ($mod['build'])($t['email']);
         }
     }
 
@@ -237,11 +271,18 @@ function scan_chunk(int $uid, int $scanId): array {
             if (!$r || $r['err'] || $r['code'] !== 200) continue;
             $av = OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?s=200';
             $emit('account', $t['email'] . ' — Gravatar profile picture', $av, 'email,account', $av, '');
-        } else { // duolingo
+        } elseif ($t['kind'] === 'duolingo') {
             if (!$r || $r['err']) { $unreachInc++; continue; }
             $pic = scan_duolingo_pic($r['body']);
             if ($pic === null) continue;   // no Duolingo account for this email
             $emit('account', $t['email'] . ' — Duolingo account', 'https://www.duolingo.com/', 'email,account', $pic, 'Email is registered on Duolingo.');
+        } else { // deep:<module>
+            $mod = osint_deep_modules()[substr($t['kind'], 5)] ?? null;
+            if (!$mod || !$r || $r['err']) { $unreachInc++; continue; }
+            $exists = ($mod['parse'])($r['code'], $r['body']);
+            if ($exists === null) { $unreachInc++; continue; }   // couldn't tell (rate-limited / blocked)
+            if ($exists === false) continue;                     // not registered there
+            $emit('account', $t['email'] . ' — ' . $mod['name'] . ' account', $mod['url'], 'email,account', '', 'Email is registered on ' . $mod['name'] . '.');
         }
     }
 

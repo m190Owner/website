@@ -12,7 +12,8 @@ enforceRateLimit('osint_scan', 300, 60);
 
 $action = (string) ($_POST['action'] ?? '');
 if ($action === 'start') {
-    [$scan, $err] = scan_start((int) $u['id']);
+    $deep = (($_POST['deep'] ?? '') === '1');
+    [$scan, $err] = scan_start((int) $u['id'], $deep);
     echo json_encode($scan ? (['ok' => true] + $scan) : ['ok' => false, 'error' => $err]);
     exit;
 }

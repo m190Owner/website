@@ -123,3 +123,6 @@ a.os-fcard-main:hover{text-decoration:none}
 .os-st-false{opacity:.45}
 .os-st-false .os-acard-t,.os-st-false .os-bcard-t b{text-decoration:line-through}
 .os-st-done{opacity:.6}
+
+.os-deeprow{display:flex;align-items:flex-start;gap:8px;margin-top:12px;font-size:.82rem;color:var(--os-ink);cursor:pointer;line-height:1.45}
+.os-deeprow input{margin-top:3px;flex:0 0 auto}
