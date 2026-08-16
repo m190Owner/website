@@ -660,6 +660,61 @@ function scan_domain_cache_set(int $uid, string $domain, array $data): void {
     } catch (\Throwable $e) {}
 }
 
+// ---- network / IP self-footprint ----
+/** The caller's real public IP, honouring a Cloudflare / proxy front. */
+function os_client_ip(): string {
+    $cf = trim((string) ($_SERVER['HTTP_CF_CONNECTING_IP'] ?? ''));
+    if ($cf !== '' && filter_var($cf, FILTER_VALIDATE_IP)) return $cf;
+    $remote = (string) ($_SERVER['REMOTE_ADDR'] ?? '');
+    if (filter_var($remote, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return $remote;
+    foreach (explode(',', (string) ($_SERVER['HTTP_X_FORWARDED_FOR'] ?? '')) as $hop) {
+        $hop = trim($hop);
+        if (filter_var($hop, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return $hop;
+    }
+    return $remote;
+}
+
+/** Geolocation + network + threat-feed reputation for an IP (keyless: ipwho.is + DShield). */
+function scan_ip_footprint(string $ip): array {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) return ['ip' => $ip, 'error' => 'Not a valid IP.'];
+    $out = ['ip' => $ip, 'private' => !filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)];
+    if ($out['private']) return $out;
+
+    $res = scan_multi_get([
+        'geo' => ['url' => 'https://ipwho.is/' . rawurlencode($ip), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true],
+        'ds'  => ['url' => 'https://isc.sans.edu/api/ip/' . rawurlencode($ip) . '?json', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 10],
+    ]);
+    $g = json_decode($res['geo']['body'] ?? '', true);
+    if (is_array($g) && !empty($g['success'])) {
+        $conn = $g['connection'] ?? [];
+        $out += [
+            'type'    => (string) ($g['type'] ?? ''),
+            'city'    => (string) ($g['city'] ?? ''),
+            'region'  => (string) ($g['region'] ?? ''),
+            'country' => (string) ($g['country'] ?? ''),
+            'cc'      => (string) ($g['country_code'] ?? ''),
+            'flag'    => (string) ($g['flag']['emoji'] ?? ''),
+            'tz'      => (string) ($g['timezone']['id'] ?? ''),
+            'asn'     => (string) ($conn['asn'] ?? ''),
+            'isp'     => (string) ($conn['isp'] ?? ($conn['org'] ?? '')),
+            'org'     => (string) ($conn['org'] ?? ''),
+        ];
+    }
+    $d = json_decode($res['ds']['body'] ?? '', true);
+    $dip = is_array($d) ? ($d['ip'] ?? null) : null;
+    if (is_array($dip)) {
+        $tf = $dip['threatfeeds'] ?? null;
+        $out += [
+            'ds_ok'      => true,
+            'ds_count'   => (int) ($dip['count'] ?? 0),
+            'ds_attacks' => (int) ($dip['attacks'] ?? 0),
+            'ds_maxdate' => (string) ($dip['maxdate'] ?? ''),
+            'ds_feeds'   => is_array($tf) ? array_keys($tf) : [],
+        ];
+    }
+    return $out;
+}
+
 // ---- read side ----
 function scan_get(int $uid, int $scanId): ?array {
     $db = scan_db(); if (!$db) return null;
