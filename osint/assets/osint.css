@@ -229,4 +229,14 @@ a.os-top-l:hover{text-decoration:none}
 .os-row-t a{color:var(--os-ink)}
 .os-row-t a:hover{color:var(--os-accent-l)}
 
+/* ---- password check ---- */
+.os-pwbar{display:flex;gap:10px;align-items:center;margin-top:12px}
+.os-pwbar .os-mini{flex:1;margin-top:0}
+.os-pwres{margin-top:14px;padding:12px 14px;border-radius:9px;font-size:.88rem;line-height:1.55;border:1px solid var(--os-border);background:var(--os-bg);color:var(--os-ink)}
+.os-pwres.bad{border-color:rgba(229,105,95,.5);background:rgba(229,105,95,.08);color:#ffb0a8}
+.os-pwres.good{border-color:rgba(55,201,139,.5);background:rgba(55,201,139,.08);color:var(--os-accent-l)}
+.os-str-bad{background:var(--os-danger)}
+.os-str-warn{background:var(--os-warn)}
+.os-str-good{background:var(--os-accent)}
+
 @media (max-width:560px){.os-nav{gap:0}.os-navlink{padding:8px 9px}}
