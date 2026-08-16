@@ -1,6 +1,7 @@
 <?php
-// The signed-in user's own identifiers — the only things a scan searches for.
+// The signed-in user's own identifiers — the only things the tools ever act on.
 require __DIR__ . '/lib/scan.php';
+require __DIR__ . '/lib/osint_ui.php';
 osint_require();
 $u = osint_current_user();
 
@@ -8,7 +9,13 @@ $saved = false;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     osint_csrf_require();
     enforceRateLimit('osint_profile', 30, 60);
-    $p = scan_profile_set((int) $u['id'], (array) ($_POST['username'] ?? []), (array) ($_POST['email'] ?? []), (array) ($_POST['phone'] ?? []));
+    $p = scan_profile_set(
+        (int) $u['id'],
+        (array) ($_POST['username'] ?? []),
+        (array) ($_POST['email'] ?? []),
+        (array) ($_POST['phone'] ?? []),
+        (array) ($_POST['domain'] ?? [])
+    );
     $saved = true;
 } else {
     $p = scan_profile_get((int) $u['id']);
@@ -16,31 +23,13 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 $usernames = array_pad($p['usernames'], OSINT_MAX_USERNAMES, '');
 $emails    = array_pad($p['emails'], OSINT_MAX_EMAILS, '');
 $phones    = array_pad($p['phones'], OSINT_MAX_PHONES, '');
-?><!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex, nofollow">
-<title>Your profile · m190 finder</title>
-<link rel="icon" type="image/png" href="/osint/assets/m190-logo.png">
-<link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
-</head>
-<body>
-<header class="os-top">
-  <div class="os-top-l"><img class="os-logo" src="/osint/assets/m190-logo.png" alt="m190 OPSEC Team"><b>m190 finder</b></div>
-  <div class="os-top-r">
-    <a class="os-btn os-btn-sm" href="/osint/">Dashboard</a>
-    <span>signed in as <?= ose($u['username']) ?></span>
-    <a class="os-btn os-btn-sm" href="/osint/logout.php">Sign out</a>
-  </div>
-</header>
-
-<main class="os-main os-main-narrow">
-  <?php if ($saved): ?><div class="os-ok">Profile saved. You can run a scan from the dashboard.</div><?php endif; ?>
+$domains   = array_pad($p['domains'], OSINT_MAX_DOMAINS, '');
+osint_head('Your profile · m190 finder', 'profile', ['narrow' => true]);
+?>
+  <?php if ($saved): ?><div class="os-ok">Profile saved. You can run a scan or open any tool from the dashboard.</div><?php endif; ?>
   <div class="os-panel">
     <h2>Your identifiers</h2>
-    <p>A scan only ever searches for what you put here — your own usernames, email addresses, and phone numbers. Nothing else, and never someone else's.</p>
+    <p>Every tool here only ever acts on what you put on this page — your own usernames, email addresses, phone numbers, and domains. Nothing else, and never someone else's.</p>
     <form method="post" class="os-form" autocomplete="off" style="margin-top:16px">
       <?= osint_csrf_field() ?>
       <div class="os-fieldgroup">
@@ -61,10 +50,15 @@ $phones    = array_pad($p['phones'], OSINT_MAX_PHONES, '');
           <input type="tel" name="phone[]" maxlength="24" value="<?= ose($v) ?>" placeholder="+1 415 555 2671">
         <?php endforeach; ?>
       </div>
+      <div class="os-fieldgroup">
+        <span class="os-grouplabel">Domains <span class="os-dim">(up to <?= OSINT_MAX_DOMAINS ?>, ones you own)</span></span>
+        <?php foreach ($domains as $v): ?>
+          <input type="text" name="domain[]" maxlength="253" value="<?= ose($v) ?>" placeholder="example.com">
+        <?php endforeach; ?>
+      </div>
       <button type="submit" class="os-btn os-btn-accent">Save profile</button>
     </form>
   </div>
   <p class="os-fineprint">Stored only for your account, on this server, in a store that is never exposed to the web. Delete a value and save to remove it.</p>
-</main>
-</body>
-</html>
+<?php
+osint_foot();

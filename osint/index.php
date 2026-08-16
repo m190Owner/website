@@ -1,40 +1,32 @@
 <?php
-// Gated dashboard for the removal / footprint tool. Run a scan, watch it progress,
-// see the latest results. The scan itself is driven from osint/assets/osint.js
-// against osint/scan.php in small batches.
+// The m190 finder hub. Run a footprint scan, watch it progress, and jump to every
+// tool in the suite. The scan itself is driven from osint/assets/osint.js against
+// osint/scan.php in small batches.
 require __DIR__ . '/lib/scan.php';
+require __DIR__ . '/lib/osint_ui.php';
 osint_require();
 $u = osint_current_user();
 $p = scan_profile_get((int) $u['id']);
-$nId = count($p['usernames']) + count($p['emails']) + count($p['phones']);
+$nId = count($p['usernames']) + count($p['emails']) + count($p['phones']) + count($p['domains']);
 $latest = scan_latest((int) $u['id']);
 $siteCount = count(scan_sites());
-?><!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex, nofollow">
-<title>m190 finder</title>
-<meta name="osint-csrf" content="<?= ose(osint_csrf_token()) ?>">
-<link rel="icon" type="image/png" href="/osint/assets/m190-logo.png">
-<link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
-</head>
-<body>
-<header class="os-top">
-  <div class="os-top-l"><img class="os-logo" src="/osint/assets/m190-logo.png" alt="m190 OPSEC Team"><b>m190 finder</b></div>
-  <div class="os-top-r">
-    <a class="os-btn os-btn-sm" href="/osint/profile.php">Profile</a>
-    <?php if ($latest): ?><a class="os-btn os-btn-sm" href="/osint/results.php">Results</a><?php endif; ?>
-    <span>signed in as <?= ose($u['username']) ?></span>
-    <a class="os-btn os-btn-sm" href="/osint/logout.php">Sign out</a>
-  </div>
-</header>
 
-<main class="os-main">
+// Tool cards for the hub grid: [icon, title, href, description].
+$tools = [
+    ['🗂️', 'Removal center', '/osint/brokers.php', 'Opt out of the data brokers and people-search sites that list your name, address, and phone.'],
+    ['🔎', 'Self-search', '/osint/search.php', 'One-click search-engine and dork links to find where your identifiers surface.'],
+    ['🌐', 'Domain footprint', '/osint/domain.php', 'DNS, email security (SPF/DMARC/DNSSEC), and subdomains exposed by your domains.'],
+    ['🔑', 'Password exposure', '/osint/password.php', 'Check a password against breach corpora — hashed in your browser, never sent or stored.'],
+    ['📡', 'Network footprint', '/osint/network.php', "What your current connection reveals — IP, location, ISP, and threat-feed status."],
+    ['🛡️', 'Hardening checklist', '/osint/harden.php', 'A tracked, step-by-step plan to lock down your accounts and shrink your footprint.'],
+    ['📄', 'Exposure report', '/osint/report.php', 'A clean, printable summary of everything found and what to do about it.'],
+    ['👤', 'Your profile', '/osint/profile.php', 'The identifiers a scan searches for — your usernames, emails, phones, and domains.'],
+];
+osint_head('m190 finder', 'dashboard');
+?>
   <div class="os-panel">
     <h2>See what the internet knows about you</h2>
-    <p>This checks your usernames against <?= (int) $siteCount ?> public sites and your emails against breach databases, then tells you what it found — and, honestly, what it couldn't check. A hit is a lead to verify, not proof.</p>
+    <p>A private, invite-only footprint tool. It checks <b>your own</b> identifiers against <?= (int) $siteCount ?> public sites, breach databases, and public records — then tells you what it found, what it couldn't check, and how to get it removed. A hit is a lead to verify, not proof.</p>
   </div>
 
   <div class="os-grid2">
@@ -42,16 +34,16 @@ $siteCount = count(scan_sites());
       <h3 class="os-h3">Your profile</h3>
       <?php if ($nId === 0): ?>
         <p>You haven't added anything to scan yet.</p>
-        <a class="os-btn os-btn-accent" href="/osint/profile.php" style="margin-top:12px;display:inline-block">Add usernames, emails &amp; phones</a>
+        <a class="os-btn os-btn-accent" href="/osint/profile.php" style="margin-top:12px;display:inline-block">Add your identifiers</a>
       <?php else: ?>
-        <p><b><?= count($p['usernames']) ?></b> username(s), <b><?= count($p['emails']) ?></b> email(s)<?php if ($p['phones']): ?>, <b><?= count($p['phones']) ?></b> phone(s)<?php endif; ?> on file.</p>
+        <p><b><?= count($p['usernames']) ?></b> username(s), <b><?= count($p['emails']) ?></b> email(s)<?php if ($p['phones']): ?>, <b><?= count($p['phones']) ?></b> phone(s)<?php endif; ?><?php if ($p['domains']): ?>, <b><?= count($p['domains']) ?></b> domain(s)<?php endif; ?> on file.</p>
         <a class="os-btn os-btn-sm" href="/osint/profile.php" style="margin-top:12px;display:inline-block">Edit profile</a>
       <?php endif; ?>
     </div>
 
     <div class="os-panel">
       <h3 class="os-h3">Run a scan</h3>
-      <?php if ($nId === 0): ?>
+      <?php if (!$p['usernames'] && !$p['emails'] && !$p['phones']): ?>
         <p class="os-dim">Add at least one username, email, or phone first.</p>
       <?php else: ?>
         <p class="os-dim">Around <?= (int) (count($p['usernames']) * $siteCount + count($p['emails']) * 3) ?> checks. Takes a minute or two — keep this tab open.</p>
@@ -91,8 +83,18 @@ $siteCount = count(scan_sites());
       <a class="os-btn os-btn-sm" href="/osint/results.php" style="margin-top:12px;display:inline-block">View results</a>
     </div>
   <?php endif; ?>
-</main>
 
-<script src="/osint/assets/osint.js?v=<?= @filemtime(__DIR__ . '/assets/osint.js') ?: 1 ?>"></script>
-</body>
-</html>
+  <div class="os-panel">
+    <h3 class="os-h3">The full toolkit</h3>
+    <p class="os-dim os-mb">Everything here is scoped to your own identifiers, and most of it works with no scan at all.</p>
+    <div class="os-toolgrid">
+      <?php foreach ($tools as [$ic, $title, $href, $desc]): ?>
+        <a class="os-tool" href="<?= ose($href) ?>">
+          <div class="os-tool-h"><span class="os-tool-ic"><?= $ic ?></span><?= ose($title) ?></div>
+          <p><?= ose($desc) ?></p>
+        </a>
+      <?php endforeach; ?>
+    </div>
+  </div>
+<?php
+osint_foot(['osint.js']);

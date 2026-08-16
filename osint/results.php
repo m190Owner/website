@@ -1,5 +1,6 @@
 <?php
 require __DIR__ . '/lib/scan.php';
+require __DIR__ . '/lib/osint_ui.php';
 osint_require();
 $u = osint_current_user();
 
@@ -18,10 +19,12 @@ $identity = array_values(array_filter($findings, fn($f) => $f['category'] === 'a
 $breaches = array_values(array_filter($findings, fn($f) => $f['category'] === 'breach'));
 $phones   = array_values(array_filter($findings, fn($f) => $f['category'] === 'phone'));
 
-$attention = count(array_filter($findings, fn($f) => ($f['status'] ?? 'new') === 'attention'));
-$years = [];
-foreach ($breaches as $b) { if (preg_match('/\b(19|20)\d\d\b/', (string) $b['detail'], $m)) $years[] = (int) $m[0]; }
-$span = $years ? (min($years) === max($years) ? (string) min($years) : min($years) . '–' . max($years)) : '';
+$exposure = scan_exposure($findings);
+$prev = $scan ? scan_prev_titles((int) $u['id'], (int) $scan['id']) : [];
+$newCount = 0;
+if ($prev) foreach ($findings as $f) { if (($f['status'] ?? 'new') !== 'false' && !isset($prev[scan_dismiss_key((string) $f['title'])])) $newCount++; }
+$history = scan_history((int) $u['id']);
+$isNew = fn($f) => $prev && !isset($prev[scan_dismiss_key((string) $f['title'])]);
 
 function os_avatar(array $f): string {
     $a = (string) ($f['avatar'] ?? '');
@@ -38,55 +41,43 @@ function os_triage(): string {
         . '</div>';
 }
 /** One triage card. $main is the inner markup of the (optionally linked) main area. */
-function os_fcard(array $f, string $main): string {
+function os_fcard(array $f, string $main, bool $fresh = false): string {
     $s = ose($f['status'] ?? 'new');
+    $badge = $fresh ? '<span class="os-fresh" title="New since your last scan">new</span>' : '';
     return '<div class="os-fcard os-st-' . $s . '" data-fid="' . (int) $f['id'] . '" data-status="' . $s . '">'
-        . $main . os_triage() . '</div>';
+        . $badge . $main . os_triage() . '</div>';
 }
-?><!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="robots" content="noindex, nofollow">
-<title>Results · m190 finder</title>
-<meta name="osint-csrf" content="<?= ose(osint_csrf_token()) ?>">
-<link rel="icon" type="image/png" href="/osint/assets/m190-logo.png">
-<link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
-</head>
-<body>
-<header class="os-top">
-  <div class="os-top-l"><img class="os-logo" src="/osint/assets/m190-logo.png" alt="m190 OPSEC Team"><b>m190 finder</b></div>
-  <div class="os-top-r">
-    <a class="os-btn os-btn-sm" href="/osint/">Dashboard</a>
-    <span>signed in as <?= ose($u['username']) ?></span>
-    <a class="os-btn os-btn-sm" href="/osint/logout.php">Sign out</a>
-  </div>
-</header>
-
-<main class="os-main">
+osint_head('Results · m190 finder', 'results');
+?>
   <?php if (!$scan): ?>
-    <div class="os-panel"><h2>No scans yet</h2><p>Run one from the <a href="/osint/">dashboard</a>.</p></div>
+    <div class="os-panel"><h2>No scans yet</h2><p>Run one from the <a href="/osint/">dashboard</a>, or explore the removal, self-search, and hardening tools — they work without a scan.</p></div>
   <?php else: ?>
     <div class="os-panel">
-      <div class="os-resulthead">
-        <div>
-          <h2>Scan results</h2>
-          <p class="os-dim"><?= ose(date('Y-m-d H:i', (int) $scan['started_at'])) ?><?= $scan['status'] === 'running' ? ' · incomplete' : '' ?></p>
+      <div class="os-score">
+        <?php $gc = $exposure['level'] === 'high' ? 'var(--os-danger)' : ($exposure['level'] === 'mid' ? 'var(--os-warn)' : 'var(--os-accent)'); ?>
+        <div class="os-gauge" style="--v:<?= (int) $exposure['score'] ?>;--c:<?= $gc ?>">
+          <div class="os-gauge-in"><b><?= (int) $exposure['score'] ?></b><span>exposure</span></div>
         </div>
-        <div class="os-resultbtns">
-          <a class="os-btn os-btn-sm" href="/osint/export.php?scan=<?= (int) $scan['id'] ?>">Export CSV</a>
-          <form method="post" class="os-inline" onsubmit="return confirm('Delete all your scan results? This cannot be undone.')">
-            <?= osint_csrf_field() ?><input type="hidden" name="action" value="clear">
-            <button class="os-btn os-btn-sm os-btn-danger">Clear results</button>
-          </form>
+        <div class="os-score-txt">
+          <h2>Exposure snapshot</h2>
+          <p class="os-dim"><?= ose(date('Y-m-d H:i', (int) $scan['started_at'])) ?><?= $scan['status'] === 'running' ? ' · incomplete' : '' ?><?php if ($newCount): ?> · <b style="color:var(--os-accent-l)"><?= (int) $newCount ?> new since last scan</b><?php endif; ?></p>
+          <div class="os-riskrow">
+            <span class="os-pill<?= $exposure['accounts'] ? '' : ' os-pill-good' ?>"><b><?= (int) $exposure['accounts'] ?></b> accounts</span>
+            <span class="os-pill<?= $exposure['identity'] ? ' os-pill-warn' : ' os-pill-good' ?>"><b><?= (int) $exposure['identity'] ?></b> email identity</span>
+            <span class="os-pill<?= $exposure['breaches'] ? ' os-pill-bad' : ' os-pill-good' ?>"><b><?= (int) $exposure['breaches'] ?></b> breaches<?= $exposure['span'] ? ' (' . ose($exposure['span']) . ')' : '' ?></span>
+            <?php if ($exposure['pw']): ?><span class="os-pill os-pill-bad">passwords exposed</span><?php endif; ?>
+            <span class="os-pill os-pill-warn"><b><?= (int) $scan['unreachable'] ?></b> couldn't check</span>
+          </div>
         </div>
       </div>
-      <div class="os-statrow">
-        <div class="os-stat"><b><?= count($accounts) ?></b><span>accounts</span></div>
-        <div class="os-stat"><b><?= count($identity) ?></b><span>email identity</span></div>
-        <div class="os-stat"><b><?= count($breaches) ?></b><span>breach records</span></div>
-        <div class="os-stat os-stat-warn"><b><?= (int) $scan['unreachable'] ?></b><span>couldn't check</span></div>
+      <div class="os-resultbtns" style="margin-top:16px">
+        <a class="os-btn os-btn-sm" href="/osint/report.php">Printable report</a>
+        <a class="os-btn os-btn-sm" href="/osint/export.php?scan=<?= (int) $scan['id'] ?>">Export CSV</a>
+        <a class="os-btn os-btn-sm" href="/osint/harden.php">Fix these &rarr;</a>
+        <form method="post" class="os-inline" onsubmit="return confirm('Delete all your scan results? This cannot be undone.')">
+          <?= osint_csrf_field() ?><input type="hidden" name="action" value="clear">
+          <button class="os-btn os-btn-sm os-btn-danger">Clear results</button>
+        </form>
       </div>
       <p class="os-fineprint">Mark each hit: <b>needs attention</b> if it's you and you'll deal with it, <b>not me</b> if it's a false flag (short/common handles collide with other people), <b>done</b> once handled. Avatars come from each site's public page so you can eyeball it.</p>
     </div>
@@ -107,7 +98,7 @@ function os_fcard(array $f, string $main): string {
             $main = '<a class="os-fcard-main" href="' . ose($f['url']) . '" target="_blank" rel="noopener nofollow">'
                   . '<span class="os-av">' . os_avatar($f) . '</span>'
                   . '<span class="os-acard-t">' . ose($f['title']) . '</span></a>';
-            echo os_fcard($f, $main);
+            echo os_fcard($f, $main, $isNew($f));
           endforeach; ?>
         </div>
       <?php endif; ?>
@@ -122,7 +113,7 @@ function os_fcard(array $f, string $main): string {
             $t  = ose($f['title']) . ($f['detail'] ? '<br><span class="os-dim">' . ose($f['detail']) . '</span>' : '');
             $main = '<a class="os-fcard-main" href="' . ose($f['url']) . '" target="_blank" rel="noopener nofollow">'
                   . $av . '<span class="os-acard-t">' . $t . '</span></a>';
-            echo os_fcard($f, $main);
+            echo os_fcard($f, $main, $isNew($f));
           endforeach; ?>
         </div>
       </div>
@@ -136,7 +127,7 @@ function os_fcard(array $f, string $main): string {
           <?php foreach ($phones as $f):
             $main = '<div class="os-fcard-main"><span class="os-av">&#9742;</span><span class="os-acard-t">' . ose($f['title'])
                   . ($f['detail'] ? '<br><span class="os-dim">' . ose($f['detail']) . '</span>' : '') . '</span></div>';
-            echo os_fcard($f, $main);
+            echo os_fcard($f, $main, $isNew($f));
           endforeach; ?>
         </div>
       </div>
@@ -145,7 +136,7 @@ function os_fcard(array $f, string $main): string {
     <div class="os-panel">
       <div class="os-sec-head">
         <h3 class="os-h3">Breach records <span class="os-dim">(<?= count($breaches) ?>)</span></h3>
-        <?php if ($span): ?><span class="os-dim os-badge"><?= ose($span) ?></span><?php endif; ?>
+        <?php if ($exposure['span']): ?><span class="os-dim os-badge"><?= ose($exposure['span']) ?></span><?php endif; ?>
       </div>
       <p class="os-dim os-mb">A breach already happened — change the password anywhere you reused it, then mark it done.</p>
       <?php if (!$breaches): ?><p class="os-dim">No breach records reported.</p><?php else: ?>
@@ -154,13 +145,27 @@ function os_fcard(array $f, string $main): string {
             $name = preg_replace('/^.* in the (.*) breach$/', '$1', $f['title']);
             $main = '<div class="os-fcard-main"><span class="os-blogo">' . os_avatar($f) . '</span>'
                   . '<span class="os-bcard-t"><b>' . ose($name) . '</b>' . ($f['detail'] ? '<span class="os-bmeta">' . ose($f['detail']) . '</span>' : '') . '</span></div>';
-            echo os_fcard($f, $main);
+            echo os_fcard($f, $main, $isNew($f));
           endforeach; ?>
         </div>
       <?php endif; ?>
     </div>
+
+    <?php if (count($history) > 1): ?>
+      <div class="os-panel">
+        <h3 class="os-h3">Scan history</h3>
+        <div class="os-list" style="margin-top:8px">
+          <?php foreach ($history as $h): $cur = (int) $h['id'] === (int) $scan['id']; ?>
+            <a class="os-row" href="/osint/results.php?scan=<?= (int) $h['id'] ?>" style="text-decoration:none">
+              <div class="os-row-main">
+                <div class="os-row-t"><?= ose(date('Y-m-d H:i', (int) $h['started_at'])) ?><?php if ($cur): ?> <span class="os-tag">viewing</span><?php endif; ?><?php if ($h['status'] === 'running'): ?> <span class="os-tag os-tag-hi">incomplete</span><?php endif; ?></div>
+                <div class="os-row-d"><b><?= (int) $h['found'] ?></b> found · <?= (int) $h['unreachable'] ?> couldn't check · <?= (int) $h['total'] ?> checks</div>
+              </div>
+            </a>
+          <?php endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
   <?php endif; ?>
-</main>
-<script src="/osint/assets/results.js?v=<?= @filemtime(__DIR__ . '/assets/results.js') ?: 1 ?>"></script>
-</body>
-</html>
+<?php
+osint_foot(['results.js']);

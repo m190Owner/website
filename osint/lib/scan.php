@@ -17,6 +17,7 @@ require_once __DIR__ . '/osint_auth.php';
 const OSINT_MAX_USERNAMES = 3;
 const OSINT_MAX_EMAILS    = 5;
 const OSINT_MAX_PHONES    = 3;
+const OSINT_MAX_DOMAINS   = 3;
 const OSINT_BATCH         = 30;    // sites checked in parallel per chunk request
 const OSINT_UA            = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const OSINT_XPOSED        = 'https://api.xposedornot.com/v1/breach-analytics?email=';
@@ -54,6 +55,17 @@ function scan_db(): ?PDO {
         try { $db->exec("ALTER TABLE osint_scans ADD COLUMN probe INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
         // Phone numbers added to the profile (offline metadata is computed from them).
         try { $db->exec("ALTER TABLE osint_profile ADD COLUMN phones TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
+        // Domains added to the profile (DNS / email-security / subdomain footprint).
+        try { $db->exec("ALTER TABLE osint_profile ADD COLUMN domains TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
+        // Generic per-user checklist state, backing the removal + hardening trackers.
+        $db->exec("CREATE TABLE IF NOT EXISTS osint_checklist (
+            user_id INTEGER NOT NULL, list TEXT NOT NULL, item TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'done', updated_at INTEGER NOT NULL,
+            PRIMARY KEY (user_id, list, item))");
+        // Cached domain-footprint lookups (so revisiting is instant + feeds the report).
+        $db->exec("CREATE TABLE IF NOT EXISTS osint_domain_cache (
+            user_id INTEGER NOT NULL, domain TEXT NOT NULL, json TEXT NOT NULL DEFAULT '{}',
+            updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, domain))");
         // Persistent "not me" — keyed by a hash of the finding title, so future scans
         // auto-mark the same account/breach false. Survives "clear results".
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
@@ -89,19 +101,37 @@ function scan_sites(): array {
 
 // ---- profile ----
 function scan_profile_get(int $uid): array {
-    $db = scan_db(); if (!$db) return ['usernames' => [], 'emails' => [], 'phones' => []];
-    $st = $db->prepare("SELECT usernames, emails, phones FROM osint_profile WHERE user_id = ?");
+    $db = scan_db(); if (!$db) return ['usernames' => [], 'emails' => [], 'phones' => [], 'domains' => []];
+    $st = $db->prepare("SELECT usernames, emails, phones, domains FROM osint_profile WHERE user_id = ?");
     $st->execute([$uid]);
     $r = $st->fetch();
     return [
         'usernames' => $r ? (array) json_decode($r['usernames'], true) : [],
         'emails'    => $r ? (array) json_decode($r['emails'], true) : [],
         'phones'    => $r ? (array) json_decode($r['phones'] ?? '[]', true) : [],
+        'domains'   => $r ? (array) json_decode($r['domains'] ?? '[]', true) : [],
     ];
 }
 
-/** Normalize + persist the profile. Returns the cleaned [usernames, emails, phones]. */
-function scan_profile_set(int $uid, array $usernames, array $emails, array $phones = []): array {
+/** Normalize a domain: strip scheme/path/www, lowercase, validate. Null if not a domain. */
+function scan_domain_normalize(string $raw): ?string {
+    $d = strtolower(trim($raw));
+    $d = preg_replace('#^[a-z]+://#', '', $d);        // strip scheme
+    $d = explode('/', $d)[0];                          // strip path
+    $d = explode('?', $d)[0];
+    $d = explode('@', $d);                             // strip any user@ / email local part
+    $d = end($d);
+    $d = preg_replace('/:\d+$/', '', $d);              // strip port
+    $d = preg_replace('/^www\./', '', $d);
+    $d = rtrim($d, '.');
+    if ($d === '' || strlen($d) > 253 || strpos($d, '.') === false) return null;
+    if (!filter_var($d, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) return null;
+    if (!preg_match('/[a-z]{2,}$/', $d)) return null;  // require an alphabetic TLD
+    return $d;
+}
+
+/** Normalize + persist the profile. Returns the cleaned [usernames, emails, phones, domains]. */
+function scan_profile_set(int $uid, array $usernames, array $emails, array $phones = [], array $domains = []): array {
     $u = [];
     foreach ($usernames as $x) {
         $x = trim((string) $x);
@@ -120,13 +150,19 @@ function scan_profile_set(int $uid, array $usernames, array $emails, array $phon
         if ($meta && !in_array($meta['e164'], $ph, true)) $ph[] = $meta['e164'];   // store normalized E.164
         if (count($ph) >= OSINT_MAX_PHONES) break;
     }
+    $dm = [];
+    foreach ($domains as $x) {
+        $d = scan_domain_normalize((string) $x);
+        if ($d !== null && !in_array($d, $dm, true)) $dm[] = $d;
+        if (count($dm) >= OSINT_MAX_DOMAINS) break;
+    }
     $db = scan_db();
     if ($db) {
-        $db->prepare("INSERT INTO osint_profile (user_id,usernames,emails,phones,updated_at) VALUES (?,?,?,?,?)
-                      ON CONFLICT(user_id) DO UPDATE SET usernames=excluded.usernames, emails=excluded.emails, phones=excluded.phones, updated_at=excluded.updated_at")
-           ->execute([$uid, json_encode($u), json_encode($e), json_encode($ph), time()]);
+        $db->prepare("INSERT INTO osint_profile (user_id,usernames,emails,phones,domains,updated_at) VALUES (?,?,?,?,?,?)
+                      ON CONFLICT(user_id) DO UPDATE SET usernames=excluded.usernames, emails=excluded.emails, phones=excluded.phones, domains=excluded.domains, updated_at=excluded.updated_at")
+           ->execute([$uid, json_encode($u), json_encode($e), json_encode($ph), json_encode($dm), time()]);
     }
-    return ['usernames' => $u, 'emails' => $e, 'phones' => $ph];
+    return ['usernames' => $u, 'emails' => $e, 'phones' => $ph, 'domains' => $dm];
 }
 
 /** Bundled offline phone data: calling codes + NANP area codes + Canadian area codes. */
@@ -549,6 +585,33 @@ function scan_findings(int $uid, int $scanId): array {
     return $st->fetchAll();
 }
 
+/** Recent scans (newest first) for the history/trend view. */
+function scan_history(int $uid, int $limit = 12): array {
+    $db = scan_db(); if (!$db) return [];
+    $st = $db->prepare("SELECT id,started_at,found,unreachable,total,status FROM osint_scans WHERE user_id = ? ORDER BY id DESC LIMIT ?");
+    $st->bindValue(1, $uid, PDO::PARAM_INT);
+    $st->bindValue(2, $limit, PDO::PARAM_INT);
+    $st->execute();
+    return $st->fetchAll();
+}
+
+/** Dismiss-keys of the findings from the scan immediately before $beforeId (for the
+ *  "new since last scan" diff). Empty when there is no earlier scan. */
+function scan_prev_titles(int $uid, int $beforeId): array {
+    $db = scan_db(); if (!$db) return [];
+    try {
+        $st = $db->prepare("SELECT id FROM osint_scans WHERE user_id = ? AND id < ? ORDER BY id DESC LIMIT 1");
+        $st->execute([$uid, $beforeId]);
+        $prev = $st->fetchColumn();
+        if (!$prev) return [];
+        $st = $db->prepare("SELECT title FROM osint_findings WHERE scan_id = ? AND user_id = ?");
+        $st->execute([(int) $prev, $uid]);
+        $set = [];
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $t) $set[scan_dismiss_key((string) $t)] = true;
+        return $set;
+    } catch (\Throwable $e) { return []; }
+}
+
 const OSINT_STATUSES = ['new', 'attention', 'false', 'done'];
 
 /** Set the triage status on one of the user's own findings, and remember/forget a
@@ -597,4 +660,59 @@ function scan_clear(int $uid): void {
         $db->prepare("DELETE FROM osint_findings WHERE user_id = ?")->execute([$uid]);
         $db->prepare("DELETE FROM osint_scans WHERE user_id = ?")->execute([$uid]);
     } catch (\Throwable $e) {}
+}
+
+// ---- checklists (removal + hardening progress) ----
+const OSINT_CHECK_STATUSES = ['todo', 'started', 'done'];
+
+/** The user's saved state for a checklist as [item => status]. */
+function scan_checklist_get(int $uid, string $list): array {
+    $db = scan_db(); if (!$db) return [];
+    try {
+        $st = $db->prepare("SELECT item, status FROM osint_checklist WHERE user_id = ? AND list = ?");
+        $st->execute([$uid, $list]);
+        $out = [];
+        foreach ($st->fetchAll() as $r) $out[$r['item']] = $r['status'];
+        return $out;
+    } catch (\Throwable $e) { return []; }
+}
+
+/** Set (or clear, when 'todo') one checklist item's status for the user. */
+function scan_checklist_set(int $uid, string $list, string $item, string $status): bool {
+    if (!in_array($status, OSINT_CHECK_STATUSES, true)) return false;
+    $db = scan_db(); if (!$db) return false;
+    $list = mb_substr($list, 0, 32); $item = mb_substr($item, 0, 80);
+    try {
+        if ($status === 'todo') {
+            $db->prepare("DELETE FROM osint_checklist WHERE user_id = ? AND list = ? AND item = ?")->execute([$uid, $list, $item]);
+        } else {
+            $db->prepare("INSERT INTO osint_checklist (user_id,list,item,status,updated_at) VALUES (?,?,?,?,?)
+                          ON CONFLICT(user_id,list,item) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at")
+               ->execute([$uid, $list, $item, $status, time()]);
+        }
+        return true;
+    } catch (\Throwable $e) { return false; }
+}
+
+/** Headline exposure index (0 = nothing found, 100 = heavy) from a scan's findings. */
+function scan_exposure(array $findings): array {
+    $accounts = 0; $identity = 0; $breaches = 0; $pwExposed = false; $years = [];
+    foreach ($findings as $f) {
+        if (($f['status'] ?? 'new') === 'false') continue;   // "not me" doesn't count
+        $cat = $f['category'] ?? '';
+        if ($cat === 'breach') {
+            $breaches++;
+            if (stripos((string) ($f['detail'] ?? ''), 'password') !== false) $pwExposed = true;
+            if (preg_match('/\b(19|20)\d\d\b/', (string) ($f['detail'] ?? ''), $m)) $years[] = (int) $m[0];
+        } elseif ($cat === 'account') {
+            if (strpos((string) ($f['exposes'] ?? ''), 'email') !== false) $identity++; else $accounts++;
+        }
+    }
+    $score = (int) min(100, min(30, $accounts * 4) + min(15, $identity * 5) + min(35, $breaches * 3) + ($pwExposed ? 20 : 0));
+    return [
+        'score'    => $score,
+        'level'    => $score >= 61 ? 'high' : ($score >= 26 ? 'mid' : 'low'),
+        'accounts' => $accounts, 'identity' => $identity, 'breaches' => $breaches, 'pw' => $pwExposed,
+        'span'     => $years ? (min($years) === max($years) ? (string) min($years) : min($years) . '–' . max($years)) : '',
+    ];
 }
