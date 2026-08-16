@@ -35,12 +35,12 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Create account · m190 finder</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" href="/osint/assets/m190-logo.png">
 <link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
 </head>
 <body class="os-centered">
   <form class="os-card os-form" method="post" autocomplete="off">
-    <div class="os-brand"><span class="os-mark">✷</span></div>
+    <div class="os-brand"><img class="os-logo-lg" src="/osint/assets/m190-logo.png" alt="m190 OPSEC Team"></div>
     <h1>Create your account</h1>
     <p class="os-lead">Enter your invite code and choose a username and password.</p>
     <?php if ($error): ?><div class="os-error"><?= ose($error) ?></div><?php endif; ?>

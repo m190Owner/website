@@ -22,12 +22,12 @@ $emails    = array_pad($p['emails'], OSINT_MAX_EMAILS, '');
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
 <title>Your profile · m190 finder</title>
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" href="/osint/assets/m190-logo.png">
 <link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
 </head>
 <body>
 <header class="os-top">
-  <div class="os-top-l"><span class="os-mark">✷</span><b>m190 finder</b></div>
+  <div class="os-top-l"><img class="os-logo" src="/osint/assets/m190-logo.png" alt="m190 OPSEC Team"><b>m190 finder</b></div>
   <div class="os-top-r">
     <a class="os-btn os-btn-sm" href="/osint/">Dashboard</a>
     <span>signed in as <?= ose($u['username']) ?></span>

@@ -70,3 +70,6 @@ a:hover{text-decoration:underline}
 .os-stat span{font-size:.68rem;text-transform:uppercase;letter-spacing:.5px;color:var(--os-dim)}
 .os-stat-warn b{color:var(--os-warn)}
 @media (max-width:560px){.os-statrow{grid-template-columns:repeat(2,1fr)}}
+
+.os-logo{width:30px;height:30px;border-radius:50%;object-fit:cover;flex:0 0 auto;display:block}
+.os-logo-lg{width:116px;height:116px;border-radius:50%;object-fit:cover;display:block;margin:0 auto 2px}

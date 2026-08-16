@@ -17,12 +17,12 @@ $siteCount = count(scan_sites());
 <meta name="robots" content="noindex, nofollow">
 <title>m190 finder</title>
 <meta name="osint-csrf" content="<?= ose(osint_csrf_token()) ?>">
-<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+<link rel="icon" type="image/png" href="/osint/assets/m190-logo.png">
 <link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
 </head>
 <body>
 <header class="os-top">
-  <div class="os-top-l"><span class="os-mark">✷</span><b>m190 finder</b></div>
+  <div class="os-top-l"><img class="os-logo" src="/osint/assets/m190-logo.png" alt="m190 OPSEC Team"><b>m190 finder</b></div>
   <div class="os-top-r">
     <a class="os-btn os-btn-sm" href="/osint/profile.php">Profile</a>
     <?php if ($latest): ?><a class="os-btn os-btn-sm" href="/osint/results.php">Results</a><?php endif; ?>
