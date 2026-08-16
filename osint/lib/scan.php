@@ -362,8 +362,8 @@ function scan_chunk(int $uid, int $scanId): array {
             $tasks[$i] = ['url' => $url, 'headers' => $hdr, 'follow' => false];
         } elseif ($t['kind'] === 'breach') {
             $tasks[$i] = ['url' => OSINT_XPOSED . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
-        } elseif ($t['kind'] === 'gravatar') { // avatar existence (?d=404 => 200 only when it exists)
-            $tasks[$i] = ['url' => OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?d=404&s=200', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
+        } elseif ($t['kind'] === 'gravatar') { // profile JSON: 200 (+ profile) if the email has a Gravatar, 404 if not
+            $tasks[$i] = ['url' => 'https://gravatar.com/' . md5(strtolower(trim($t['email']))) . '.json', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } elseif ($t['kind'] === 'duolingo') { // public users API by email, no email is sent
             $tasks[$i] = ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } else { // deep:<module>
@@ -409,9 +409,22 @@ function scan_chunk(int $uid, int $scanId): array {
                 $emit('breach', $t['email'] . ' in the ' . $b['name'] . ' breach', 'https://xposedornot.com/', 'email,breach', $b['logo'], $detail);
             }
         } elseif ($t['kind'] === 'gravatar') {
-            if (!$r || $r['err'] || $r['code'] !== 200) continue;
+            if (!$r || $r['err']) { $unreachInc++; continue; }
+            if ($r['code'] === 404) continue;                     // no Gravatar for this email
+            if ($r['code'] !== 200) { $unreachInc++; continue; }
             $av = OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?s=200';
-            $emit('account', $t['email'] . ' — Gravatar profile picture', $av, 'email,account', $av, '');
+            $prof = scan_gravatar_profile($r['body']);
+            $detail = $prof ? implode(' · ', array_filter([$prof['name'], $prof['location']])) : '';
+            $emit('account', $t['email'] . ' — Gravatar profile', $av, 'email,account', $av, $detail);
+            if ($prof) {
+                foreach ($prof['accounts'] as $a) {
+                    $emit('account', $t['email'] . ' — ' . $a['label'] . ($a['verified'] ? ' (verified)' : '') . ' via Gravatar',
+                          $a['url'], 'email,account', '', 'Linked on your public Gravatar profile.');
+                }
+                foreach ($prof['urls'] as $ur) {
+                    $emit('account', $t['email'] . ' — ' . $ur['title'] . ' (link on Gravatar)', $ur['url'], 'email,account', '', 'Personal link on your public Gravatar profile.');
+                }
+            }
         } elseif ($t['kind'] === 'duolingo') {
             if (!$r || $r['err']) { $unreachInc++; continue; }
             $pic = scan_duolingo_pic($r['body']);
@@ -499,6 +512,35 @@ function scan_extract_image(string $html, string $baseUrl): string {
         }
     }
     return '';
+}
+
+/** Gravatar profile JSON → [name, location, about, accounts[], urls[]], or null. */
+function scan_gravatar_profile(string $body): ?array {
+    $j = json_decode($body, true);
+    $e = is_array($j) ? ($j['entry'][0] ?? null) : null;
+    if (!is_array($e)) return null;
+    $accounts = [];
+    foreach (($e['accounts'] ?? []) as $a) {
+        $url = (string) ($a['url'] ?? '');
+        if (!filter_var($url, FILTER_VALIDATE_URL)) continue;
+        $accounts[] = [
+            'label'    => (string) ($a['shortname'] ?? $a['display'] ?? $a['domain'] ?? 'account'),
+            'url'      => $url,
+            'verified' => !empty($a['verified']),
+        ];
+    }
+    $urls = [];
+    foreach (($e['urls'] ?? []) as $ur) {
+        $v = (string) ($ur['value'] ?? '');
+        if (filter_var($v, FILTER_VALIDATE_URL)) $urls[] = ['title' => (string) ($ur['title'] ?? $v), 'url' => $v];
+    }
+    return [
+        'name'     => trim((string) ($e['displayName'] ?? '')),
+        'location' => trim((string) ($e['currentLocation'] ?? '')),
+        'about'    => trim((string) ($e['aboutMe'] ?? '')),
+        'accounts' => $accounts,
+        'urls'     => $urls,
+    ];
 }
 
 /** Duolingo public-users response → profile picture URL, '' if the account has none,
