@@ -45,6 +45,8 @@ function scan_db(): ?PDO {
         foreach (['avatar', 'detail'] as $col) {
             try { $db->exec("ALTER TABLE osint_findings ADD COLUMN $col TEXT NOT NULL DEFAULT ''"); } catch (\Throwable $e) {}
         }
+        // Per-finding triage the user sets: new | attention | false | done.
+        try { $db->exec("ALTER TABLE osint_findings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'"); } catch (\Throwable $e) {}
     }
     return $db;
 }
@@ -360,9 +362,21 @@ function scan_latest(int $uid): ?array {
 }
 function scan_findings(int $uid, int $scanId): array {
     $db = scan_db(); if (!$db) return [];
-    $st = $db->prepare("SELECT category,title,url,exposes,avatar,detail FROM osint_findings WHERE scan_id = ? AND user_id = ? ORDER BY category, id");
+    $st = $db->prepare("SELECT id,category,title,url,exposes,avatar,detail,status FROM osint_findings WHERE scan_id = ? AND user_id = ? ORDER BY category, id");
     $st->execute([$scanId, $uid]);
     return $st->fetchAll();
+}
+
+const OSINT_STATUSES = ['new', 'attention', 'false', 'done'];
+
+/** Set the triage status on one of the user's own findings. */
+function scan_set_finding_status(int $uid, int $fid, string $status): bool {
+    if (!in_array($status, OSINT_STATUSES, true)) return false;
+    $db = scan_db(); if (!$db) return false;
+    try {
+        $db->prepare("UPDATE osint_findings SET status = ? WHERE id = ? AND user_id = ?")->execute([$status, $fid, $uid]);
+        return true;   // WHERE user_id scopes it to the caller; a non-owned id is a silent no-op
+    } catch (\Throwable $e) { return false; }
 }
 
 /** Delete all of a user's scans + findings (the "clear results" action). */

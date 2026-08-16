@@ -98,3 +98,28 @@ a:hover{text-decoration:underline}
 
 .os-live-row{display:flex !important;align-items:center;gap:9px}
 .os-live-av{width:26px;height:26px;flex:0 0 auto;border-radius:50%;object-fit:cover;background:var(--os-elevated)}
+
+.os-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 16px}
+.os-chip{background:var(--os-surface);border:1px solid var(--os-border);border-radius:999px;padding:6px 13px;font-size:.8rem;color:var(--os-dim);cursor:pointer;transition:border-color .15s,color .15s}
+.os-chip:hover{border-color:var(--os-border-h)}
+.os-chip.on{border-color:var(--os-accent);color:var(--os-ink)}
+.os-chip-att.on{border-color:var(--os-warn)}
+.os-chip .n{opacity:.7;font-family:var(--os-mono);font-size:.72rem;margin-left:3px}
+
+.os-fcard{background:var(--os-bg);border:1px solid var(--os-border);border-radius:10px;overflow:hidden;transition:border-color .15s,opacity .15s}
+.os-fcard:hover{border-color:var(--os-border-h)}
+.os-fcard-main{display:flex;align-items:center;gap:10px;padding:8px 10px;text-decoration:none;color:var(--os-ink)}
+a.os-fcard-main:hover{text-decoration:none}
+.os-triage{display:flex;border-top:1px solid var(--os-border)}
+.os-triage button{flex:1;background:none;border:none;border-right:1px solid var(--os-border);color:var(--os-faint);font:inherit;font-size:.68rem;padding:6px 4px;cursor:pointer;white-space:nowrap;transition:color .12s,background .12s}
+.os-triage button:last-child{border-right:none}
+.os-triage button:hover{background:var(--os-elevated);color:var(--os-ink)}
+.os-triage button.on[data-set=attention]{color:var(--os-warn);background:rgba(224,168,58,.14)}
+.os-triage button.on[data-set=false]{color:#ff9a92;background:rgba(229,105,95,.14)}
+.os-triage button.on[data-set=done]{color:var(--os-accent-l);background:rgba(55,201,139,.14)}
+
+.os-st-attention{border-color:rgba(224,168,58,.5)}
+.os-st-attention .os-fcard-main{box-shadow:inset 3px 0 0 var(--os-warn)}
+.os-st-false{opacity:.45}
+.os-st-false .os-acard-t,.os-st-false .os-bcard-t b{text-decoration:line-through}
+.os-st-done{opacity:.6}
