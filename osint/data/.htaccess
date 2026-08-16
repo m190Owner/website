@@ -1,0 +1,2 @@
+# OSINT user store (accounts + invite codes) lives here. Never serve it over the web.
+Require all denied

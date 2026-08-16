@@ -56,6 +56,10 @@ jellyfin/data/*
 threatmap/data/*
 !threatmap/data/.htaccess
 
+# OSINT tool user store (accounts + invite codes) — keep the deny .htaccess
+osint/data/*
+!osint/data/.htaccess
+
 # Owner console secrets (password hash + #security webhook) — never commit
 owner/config.php
 # Audit-log SQLite (runtime) — keep the deny .htaccess

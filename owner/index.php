@@ -45,6 +45,7 @@ function ow_qs(array $over): string {
     <a class="ow-btn" href="/jellyfin/">🎬 Dashboard</a>
     <a class="ow-btn" href="/owner/media.php">🎛 Controls</a>
     <a class="ow-btn" href="/owner/tokens.php">🎣 Tokens</a>
+    <a class="ow-btn" href="/owner/osint.php">🔎 OSINT</a>
     <a class="ow-btn" href="/owner/2fa.php">&#128274; 2FA<?= owner_2fa_enabled() ? '' : ' <span class="ow-dot-warn" title="not enabled"></span>' ?></a>
     <a class="ow-btn" href="/owner/logout.php">Sign out</a>
   </div>
