@@ -9,6 +9,10 @@ require_once __DIR__ . '/../../owner/lib/audit.php';   // audit_log(), owner_*()
 
 define('OSINT_DATA_DIR', __DIR__ . '/../data');
 define('OSINT_DB_PATH',  OSINT_DATA_DIR . '/osint.sqlite');
+// Reserved id for the site owner (Logan) using his existing owner-console / videos-admin
+// login instead of a separate invited account. Negative, so it never collides with the
+// invited-users autoincrement ids.
+const OSINT_OWNER_UID = -1;
 
 function osint_db(): ?PDO {
     static $pdo = false;
@@ -73,15 +77,53 @@ function osint_current_user(): ?array {
     static $cached = false, $user = null;
     if ($cached) return $user;
     $cached = true;
+
+    // Resolve the owner/videos identity FIRST. Those use their own session cookies
+    // (ownersess / vidsess), and PHP allows only ONE active session per request — so we
+    // read + close each before starting the osint session below. Do it the other way
+    // round and their session_start() silently no-ops against the active osint session.
+    [$isOwner, $ownerName] = osint_owner_identity();
+
+    // Invited-user session (external accounts created by redeeming an invite).
     osint_session_start();
     $uid = $_SESSION['osint_uid'] ?? null;
-    if (!$uid) return $user = null;
-    $db = osint_db(); if (!$db) return $user = null;
-    $st = $db->prepare("SELECT * FROM users WHERE id = ?");
-    $st->execute([$uid]);
-    $u = $st->fetch();
-    if (!$u || (int) $u['disabled'] === 1) { $_SESSION = []; return $user = null; }
-    return $user = $u;
+    if ($uid) {
+        $db = osint_db();
+        if ($db) {
+            $st = $db->prepare("SELECT * FROM users WHERE id = ?");
+            $st->execute([$uid]);
+            $u = $st->fetch();
+            if ($u && (int) $u['disabled'] !== 1) { $u['is_owner'] = false; return $user = $u; }
+        }
+        $_SESSION = [];   // stale / disabled — drop it
+    }
+
+    // The site owner via his EXISTING owner-console or videos-admin login — no separate
+    // account. His profile + scans live under the reserved owner id.
+    if ($isOwner) {
+        return $user = ['id' => OSINT_OWNER_UID, 'username' => $ownerName, 'disabled' => 0, 'is_owner' => true];
+    }
+    return $user = null;
+}
+
+/** [bool isOwner, string displayName] for the site owner via the owner console OR the
+ *  videos admin. Each check starts its own session and closes it, so the osint session
+ *  can start cleanly afterwards. */
+function osint_owner_identity(): array {
+    $isOwner = false; $name = 'owner';
+    if (function_exists('owner_is_authed')) {
+        if (owner_is_authed()) $isOwner = true;
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+    }
+    if (!$isOwner) {
+        require_once __DIR__ . '/../../videos/lib/bootstrap.php';   // defines current_user()
+        if (function_exists('current_user')) {
+            $vu = current_user();
+            if ($vu && !empty($vu['is_admin'])) { $isOwner = true; $name = (string) ($vu['username'] ?? 'owner'); }
+        }
+        if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
+    }
+    return [$isOwner, $name];
 }
 
 function osint_require(): void {

@@ -26,14 +26,14 @@ if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Sign in · Removal Tool</title>
+<title>Sign in · m190 finder</title>
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
 </head>
 <body class="os-centered">
   <form class="os-card os-form" method="post" autocomplete="off">
     <div class="os-brand"><span class="os-mark">✷</span></div>
-    <h1>Removal tool</h1>
+    <h1>m190 finder</h1>
     <p class="os-lead">Private, invite-only. Sign in to continue.</p>
     <?php if ($error): ?><div class="os-error"><?= ose($error) ?></div><?php endif; ?>
     <?= osint_csrf_field() ?>

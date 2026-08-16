@@ -15,14 +15,14 @@ $siteCount = count(scan_sites());
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="robots" content="noindex, nofollow">
-<title>Removal Tool</title>
+<title>m190 finder</title>
 <meta name="osint-csrf" content="<?= ose(osint_csrf_token()) ?>">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <link rel="stylesheet" href="/osint/assets/osint.css?v=<?= @filemtime(__DIR__ . '/assets/osint.css') ?: 1 ?>">
 </head>
 <body>
 <header class="os-top">
-  <div class="os-top-l"><span class="os-mark">✷</span><b>Removal tool</b></div>
+  <div class="os-top-l"><span class="os-mark">✷</span><b>m190 finder</b></div>
   <div class="os-top-r">
     <a class="os-btn os-btn-sm" href="/osint/profile.php">Profile</a>
     <?php if ($latest): ?><a class="os-btn os-btn-sm" href="/osint/results.php">Results</a><?php endif; ?>
