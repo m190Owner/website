@@ -139,6 +139,14 @@ osint_head('Results · m190 finder', 'results');
         <?php if ($exposure['span']): ?><span class="os-dim os-badge"><?= ose($exposure['span']) ?></span><?php endif; ?>
       </div>
       <p class="os-dim os-mb">A breach already happened — change the password anywhere you reused it, then mark it done.</p>
+      <?php if ($exposure['dataclasses']): ?>
+        <div class="os-subhead" style="margin-top:0">What leaked across your breaches</div>
+        <div class="os-taglist" style="margin-bottom:12px">
+          <?php foreach (array_slice($exposure['dataclasses'], 0, 16) as $dc): $hot = preg_match('/passw|security question|payment|card|social security|bank/i', $dc); ?>
+            <span class="os-tag<?= $hot ? ' os-tag-hi' : '' ?>"><?= ose($dc) ?></span>
+          <?php endforeach; ?>
+        </div>
+      <?php endif; ?>
       <?php if (!$breaches): ?><p class="os-dim">No breach records reported.</p><?php else: ?>
         <div class="os-breachlist">
           <?php foreach ($breaches as $f):

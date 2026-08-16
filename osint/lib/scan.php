@@ -888,23 +888,34 @@ function scan_checklist_set(int $uid, string $list, string $item, string $status
 
 /** Headline exposure index (0 = nothing found, 100 = heavy) from a scan's findings. */
 function scan_exposure(array $findings): array {
-    $accounts = 0; $identity = 0; $breaches = 0; $pwExposed = false; $years = [];
+    $accounts = 0; $identity = 0; $breaches = 0; $pwExposed = false; $years = []; $classes = [];
     foreach ($findings as $f) {
         if (($f['status'] ?? 'new') === 'false') continue;   // "not me" doesn't count
         $cat = $f['category'] ?? '';
         if ($cat === 'breach') {
             $breaches++;
-            if (stripos((string) ($f['detail'] ?? ''), 'password') !== false) $pwExposed = true;
-            if (preg_match('/\b(19|20)\d\d\b/', (string) ($f['detail'] ?? ''), $m)) $years[] = (int) $m[0];
+            $detail = (string) ($f['detail'] ?? '');
+            if (stripos($detail, 'password') !== false) $pwExposed = true;
+            if (preg_match('/\b(19|20)\d\d\b/', $detail, $m)) $years[] = (int) $m[0];
+            // Aggregate the exposed data classes ("Passwords, Physical addresses, ...").
+            $rest = preg_replace('/^\s*(19|20)\d\d\s*·?\s*/', '', $detail);
+            foreach (explode(',', $rest) as $c) {
+                $c = trim($c);
+                if ($c !== '' && !preg_match('/^(19|20)\d\d$/', $c)) {
+                    $k = mb_strtolower($c);
+                    if (!isset($classes[$k])) $classes[$k] = $c;
+                }
+            }
         } elseif ($cat === 'account') {
             if (strpos((string) ($f['exposes'] ?? ''), 'email') !== false) $identity++; else $accounts++;
         }
     }
     $score = (int) min(100, min(30, $accounts * 4) + min(15, $identity * 5) + min(35, $breaches * 3) + ($pwExposed ? 20 : 0));
     return [
-        'score'    => $score,
-        'level'    => $score >= 61 ? 'high' : ($score >= 26 ? 'mid' : 'low'),
-        'accounts' => $accounts, 'identity' => $identity, 'breaches' => $breaches, 'pw' => $pwExposed,
-        'span'     => $years ? (min($years) === max($years) ? (string) min($years) : min($years) . '–' . max($years)) : '',
+        'score'       => $score,
+        'level'       => $score >= 61 ? 'high' : ($score >= 26 ? 'mid' : 'low'),
+        'accounts'    => $accounts, 'identity' => $identity, 'breaches' => $breaches, 'pw' => $pwExposed,
+        'span'        => $years ? (min($years) === max($years) ? (string) min($years) : min($years) . '–' . max($years)) : '',
+        'dataclasses' => array_values($classes),
     ];
 }

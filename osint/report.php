@@ -102,6 +102,13 @@ osint_head('Exposure report · m190 finder', '');
       </div>
     <?php endforeach; ?>
 
+    <?php if ($exposure['dataclasses']): ?>
+      <div class="os-rsec">
+        <h3 class="os-h3">Data exposed across breaches</h3>
+        <div class="os-taglist"><?php foreach (array_slice($exposure['dataclasses'], 0, 20) as $dc) echo '<span class="os-tag">' . ose($dc) . '</span>'; ?></div>
+      </div>
+    <?php endif; ?>
+
     <?php if ($domains): ?>
       <div class="os-rsec">
         <h3 class="os-h3">Domain footprint</h3>
