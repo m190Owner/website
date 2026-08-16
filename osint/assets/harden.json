@@ -1,0 +1,69 @@
+{
+  "groups": [
+    {
+      "title": "Accounts & authentication",
+      "items": [
+        {"id":"pwmgr","title":"Use a password manager with a unique password per site","detail":"Bitwarden, 1Password, or KeePassXC. Reused passwords are how one breach becomes ten. Generate + store, don't memorise."},
+        {"id":"2fa","title":"Turn on two-factor auth everywhere it's offered","detail":"Prefer an authenticator app or hardware key over SMS.","link":"https://2fa.directory/","linklabel":"which sites support 2FA"},
+        {"id":"passkeys","title":"Switch to passkeys where available","detail":"Phishing-resistant and nothing to leak in a breach.","link":"https://passkeys.directory/","linklabel":"passkey directory"},
+        {"id":"dropsms","title":"Drop SMS 2FA where an app/key option exists","detail":"SMS codes are defeated by SIM-swapping. Keep SMS only as a last-resort backup."},
+        {"id":"recovery","title":"Save backup/recovery codes offline","detail":"Print them or store in your password manager's secure notes — not in plain email."},
+        {"id":"sessions","title":"Review active sessions & connected apps","detail":"On Google, Microsoft, Apple, Meta, X: revoke old devices and third-party app grants you don't recognise."},
+        {"id":"reused","title":"Change passwords flagged as breached or reused","detail":"Start with email + bank + anything sharing that password.","link":"/osint/password.php","linklabel":"check a password"}
+      ]
+    },
+    {
+      "title": "Email — your master key",
+      "items": [
+        {"id":"emailprimary","title":"Lock down your primary email with strong 2FA","detail":"Whoever controls your inbox can reset everything else. Treat it as the crown jewels."},
+        {"id":"aliases","title":"Use aliases / plus-addressing for signups","detail":"you+shop@gmail.com, or a relay so leaks don't expose your real address.","link":"https://simplelogin.io/","linklabel":"email aliasing"},
+        {"id":"fwdrules","title":"Audit inbox forwarding rules & filters","detail":"Attackers add silent auto-forward rules after a compromise. Delete any you didn't create."},
+        {"id":"oldemail","title":"Stop using one email for everything","detail":"Separate high-value (bank, gov) from throwaway signups so a marketing leak can't reach your bank login."}
+      ]
+    },
+    {
+      "title": "Phone & SIM",
+      "items": [
+        {"id":"simpin","title":"Set a carrier port-out PIN / SIM lock","detail":"Call your carrier and add a transfer PIN — the main defence against SIM-swap account takeover."},
+        {"id":"voip","title":"Use a secondary/VoIP number for signups & 2FA","detail":"Keeps your real number off marketing lists and people-search sites."}
+      ]
+    },
+    {
+      "title": "Device & network",
+      "items": [
+        {"id":"fde","title":"Enable full-disk encryption","detail":"BitLocker (Windows) or FileVault (Mac). A lost laptop shouldn't equal a data breach."},
+        {"id":"updates","title":"Keep OS, browser, and apps auto-updating","detail":"Most real-world compromise is unpatched software, not zero-days."},
+        {"id":"lock","title":"Short auto-lock + biometric/PIN on every device","detail":"1-2 minute lock on phone and laptop."},
+        {"id":"dns","title":"Use a filtering resolver / VPN on untrusted networks","detail":"NextDNS or Quad9 for DNS-level blocking; a reputable VPN on public Wi-Fi."}
+      ]
+    },
+    {
+      "title": "Browser & tracking",
+      "items": [
+        {"id":"ublock","title":"Install a content/tracker blocker","detail":"uBlock Origin cuts trackers and malvertising.","link":"https://ublockorigin.com/","linklabel":"uBlock Origin"},
+        {"id":"3pcookies","title":"Block third-party cookies","detail":"On by default in Firefox/Safari; enable it in Chrome's privacy settings."},
+        {"id":"gpc","title":"Enable Global Privacy Control","detail":"A legally-recognised 'do not sell/share' signal in some states.","link":"https://globalprivacycontrol.org/","linklabel":"about GPC"},
+        {"id":"adopt","title":"Turn off ad personalisation","detail":"Google (adssettings.google.com) and Meta (accountscenter) both let you disable interest-based ads."}
+      ]
+    },
+    {
+      "title": "Financial & identity",
+      "items": [
+        {"id":"freeze_eq","title":"Freeze your credit — Equifax","detail":"Blocks new-account fraud; free and reversible.","link":"https://www.equifax.com/personal/credit-report-services/credit-freeze/","linklabel":"Equifax freeze"},
+        {"id":"freeze_ex","title":"Freeze your credit — Experian","detail":"Do all three bureaus for full coverage.","link":"https://www.experian.com/freeze/center.html","linklabel":"Experian freeze"},
+        {"id":"freeze_tu","title":"Freeze your credit — TransUnion","detail":"The third of the three US bureaus.","link":"https://www.transunion.com/credit-freeze","linklabel":"TransUnion freeze"},
+        {"id":"prescreen","title":"Opt out of pre-approved credit offers","detail":"Cuts junk mail and a common identity-theft vector.","link":"https://www.optoutprescreen.com/","linklabel":"optoutprescreen.com"}
+      ]
+    },
+    {
+      "title": "Shrink your footprint",
+      "items": [
+        {"id":"brokers","title":"Work through the data-broker opt-outs","detail":"The single biggest reduction in what strangers can look up.","link":"/osint/brokers.php","linklabel":"removal center"},
+        {"id":"deleteold","title":"Delete accounts you no longer use","detail":"Every dormant account is future breach exposure.","link":"https://justdeleteme.xyz/","linklabel":"just-delete-me directory"},
+        {"id":"selfsearch","title":"Search yourself regularly","detail":"Set a monthly reminder to run the self-search and re-scan.","link":"/osint/search.php","linklabel":"self-search"},
+        {"id":"socialpriv","title":"Lock down social-media privacy settings","detail":"Set profiles to private/friends; remove birth year, phone, and address from public view."},
+        {"id":"sociallookup","title":"Disable 'find me by phone/email' on social platforms","detail":"Stops your account being tied to a leaked number/email. Check Facebook, Instagram, X, LinkedIn."}
+      ]
+    }
+  ]
+}
