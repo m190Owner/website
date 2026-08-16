@@ -18,8 +18,9 @@ const OSINT_MAX_USERNAMES = 3;
 const OSINT_MAX_EMAILS    = 5;
 const OSINT_BATCH         = 30;    // sites checked in parallel per chunk request
 const OSINT_UA            = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
-const OSINT_XPOSED        = 'https://api.xposedornot.com/v1/check-email/';
+const OSINT_XPOSED        = 'https://api.xposedornot.com/v1/breach-analytics?email=';
 const OSINT_GRAVATAR      = 'https://www.gravatar.com/';
+const OSINT_BREACH_CAP    = 60;    // most-recent breaches kept per email
 
 function scan_db(): ?PDO {
     static $ready = false;
@@ -40,6 +41,10 @@ function scan_db(): ?PDO {
             category TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL,
             exposes TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL)");
         $db->exec("CREATE INDEX IF NOT EXISTS idx_osf_scan ON osint_findings(scan_id)");
+        // Migrate older DBs: avatar (profile picture / logo) + detail (breach date, etc.).
+        foreach (['avatar', 'detail'] as $col) {
+            try { $db->exec("ALTER TABLE osint_findings ADD COLUMN $col TEXT NOT NULL DEFAULT ''"); } catch (\Throwable $e) {}
+        }
     }
     return $db;
 }
@@ -128,7 +133,22 @@ function scan_start(int $uid): array {
     $total = scan_total(count($p['usernames']), count(scan_sites()), count($p['emails']));
     $db->prepare("INSERT INTO osint_scans (user_id,started_at,total,usernames,emails) VALUES (?,?,?,?,?)")
        ->execute([$uid, time(), $total, json_encode($p['usernames']), json_encode($p['emails'])]);
-    return [['id' => (int) $db->lastInsertId(), 'total' => $total, 'cursor' => 0], null];
+    $scanId = (int) $db->lastInsertId();
+
+    // A Gmail/Googlemail address inherently has a Google account — record it up front
+    // (no probing: it's true by definition of the domain). Deeper Google profile lookup
+    // needs an authenticated Google session, which a keyless hosted tool won't do.
+    $g = 0;
+    foreach ($p['emails'] as $em) {
+        if (preg_match('/@(gmail|googlemail)\.com$/i', $em)) {
+            $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?)")
+               ->execute([$scanId, $uid, 'account', $em . ' — Google account', 'https://myaccount.google.com/',
+                          'email,google', '', 'This is a Gmail address, so it has a Google account.', time()]);
+            $g++;
+        }
+    }
+    if ($g > 0) $db->prepare("UPDATE osint_scans SET found = found + ? WHERE id = ?")->execute([$g, $scanId]);
+    return [['id' => $scanId, 'total' => $total, 'cursor' => 0], null];
 }
 
 /** Process the next batch of a running scan. Returns a progress array. */
@@ -163,44 +183,43 @@ function scan_chunk(int $uid, int $scanId): array {
             $tasks[$i] = ['url' => $url, 'headers' => $hdr, 'follow' => false];
         } elseif ($t['kind'] === 'breach') {
             $tasks[$i] = ['url' => OSINT_XPOSED . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
-        } else { // gravatar
-            $tasks[$i] = ['url' => OSINT_GRAVATAR . md5(strtolower(trim($t['email']))) . '.json', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
+        } else { // gravatar — avatar existence check (?d=404 => 200 only when a gravatar exists)
+            $tasks[$i] = ['url' => OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?d=404&s=200', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         }
     }
 
     $res = scan_multi_get($tasks);
 
     $foundInc = 0; $unreachInc = 0; $newFindings = [];
-    $ins = $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,created_at) VALUES (?,?,?,?,?,?,?)");
+    $ins = $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?)");
+    $emit = function (string $cat, string $title, string $url, string $exposes, string $avatar, string $detail)
+                     use ($ins, $scanId, $uid, &$newFindings, &$foundInc) {
+        $ins->execute([$scanId, $uid, $cat, $title, $url, $exposes, $avatar, $detail, time()]);
+        $newFindings[] = ['category' => $cat, 'title' => $title, 'url' => $url, 'avatar' => $avatar, 'detail' => $detail];
+        $foundInc++;
+    };
     foreach ($meta as $i => $t) {
         $r = $res[$i] ?? null;
         if ($t['kind'] === 'account') {
             if (!$r || $r['err']) { $unreachInc++; continue; }
             if (scan_matches($t['site'], $r['code'], $r['body'])) {
-                $title = $t['user'] . ' on ' . $t['site']['name'];
-                $ins->execute([$scanId, $uid, 'account', $title, $tasks[$i]['url'], 'account', time()]);
-                $newFindings[] = ['category' => 'account', 'title' => $title, 'url' => $tasks[$i]['url']];
-                $foundInc++;
+                $emit('account', $t['user'] . ' on ' . $t['site']['name'], $tasks[$i]['url'], 'account',
+                      scan_extract_image($r['body'], $tasks[$i]['url']), '');   // og:image avatar to eyeball it
             } elseif (scan_blocked($r['code'], (int) $t['site']['ec'])) {
-                $unreachInc++;   // 403/429/5xx: we were blocked, so this is "couldn't check", not "clean"
+                $unreachInc++;   // 403/429/5xx: blocked, so "couldn't check", not "clean"
             }
         } elseif ($t['kind'] === 'breach') {
             if (!$r || $r['err']) { $unreachInc++; continue; }
             if ($r['code'] === 404) continue;                 // genuinely clean
             if ($r['code'] !== 200) { $unreachInc++; continue; } // unknown, not clear
-            foreach (scan_breach_names($r['body']) as $name) {
-                $title = $t['email'] . ' in the ' . $name . ' breach';
-                $ins->execute([$scanId, $uid, 'breach', $title, 'https://xposedornot.com/', 'email,breach', time()]);
-                $newFindings[] = ['category' => 'breach', 'title' => $title, 'url' => 'https://xposedornot.com/'];
-                $foundInc++;
+            foreach (scan_breach_details($r['body']) as $b) {
+                $detail = trim(($b['date'] ?: '') . ($b['data'] ? ' · ' . $b['data'] : ''), ' ·');
+                $emit('breach', $t['email'] . ' in the ' . $b['name'] . ' breach', 'https://xposedornot.com/', 'email,breach', $b['logo'], $detail);
             }
         } else { // gravatar
             if (!$r || $r['err'] || $r['code'] !== 200) continue;
-            $title = $t['email'] . ' has a public Gravatar profile';
-            $url = OSINT_GRAVATAR . md5(strtolower(trim($t['email'])));
-            $ins->execute([$scanId, $uid, 'account', $title, $url, 'email,account', time()]);
-            $newFindings[] = ['category' => 'account', 'title' => $title, 'url' => $url];
-            $foundInc++;
+            $av = OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?s=200';
+            $emit('account', $t['email'] . ' — Gravatar profile picture', $av, 'email,account', $av, '');
         }
     }
 
@@ -238,16 +257,41 @@ function scan_blocked(int $code, int $expected): bool {
     return $code === 0 || $code === 401 || $code === 403 || $code === 429 || $code >= 500;
 }
 
-/** XposedOrNot breach-name extraction (tolerant of schema drift). */
-function scan_breach_names(string $body): array {
+/** XposedOrNot breach-analytics → [ ['name','date','data','logo'], ... ], most recent first. */
+function scan_breach_details(string $body): array {
     $p = json_decode($body, true);
-    if (!is_array($p)) return [];
+    $bs = $p['ExposedBreaches']['breaches_details'] ?? null;
+    if (!is_array($bs)) return [];
     $out = [];
-    foreach ((array) ($p['breaches'] ?? []) as $item) {
-        if (is_string($item)) $out[] = $item;
-        elseif (is_array($item)) foreach ($item as $x) if (is_string($x)) $out[] = $x;
+    foreach ($bs as $b) {
+        if (!is_array($b) || empty($b['breach'])) continue;
+        $data = (string) ($b['xposed_data'] ?? '');
+        $out[] = [
+            'name' => (string) $b['breach'],
+            'date' => preg_replace('/[^0-9\-]/', '', (string) ($b['xposed_date'] ?? '')),
+            'data' => mb_substr(str_replace(';', ', ', $data), 0, 160),
+            'logo' => filter_var((string) ($b['logo'] ?? ''), FILTER_VALIDATE_URL) ? (string) $b['logo'] : '',
+        ];
     }
-    return array_values(array_filter(array_unique($out)));
+    usort($out, fn($a, $b) => strcmp($b['date'], $a['date']));   // newest first
+    return array_slice($out, 0, OSINT_BREACH_CAP);
+}
+
+/** Pull a profile avatar (og:image / twitter:image) out of an already-fetched page. */
+function scan_extract_image(string $html, string $baseUrl): string {
+    $head = substr($html, 0, 24000);   // these metas live in <head>, near the top
+    foreach (['og:image', 'twitter:image', 'twitter:image:src'] as $prop) {
+        $q = preg_quote($prop, '#');
+        if (preg_match('#<meta[^>]+(?:property|name)=["\']' . $q . '["\'][^>]+content=["\']([^"\']+)["\']#i', $head, $m)
+         || preg_match('#<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']' . $q . '["\']#i', $head, $m)) {
+            $u = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5));
+            if ($u === '') continue;
+            if (strpos($u, '//') === 0) $u = 'https:' . $u;
+            elseif ($u !== '' && $u[0] === '/') { $p = parse_url($baseUrl); $u = ($p['scheme'] ?? 'https') . '://' . ($p['host'] ?? '') . $u; }
+            if (preg_match('#^https?://#i', $u)) return mb_substr($u, 0, 400);
+        }
+    }
+    return '';
 }
 
 /** Username goes into a path/query segment — encode but keep it readable. */
@@ -316,7 +360,16 @@ function scan_latest(int $uid): ?array {
 }
 function scan_findings(int $uid, int $scanId): array {
     $db = scan_db(); if (!$db) return [];
-    $st = $db->prepare("SELECT category,title,url,exposes FROM osint_findings WHERE scan_id = ? AND user_id = ? ORDER BY category, id");
+    $st = $db->prepare("SELECT category,title,url,exposes,avatar,detail FROM osint_findings WHERE scan_id = ? AND user_id = ? ORDER BY category, id");
     $st->execute([$scanId, $uid]);
     return $st->fetchAll();
+}
+
+/** Delete all of a user's scans + findings (the "clear results" action). */
+function scan_clear(int $uid): void {
+    $db = scan_db(); if (!$db) return;
+    try {
+        $db->prepare("DELETE FROM osint_findings WHERE user_id = ?")->execute([$uid]);
+        $db->prepare("DELETE FROM osint_scans WHERE user_id = ?")->execute([$uid]);
+    } catch (\Throwable $e) {}
 }

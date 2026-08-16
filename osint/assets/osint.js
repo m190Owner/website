@@ -27,8 +27,14 @@
     arr.forEach(function (f) {
       foundTotal++;
       var li = document.createElement('li');
-      if (f.category === 'breach') li.textContent = f.title;
-      else li.innerHTML = '<a href="' + esc(f.url) + '" target="_blank" rel="noopener nofollow">' + esc(f.title) + ' ↗</a>';
+      li.className = 'os-live-row';
+      var av = (f.avatar && /^https?:/.test(f.avatar))
+        ? '<img class="os-live-av" src="' + esc(f.avatar) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">'
+        : '';
+      var body = f.category === 'breach'
+        ? esc(f.title)
+        : '<a href="' + esc(f.url) + '" target="_blank" rel="noopener nofollow">' + esc(f.title) + ' ↗</a>';
+      li.innerHTML = av + '<span>' + body + '</span>';
       list.appendChild(li);
     });
     livecount.textContent = foundTotal;
