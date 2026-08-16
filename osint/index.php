@@ -74,12 +74,15 @@ osint_head('m190 finder', 'dashboard');
     <a class="os-btn os-btn-accent" id="os-viewresults" href="/osint/results.php" hidden style="margin-top:12px;display:inline-block">View full results</a>
   </div>
 
-  <?php if ($latest): ?>
+  <?php if ($latest): $ageDays = (int) floor((time() - (int) $latest['started_at']) / 86400); ?>
     <div class="os-panel">
       <h3 class="os-h3">Last scan</h3>
       <p><b><?= (int) $latest['found'] ?></b> found · <b><?= (int) $latest['unreachable'] ?></b> couldn't be checked ·
         <?= (int) $latest['total'] ?> checks · <?= ose(date('Y-m-d H:i', (int) $latest['started_at'])) ?>
         <?= $latest['status'] === 'running' ? ' <span class="os-dim">(incomplete)</span>' : '' ?></p>
+      <?php if ($ageDays >= 30): ?>
+        <p class="os-note" style="margin-top:10px">It's been <b><?= $ageDays ?> days</b> since your last scan — new breaches and listings appear constantly. Re-scan to stay current.</p>
+      <?php endif; ?>
       <a class="os-btn os-btn-sm" href="/osint/results.php" style="margin-top:12px;display:inline-block">View results</a>
     </div>
   <?php endif; ?>
