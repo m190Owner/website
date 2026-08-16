@@ -37,6 +37,18 @@ function os_srch_block(string $title, array $links): void {
     echo '</div>';
 }
 
+/** Common handle variations — to hunt for alt accounts or impersonators of a username. */
+function os_username_variants(string $u): array {
+    $u = trim($u);
+    $stripped = preg_replace('/[._\-]/', '', $u);
+    $set = [$u, $stripped,
+        str_replace(['.', '_', '-'], '_', $u),
+        str_replace(['.', '_', '-'], '.', $u),
+        'the' . $u, 'real' . $u, 'official' . $u, 'its' . $u];
+    foreach (['1', '01', '123', '2024', '2025', '_', 'official', 'hq', 'tv', 'yt'] as $s) $set[] = $u . $s;
+    return array_slice(array_values(array_unique(array_filter($set, fn($x) => $x !== ''))), 0, 16);
+}
+
 $total = count($p['usernames']) + count($p['emails']) + count($p['phones']) + count($p['domains']);
 osint_head('Self-search · m190 finder', 'search');
 ?>
@@ -44,8 +56,19 @@ osint_head('Self-search · m190 finder', 'search');
     <h2>Search for yourself</h2>
     <p>The fastest OSINT check is the one anyone can run on you: a search engine. These are pre-built queries for <b>your own</b> saved identifiers — exact-match phrases and targeted &ldquo;dorks&rdquo; that surface pastes, leaked documents, and mentions. They open on each engine in a new tab; nothing is sent to this server.</p>
     <?php if ($total === 0): ?>
-      <p class="os-dim" style="margin-top:12px">No identifiers yet. <a href="/osint/profile.php">Add some to your profile</a> to generate searches.</p>
+      <p class="os-dim" style="margin-top:12px">No identifiers yet. <a href="/osint/profile.php">Add some to your profile</a> to generate searches. The reverse-image tool below works without a profile.</p>
     <?php endif; ?>
+  </div>
+
+  <div class="os-panel">
+    <h3 class="os-h3">Reverse-image &amp; face search</h3>
+    <p class="os-dim os-mb">Paste the URL of a photo of yourself (e.g. your public profile picture) to find everywhere that image appears online.</p>
+    <form id="os-rev" class="os-inrow">
+      <input type="url" id="os-revurl" class="os-input" placeholder="https://…/your-photo.jpg" autocomplete="off">
+      <button class="os-btn os-btn-accent" type="submit">Build links</button>
+    </form>
+    <div class="os-srch" id="os-revout" style="margin-top:10px"></div>
+    <p class="os-fineprint">Face-search engines like <a href="https://pimeyes.com/en" target="_blank" rel="noopener nofollow">PimEyes</a> and <a href="https://images.google.com/" target="_blank" rel="noopener nofollow">Google Images</a> need the photo uploaded directly — use them to see where your face shows up, then request removal where it doesn't belong.</p>
   </div>
 
   <?php foreach ($p['usernames'] as $v): $q = '"' . $v . '"'; ?>
@@ -61,6 +84,8 @@ osint_head('Self-search · m190 finder', 'search');
             os_link('Reddit', 'https://www.reddit.com/search/?q=' . rawurlencode($q), '👽'),
             os_link('Archive.org', 'https://archive.org/search?query=' . rawurlencode($v), '📚'),
         ]);
+        os_srch_block('Handle variations — find alt accounts / impersonators',
+            array_map(fn($x) => ['label' => $x, 'url' => 'https://www.google.com/search?q=' . rawurlencode('"' . $x . '"'), 'ic' => '🔁'], os_username_variants($v)));
       ?>
     </div>
   <?php endforeach; ?>
@@ -123,4 +148,4 @@ osint_head('Self-search · m190 finder', 'search');
     <p class="os-fineprint">Tip: run the exact-match phrase on more than one engine — Bing and Yandex index pages Google drops, and vice-versa. Found something you want gone? The <a href="/osint/brokers.php">removal center</a> covers the data brokers, and <a href="/osint/harden.php">hardening</a> covers the accounts.</p>
   <?php endif; ?>
 <?php
-osint_foot();
+osint_foot(['search.js']);
