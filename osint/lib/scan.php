@@ -47,6 +47,11 @@ function scan_db(): ?PDO {
         }
         // Per-finding triage the user sets: new | attention | false | done.
         try { $db->exec("ALTER TABLE osint_findings ADD COLUMN status TEXT NOT NULL DEFAULT 'new'"); } catch (\Throwable $e) {}
+        // Persistent "not me" — keyed by a hash of the finding title, so future scans
+        // auto-mark the same account/breach false. Survives "clear results".
+        $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
+            user_id INTEGER NOT NULL, key_hash TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
+            created_at INTEGER NOT NULL, PRIMARY KEY (user_id, key_hash))");
     }
     return $db;
 }
@@ -111,7 +116,8 @@ function scan_profile_set(int $uid, array $usernames, array $emails): array {
 }
 
 // ---- scan lifecycle ----
-function scan_total(int $nUser, int $nSite, int $nEmail): int { return $nUser * $nSite + $nEmail * 2; }
+// Per email: breach + gravatar + duolingo = 3 checks.
+function scan_total(int $nUser, int $nSite, int $nEmail): int { return $nUser * $nSite + $nEmail * 3; }
 
 /** Map a global task index to a concrete task using the scan's snapshot. */
 function scan_task_at(int $i, array $U, array $S, array $E): ?array {
@@ -124,6 +130,8 @@ function scan_task_at(int $i, array $U, array $S, array $E): ?array {
     if ($j < count($E)) return ['kind' => 'breach', 'email' => $E[$j]];
     $j -= count($E);
     if ($j < count($E)) return ['kind' => 'gravatar', 'email' => $E[$j]];
+    $j -= count($E);
+    if ($j < count($E)) return ['kind' => 'duolingo', 'email' => $E[$j]];
     return null;
 }
 
@@ -140,12 +148,15 @@ function scan_start(int $uid): array {
     // A Gmail/Googlemail address inherently has a Google account — record it up front
     // (no probing: it's true by definition of the domain). Deeper Google profile lookup
     // needs an authenticated Google session, which a keyless hosted tool won't do.
+    $dismissed = scan_dismissed_set($uid);
     $g = 0;
     foreach ($p['emails'] as $em) {
         if (preg_match('/@(gmail|googlemail)\.com$/i', $em)) {
-            $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?)")
-               ->execute([$scanId, $uid, 'account', $em . ' — Google account', 'https://myaccount.google.com/',
-                          'email,google', '', 'This is a Gmail address, so it has a Google account.', time()]);
+            $title  = $em . ' — Google account';
+            $status = isset($dismissed[scan_dismiss_key($title)]) ? 'false' : 'new';
+            $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+               ->execute([$scanId, $uid, 'account', $title, 'https://myaccount.google.com/',
+                          'email,google', '', 'This is a Gmail address, so it has a Google account.', $status, time()]);
             $g++;
         }
     }
@@ -185,19 +196,23 @@ function scan_chunk(int $uid, int $scanId): array {
             $tasks[$i] = ['url' => $url, 'headers' => $hdr, 'follow' => false];
         } elseif ($t['kind'] === 'breach') {
             $tasks[$i] = ['url' => OSINT_XPOSED . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
-        } else { // gravatar — avatar existence check (?d=404 => 200 only when a gravatar exists)
+        } elseif ($t['kind'] === 'gravatar') { // avatar existence (?d=404 => 200 only when it exists)
             $tasks[$i] = ['url' => OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?d=404&s=200', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
+        } else { // duolingo — public users API by email, no email is sent
+            $tasks[$i] = ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         }
     }
 
     $res = scan_multi_get($tasks);
 
     $foundInc = 0; $unreachInc = 0; $newFindings = [];
-    $ins = $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,created_at) VALUES (?,?,?,?,?,?,?,?,?)");
+    $dismissed = scan_dismissed_set($uid);   // persistent "not me" — pre-mark matching hits
+    $ins = $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)");
     $emit = function (string $cat, string $title, string $url, string $exposes, string $avatar, string $detail)
-                     use ($ins, $scanId, $uid, &$newFindings, &$foundInc) {
-        $ins->execute([$scanId, $uid, $cat, $title, $url, $exposes, $avatar, $detail, time()]);
-        $newFindings[] = ['category' => $cat, 'title' => $title, 'url' => $url, 'avatar' => $avatar, 'detail' => $detail];
+                     use ($ins, $scanId, $uid, &$newFindings, &$foundInc, $dismissed) {
+        $status = isset($dismissed[scan_dismiss_key($title)]) ? 'false' : 'new';
+        $ins->execute([$scanId, $uid, $cat, $title, $url, $exposes, $avatar, $detail, $status, time()]);
+        $newFindings[] = ['category' => $cat, 'title' => $title, 'url' => $url, 'avatar' => $avatar, 'detail' => $detail, 'status' => $status];
         $foundInc++;
     };
     foreach ($meta as $i => $t) {
@@ -218,10 +233,15 @@ function scan_chunk(int $uid, int $scanId): array {
                 $detail = trim(($b['date'] ?: '') . ($b['data'] ? ' · ' . $b['data'] : ''), ' ·');
                 $emit('breach', $t['email'] . ' in the ' . $b['name'] . ' breach', 'https://xposedornot.com/', 'email,breach', $b['logo'], $detail);
             }
-        } else { // gravatar
+        } elseif ($t['kind'] === 'gravatar') {
             if (!$r || $r['err'] || $r['code'] !== 200) continue;
             $av = OSINT_GRAVATAR . 'avatar/' . md5(strtolower(trim($t['email']))) . '?s=200';
             $emit('account', $t['email'] . ' — Gravatar profile picture', $av, 'email,account', $av, '');
+        } else { // duolingo
+            if (!$r || $r['err']) { $unreachInc++; continue; }
+            $pic = scan_duolingo_pic($r['body']);
+            if ($pic === null) continue;   // no Duolingo account for this email
+            $emit('account', $t['email'] . ' — Duolingo account', 'https://www.duolingo.com/', 'email,account', $pic, 'Email is registered on Duolingo.');
         }
     }
 
@@ -296,6 +316,18 @@ function scan_extract_image(string $html, string $baseUrl): string {
     return '';
 }
 
+/** Duolingo public-users response → profile picture URL, '' if the account has none,
+ *  null if there is no account for that email. */
+function scan_duolingo_pic(string $body): ?string {
+    $j = json_decode($body, true);
+    $users = is_array($j) ? ($j['users'] ?? null) : null;
+    if (!is_array($users) || !$users) return null;   // no account
+    $pic = (string) ($users[0]['picture'] ?? '');
+    if ($pic === '') return '';
+    if (strpos($pic, '//') === 0) $pic = 'https:' . $pic;
+    return preg_match('#^https?://#i', $pic) ? mb_substr($pic, 0, 400) : '';
+}
+
 /** Username goes into a path/query segment — encode but keep it readable. */
 function rawurlencode_username(string $u): string { return str_replace('%40', '@', rawurlencode($u)); }
 
@@ -330,6 +362,7 @@ function scan_multi_get(array $tasks, int $cap = 262144): array {
                 return strlen($data);
             },
         ]);
+        if (isset($t['post'])) { curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, (string) $t['post']); }
         if (is_file($localCa)) curl_setopt($ch, CURLOPT_CAINFO, $localCa);
         curl_multi_add_handle($mh, $ch);
         $handles[$key] = $ch;
@@ -369,14 +402,43 @@ function scan_findings(int $uid, int $scanId): array {
 
 const OSINT_STATUSES = ['new', 'attention', 'false', 'done'];
 
-/** Set the triage status on one of the user's own findings. */
+/** Set the triage status on one of the user's own findings, and remember/forget a
+ *  persistent "not me" so future scans pre-dismiss the same finding. */
 function scan_set_finding_status(int $uid, int $fid, string $status): bool {
     if (!in_array($status, OSINT_STATUSES, true)) return false;
     $db = scan_db(); if (!$db) return false;
     try {
+        $st = $db->prepare("SELECT title FROM osint_findings WHERE id = ? AND user_id = ?");
+        $st->execute([$fid, $uid]);
+        $title = $st->fetchColumn();
+        if ($title === false) return false;   // not the caller's finding
         $db->prepare("UPDATE osint_findings SET status = ? WHERE id = ? AND user_id = ?")->execute([$status, $fid, $uid]);
-        return true;   // WHERE user_id scopes it to the caller; a non-owned id is a silent no-op
+        $key = scan_dismiss_key((string) $title);
+        if ($status === 'false') {
+            $db->prepare("INSERT OR IGNORE INTO osint_dismissed (user_id,key_hash,title,created_at) VALUES (?,?,?,?)")
+               ->execute([$uid, $key, mb_substr((string) $title, 0, 200), time()]);
+        } else {
+            $db->prepare("DELETE FROM osint_dismissed WHERE user_id = ? AND key_hash = ?")->execute([$uid, $key]);
+        }
+        return true;
     } catch (\Throwable $e) { return false; }
+}
+
+/** Stable key for the persistent "not me" set (same across scans for the same hit). */
+function scan_dismiss_key(string $title): string { return sha1(mb_strtolower(trim($title))); }
+
+/** The user's dismissed keys as [key_hash => true]. Cached per request. */
+function scan_dismissed_set(int $uid): array {
+    static $c = [];
+    if (array_key_exists($uid, $c)) return $c[$uid];
+    $db = scan_db(); if (!$db) return $c[$uid] = [];
+    try {
+        $st = $db->prepare("SELECT key_hash FROM osint_dismissed WHERE user_id = ?");
+        $st->execute([$uid]);
+        $set = [];
+        foreach ($st->fetchAll(PDO::FETCH_COLUMN) as $k) $set[$k] = true;
+        return $c[$uid] = $set;
+    } catch (\Throwable $e) { return $c[$uid] = []; }
 }
 
 /** Delete all of a user's scans + findings (the "clear results" action). */

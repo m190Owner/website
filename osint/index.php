@@ -54,7 +54,7 @@ $siteCount = count(scan_sites());
       <?php if ($nId === 0): ?>
         <p class="os-dim">Add at least one username or email first.</p>
       <?php else: ?>
-        <p class="os-dim">Around <?= (int) (count($p['usernames']) * $siteCount + count($p['emails']) * 2) ?> checks. Takes a minute or two — keep this tab open.</p>
+        <p class="os-dim">Around <?= (int) (count($p['usernames']) * $siteCount + count($p['emails']) * 3) ?> checks. Takes a minute or two — keep this tab open.</p>
         <button id="os-run" class="os-btn os-btn-accent" style="margin-top:12px">Start scan</button>
       <?php endif; ?>
       <div id="os-progress" class="os-progress" hidden>
