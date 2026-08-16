@@ -239,6 +239,18 @@ a.os-top-l:hover{text-decoration:none}
 .os-str-warn{background:var(--os-warn)}
 .os-str-good{background:var(--os-accent)}
 
+/* ---- takedown templates ---- */
+.os-ta{width:100%;min-height:210px;background:var(--os-bg);border:1px solid var(--os-border);border-radius:9px;color:var(--os-ink);font:.82rem/1.55 var(--os-mono);padding:12px 14px;resize:vertical;outline:none;white-space:pre-wrap}
+.os-ta:focus{border-color:var(--os-border-h)}
+.os-copyrow{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:10px}
+
+/* ---- photo EXIF ---- */
+.os-drop{border:2px dashed var(--os-border);border-radius:12px;padding:30px;text-align:center;color:var(--os-dim);cursor:pointer;transition:border-color .15s,background .15s}
+.os-drop:hover,.os-drop.drag{border-color:var(--os-accent);background:rgba(55,201,139,.05)}
+.os-mprev img{max-width:100%;max-height:340px;border-radius:10px;border:1px solid var(--os-border);display:block;margin-top:14px}
+.os-warn-box{border:1px solid rgba(229,105,95,.5);background:rgba(229,105,95,.09);color:#ffb0a8;border-radius:9px;padding:12px 14px;font-size:.86rem;line-height:1.55;margin-top:14px}
+.os-warn-box b,.os-warn-box a{color:#ffb0a8}
+
 /* ---- report ---- */
 .os-report-h{display:flex;align-items:center;gap:14px;margin-bottom:6px}
 .os-report-h img{width:44px;height:44px;border-radius:50%}
