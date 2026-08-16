@@ -55,8 +55,8 @@ $siteCount = count(scan_sites());
         <p class="os-dim">Add at least one username or email first.</p>
       <?php else: ?>
         <p class="os-dim">Around <?= (int) (count($p['usernames']) * $siteCount + count($p['emails']) * 3) ?> checks. Takes a minute or two — keep this tab open.</p>
-        <?php if ($p['emails']): ?>
-          <label class="os-deeprow"><input type="checkbox" id="os-deep"> <span>Deep email checks <span class="os-dim">— also ask Spotify &amp; X (Twitter) whether your email has an account there. Slower, and a site may notice or (rarely) notify the address.</span></span></label>
+        <?php if ($p['emails']): $deepNames = implode(', ', array_map(fn($m) => $m['name'], osint_deep_modules())); ?>
+          <label class="os-deeprow"><input type="checkbox" id="os-deep"> <span>Deep email checks <span class="os-dim">— also ask <?= ose($deepNames) ?> whether your email has an account there. Slower, and a site may notice or (rarely) notify the address.</span></span></label>
         <?php endif; ?>
         <button id="os-run" class="os-btn os-btn-accent" style="margin-top:12px">Start scan</button>
       <?php endif; ?>

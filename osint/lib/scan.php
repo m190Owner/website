@@ -136,6 +136,11 @@ function osint_deep_modules(): array {
             'build' => fn($e) => ['url' => 'https://api.twitter.com/i/users/email_available.json?email=' . rawurlencode($e), 'headers' => [$ua], 'follow' => true],
             'parse' => function ($code, $body) { $j = json_decode($body, true); return (is_array($j) && isset($j['taken'])) ? (bool) $j['taken'] : null; },
         ],
+        'plurk' => [
+            'name' => 'Plurk', 'url' => 'https://www.plurk.com/',
+            'build' => fn($e) => ['url' => 'https://www.plurk.com/Users/isEmailFound?email=' . rawurlencode($e), 'headers' => [$ua], 'follow' => true],
+            'parse' => function ($code, $body) { $b = trim($body); if ($b === 'True') return true; if ($b === 'False') return false; return null; },
+        ],
     ];
     return $m;
 }
