@@ -6,7 +6,7 @@ require __DIR__ . '/lib/scan.php';
 osint_require();
 $u = osint_current_user();
 $p = scan_profile_get((int) $u['id']);
-$nId = count($p['usernames']) + count($p['emails']);
+$nId = count($p['usernames']) + count($p['emails']) + count($p['phones']);
 $latest = scan_latest((int) $u['id']);
 $siteCount = count(scan_sites());
 ?><!DOCTYPE html>
@@ -42,9 +42,9 @@ $siteCount = count(scan_sites());
       <h3 class="os-h3">Your profile</h3>
       <?php if ($nId === 0): ?>
         <p>You haven't added anything to scan yet.</p>
-        <a class="os-btn os-btn-accent" href="/osint/profile.php" style="margin-top:12px;display:inline-block">Add usernames &amp; emails</a>
+        <a class="os-btn os-btn-accent" href="/osint/profile.php" style="margin-top:12px;display:inline-block">Add usernames, emails &amp; phones</a>
       <?php else: ?>
-        <p><b><?= count($p['usernames']) ?></b> username(s), <b><?= count($p['emails']) ?></b> email(s) on file.</p>
+        <p><b><?= count($p['usernames']) ?></b> username(s), <b><?= count($p['emails']) ?></b> email(s)<?php if ($p['phones']): ?>, <b><?= count($p['phones']) ?></b> phone(s)<?php endif; ?> on file.</p>
         <a class="os-btn os-btn-sm" href="/osint/profile.php" style="margin-top:12px;display:inline-block">Edit profile</a>
       <?php endif; ?>
     </div>
@@ -52,7 +52,7 @@ $siteCount = count(scan_sites());
     <div class="os-panel">
       <h3 class="os-h3">Run a scan</h3>
       <?php if ($nId === 0): ?>
-        <p class="os-dim">Add at least one username or email first.</p>
+        <p class="os-dim">Add at least one username, email, or phone first.</p>
       <?php else: ?>
         <p class="os-dim">Around <?= (int) (count($p['usernames']) * $siteCount + count($p['emails']) * 3) ?> checks. Takes a minute or two — keep this tab open.</p>
         <?php if ($p['emails']):

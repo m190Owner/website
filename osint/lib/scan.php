@@ -16,6 +16,7 @@ require_once __DIR__ . '/osint_auth.php';
 
 const OSINT_MAX_USERNAMES = 3;
 const OSINT_MAX_EMAILS    = 5;
+const OSINT_MAX_PHONES    = 3;
 const OSINT_BATCH         = 30;    // sites checked in parallel per chunk request
 const OSINT_UA            = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
 const OSINT_XPOSED        = 'https://api.xposedornot.com/v1/breach-analytics?email=';
@@ -51,6 +52,8 @@ function scan_db(): ?PDO {
         // separate opt-in emailing "probe" checks (password-reset based).
         try { $db->exec("ALTER TABLE osint_scans ADD COLUMN deep INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
         try { $db->exec("ALTER TABLE osint_scans ADD COLUMN probe INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
+        // Phone numbers added to the profile (offline metadata is computed from them).
+        try { $db->exec("ALTER TABLE osint_profile ADD COLUMN phones TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
         // Persistent "not me" — keyed by a hash of the finding title, so future scans
         // auto-mark the same account/breach false. Survives "clear results".
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
@@ -86,18 +89,19 @@ function scan_sites(): array {
 
 // ---- profile ----
 function scan_profile_get(int $uid): array {
-    $db = scan_db(); if (!$db) return ['usernames' => [], 'emails' => []];
-    $st = $db->prepare("SELECT usernames, emails FROM osint_profile WHERE user_id = ?");
+    $db = scan_db(); if (!$db) return ['usernames' => [], 'emails' => [], 'phones' => []];
+    $st = $db->prepare("SELECT usernames, emails, phones FROM osint_profile WHERE user_id = ?");
     $st->execute([$uid]);
     $r = $st->fetch();
     return [
         'usernames' => $r ? (array) json_decode($r['usernames'], true) : [],
         'emails'    => $r ? (array) json_decode($r['emails'], true) : [],
+        'phones'    => $r ? (array) json_decode($r['phones'] ?? '[]', true) : [],
     ];
 }
 
-/** Normalize + persist the profile. Returns the cleaned [usernames, emails]. */
-function scan_profile_set(int $uid, array $usernames, array $emails): array {
+/** Normalize + persist the profile. Returns the cleaned [usernames, emails, phones]. */
+function scan_profile_set(int $uid, array $usernames, array $emails, array $phones = []): array {
     $u = [];
     foreach ($usernames as $x) {
         $x = trim((string) $x);
@@ -110,13 +114,60 @@ function scan_profile_set(int $uid, array $usernames, array $emails): array {
         if ($x !== '' && filter_var($x, FILTER_VALIDATE_EMAIL) && !in_array($x, $e, true)) $e[] = $x;
         if (count($e) >= OSINT_MAX_EMAILS) break;
     }
+    $ph = [];
+    foreach ($phones as $x) {
+        $meta = scan_phone_meta((string) $x);
+        if ($meta && !in_array($meta['e164'], $ph, true)) $ph[] = $meta['e164'];   // store normalized E.164
+        if (count($ph) >= OSINT_MAX_PHONES) break;
+    }
     $db = scan_db();
     if ($db) {
-        $db->prepare("INSERT INTO osint_profile (user_id,usernames,emails,updated_at) VALUES (?,?,?,?)
-                      ON CONFLICT(user_id) DO UPDATE SET usernames=excluded.usernames, emails=excluded.emails, updated_at=excluded.updated_at")
-           ->execute([$uid, json_encode($u), json_encode($e), time()]);
+        $db->prepare("INSERT INTO osint_profile (user_id,usernames,emails,phones,updated_at) VALUES (?,?,?,?,?)
+                      ON CONFLICT(user_id) DO UPDATE SET usernames=excluded.usernames, emails=excluded.emails, phones=excluded.phones, updated_at=excluded.updated_at")
+           ->execute([$uid, json_encode($u), json_encode($e), json_encode($ph), time()]);
     }
-    return ['usernames' => $u, 'emails' => $e];
+    return ['usernames' => $u, 'emails' => $e, 'phones' => $ph];
+}
+
+/** Bundled offline phone data: calling codes + NANP area codes + Canadian area codes. */
+function scan_phone_data(): array {
+    static $d = null;
+    if ($d === null) {
+        $d = json_decode((string) @file_get_contents(__DIR__ . '/../assets/phone-cc.json'), true);
+        if (!is_array($d)) $d = ['codes' => [], 'nanp' => [], 'ca' => []];
+    }
+    return $d;
+}
+
+/** Parse a phone number offline → [e164, cc, country, nat, valid], or null if implausible. */
+function scan_phone_meta(string $raw): ?array {
+    $plus   = strpos(trim($raw), '+') === 0;
+    $digits = preg_replace('/\D+/', '', $raw);
+    if (!$plus && strpos($digits, '00') === 0) $digits = substr($digits, 2);   // 00 intl prefix
+    if (strlen($digits) < 7 || strlen($digits) > 15) return null;
+    $d = scan_phone_data();
+    if (strlen($digits) === 10 && $digits[0] !== '0' && !$plus) $digits = '1' . $digits;   // bare US 10-digit
+
+    if ($digits[0] === '1' && strlen($digits) === 11) {                          // NANP
+        $area = substr($digits, 1, 3);
+        $c = $d['nanp'][$area] ?? (in_array($area, $d['ca'] ?? [], true) ? ['CA', 'Canada'] : ['US', 'United States']);
+        return ['e164' => '+' . $digits, 'cc' => $c[0], 'country' => $c[1], 'nat' => substr($digits, 1), 'valid' => true];
+    }
+    for ($L = 3; $L >= 1; $L--) {                                                // international
+        $code = substr($digits, 0, $L);
+        if (isset($d['codes'][$code])) {
+            $c = $d['codes'][$code];
+            return ['e164' => '+' . $digits, 'cc' => $c[0], 'country' => $c[1], 'nat' => substr($digits, $L), 'valid' => strlen($digits) >= 8];
+        }
+    }
+    return ['e164' => '+' . $digits, 'cc' => '', 'country' => 'Unknown country code', 'nat' => $digits, 'valid' => false];
+}
+
+/** ISO2 → flag emoji (regional indicator symbols). */
+function scan_flag(string $cc): string {
+    $cc = strtoupper($cc);
+    if (strlen($cc) !== 2 || !ctype_alpha($cc)) return '';
+    return mb_chr(0x1F1E6 + ord($cc[0]) - 65) . mb_chr(0x1F1E6 + ord($cc[1]) - 65);
 }
 
 // ---- scan lifecycle ----
@@ -203,7 +254,7 @@ function scan_task_at(int $i, array $U, array $S, array $E, array $checks): ?arr
 /** Start a scan. Returns [scan, null] or [null, error]. */
 function scan_start(int $uid, bool $deep = false, bool $probe = false): array {
     $p = scan_profile_get($uid);
-    if (!$p['usernames'] && !$p['emails']) return [null, 'Add at least one username or email to your profile first.'];
+    if (!$p['usernames'] && !$p['emails'] && !$p['phones']) return [null, 'Add at least one username, email, or phone to your profile first.'];
     $db = scan_db(); if (!$db) return [null, 'Service unavailable.'];
     $total = scan_total(count($p['usernames']), count(scan_sites()), count($p['emails']), count(scan_email_checks($deep, $probe)));
     $db->prepare("INSERT INTO osint_scans (user_id,started_at,total,usernames,emails,deep,probe) VALUES (?,?,?,?,?,?,?)")
@@ -224,6 +275,18 @@ function scan_start(int $uid, bool $deep = false, bool $probe = false): array {
                           'email,google', '', 'This is a Gmail address, so it has a Google account.', $status, time()]);
             $g++;
         }
+    }
+    // Phone numbers: offline metadata (country/region/validity) — instant, no network.
+    foreach ($p['phones'] as $ph) {
+        $meta = scan_phone_meta($ph);
+        if (!$meta) continue;
+        $flag   = $meta['cc'] !== '' ? scan_flag($meta['cc']) . ' ' : '';
+        $title  = $meta['e164'] . ' — ' . $flag . $meta['country'];
+        $detail = ($meta['valid'] ? 'Valid number format' : 'Unusual format') . ($meta['cc'] !== '' ? ' · region ' . $meta['cc'] : '');
+        $status = isset($dismissed[scan_dismiss_key($title)]) ? 'false' : 'new';
+        $db->prepare("INSERT INTO osint_findings (scan_id,user_id,category,title,url,exposes,avatar,detail,status,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)")
+           ->execute([$scanId, $uid, 'phone', $title, '', 'phone', '', $detail, $status, time()]);
+        $g++;
     }
     if ($g > 0) $db->prepare("UPDATE osint_scans SET found = found + ? WHERE id = ?")->execute([$g, $scanId]);
     return [['id' => $scanId, 'total' => $total, 'cursor' => 0], null];

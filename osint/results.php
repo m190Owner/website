@@ -16,6 +16,7 @@ $has = fn($f, $needle) => strpos((string) ($f['exposes'] ?? ''), $needle) !== fa
 $accounts = array_values(array_filter($findings, fn($f) => $f['category'] === 'account' && !$has($f, 'email')));
 $identity = array_values(array_filter($findings, fn($f) => $f['category'] === 'account' && $has($f, 'email')));
 $breaches = array_values(array_filter($findings, fn($f) => $f['category'] === 'breach'));
+$phones   = array_values(array_filter($findings, fn($f) => $f['category'] === 'phone'));
 
 $attention = count(array_filter($findings, fn($f) => ($f['status'] ?? 'new') === 'attention'));
 $years = [];
@@ -121,6 +122,20 @@ function os_fcard(array $f, string $main): string {
             $t  = ose($f['title']) . ($f['detail'] ? '<br><span class="os-dim">' . ose($f['detail']) . '</span>' : '');
             $main = '<a class="os-fcard-main" href="' . ose($f['url']) . '" target="_blank" rel="noopener nofollow">'
                   . $av . '<span class="os-acard-t">' . $t . '</span></a>';
+            echo os_fcard($f, $main);
+          endforeach; ?>
+        </div>
+      </div>
+    <?php endif; ?>
+
+    <?php if ($phones): ?>
+      <div class="os-panel">
+        <h3 class="os-h3">Phone numbers <span class="os-dim">(<?= count($phones) ?>)</span></h3>
+        <p class="os-dim os-mb">What your number reveals offline — country/region and format. Live carrier, linked-account, and breach checks for phones aren&rsquo;t available keyless from a server.</p>
+        <div class="os-cardgrid">
+          <?php foreach ($phones as $f):
+            $main = '<div class="os-fcard-main"><span class="os-av">&#9742;</span><span class="os-acard-t">' . ose($f['title'])
+                  . ($f['detail'] ? '<br><span class="os-dim">' . ose($f['detail']) . '</span>' : '') . '</span></div>';
             echo os_fcard($f, $main);
           endforeach; ?>
         </div>

@@ -8,13 +8,14 @@ $saved = false;
 if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST') {
     osint_csrf_require();
     enforceRateLimit('osint_profile', 30, 60);
-    $p = scan_profile_set((int) $u['id'], (array) ($_POST['username'] ?? []), (array) ($_POST['email'] ?? []));
+    $p = scan_profile_set((int) $u['id'], (array) ($_POST['username'] ?? []), (array) ($_POST['email'] ?? []), (array) ($_POST['phone'] ?? []));
     $saved = true;
 } else {
     $p = scan_profile_get((int) $u['id']);
 }
 $usernames = array_pad($p['usernames'], OSINT_MAX_USERNAMES, '');
 $emails    = array_pad($p['emails'], OSINT_MAX_EMAILS, '');
+$phones    = array_pad($p['phones'], OSINT_MAX_PHONES, '');
 ?><!DOCTYPE html>
 <html lang="en">
 <head>
@@ -39,7 +40,7 @@ $emails    = array_pad($p['emails'], OSINT_MAX_EMAILS, '');
   <?php if ($saved): ?><div class="os-ok">Profile saved. You can run a scan from the dashboard.</div><?php endif; ?>
   <div class="os-panel">
     <h2>Your identifiers</h2>
-    <p>A scan only ever searches for what you put here — your own usernames and email addresses. Nothing else, and never someone else's.</p>
+    <p>A scan only ever searches for what you put here — your own usernames, email addresses, and phone numbers. Nothing else, and never someone else's.</p>
     <form method="post" class="os-form" autocomplete="off" style="margin-top:16px">
       <?= osint_csrf_field() ?>
       <div class="os-fieldgroup">
@@ -52,6 +53,12 @@ $emails    = array_pad($p['emails'], OSINT_MAX_EMAILS, '');
         <span class="os-grouplabel">Email addresses <span class="os-dim">(up to <?= OSINT_MAX_EMAILS ?>)</span></span>
         <?php foreach ($emails as $v): ?>
           <input type="email" name="email[]" maxlength="120" value="<?= ose($v) ?>" placeholder="you@example.com">
+        <?php endforeach; ?>
+      </div>
+      <div class="os-fieldgroup">
+        <span class="os-grouplabel">Phone numbers <span class="os-dim">(up to <?= OSINT_MAX_PHONES ?>, with country code)</span></span>
+        <?php foreach ($phones as $v): ?>
+          <input type="tel" name="phone[]" maxlength="24" value="<?= ose($v) ?>" placeholder="+1 415 555 2671">
         <?php endforeach; ?>
       </div>
       <button type="submit" class="os-btn os-btn-accent">Save profile</button>
