@@ -41,3 +41,32 @@ a:hover{text-decoration:underline}
 .os-panel h2{font-size:1.05rem;font-weight:700;margin-bottom:8px}
 .os-panel p{color:var(--os-dim);font-size:.88rem;line-height:1.6}
 .os-placeholder{border:1px dashed var(--os-border);border-radius:12px;padding:36px;text-align:center;color:var(--os-faint)}
+
+.os-dim{color:var(--os-dim)}
+.os-mb{margin-bottom:10px}
+.os-main-narrow{max-width:560px}
+.os-fineprint{font-size:.72rem;color:var(--os-faint);line-height:1.6;margin-top:10px}
+.os-h3{font-size:.98rem;font-weight:700;margin-bottom:8px}
+.os-grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:16px;margin-bottom:16px}
+.os-grid2 .os-panel{margin-bottom:0}
+
+.os-fieldgroup{display:flex;flex-direction:column;gap:8px}
+.os-grouplabel{font-size:.8rem;color:var(--os-dim);margin-bottom:2px}
+
+.os-progress{margin-top:16px}
+.os-progbar{height:8px;background:var(--os-bg);border:1px solid var(--os-border);border-radius:999px;overflow:hidden}
+.os-progbar-fill{height:100%;width:0;background:var(--os-accent);transition:width .25s ease}
+.os-progmeta{display:flex;justify-content:space-between;gap:10px;margin-top:8px;font-size:.78rem;color:var(--os-dim);font-family:var(--os-mono)}
+
+.os-findlist{list-style:none;display:flex;flex-direction:column;gap:2px}
+.os-findlist li{padding:8px 10px;background:var(--os-bg);border:1px solid var(--os-border);border-radius:8px;font-size:.86rem;word-break:break-word}
+.os-findlist a{color:var(--os-accent-l)}
+.os-livecount{display:inline-block;min-width:22px;padding:1px 8px;margin-left:6px;background:rgba(55,201,139,.15);border:1px solid rgba(55,201,139,.4);border-radius:999px;color:var(--os-accent-l);font-size:.78rem}
+
+.os-resulthead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.os-statrow{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0 6px}
+.os-stat{background:var(--os-bg);border:1px solid var(--os-border);border-radius:10px;padding:12px;text-align:center}
+.os-stat b{display:block;font-size:1.5rem;font-weight:700}
+.os-stat span{font-size:.68rem;text-transform:uppercase;letter-spacing:.5px;color:var(--os-dim)}
+.os-stat-warn b{color:var(--os-warn)}
+@media (max-width:560px){.os-statrow{grid-template-columns:repeat(2,1fr)}}
