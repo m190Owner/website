@@ -216,4 +216,17 @@ a.os-top-l:hover{text-decoration:none}
 .os-note{font-size:.78rem;color:var(--os-dim);line-height:1.6;border-left:2px solid var(--os-border);padding-left:12px;margin-top:10px}
 .os-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--os-border);border-top-color:var(--os-accent);border-radius:50%;animation:os-spin .7s linear infinite;vertical-align:-2px}
 @keyframes os-spin{to{transform:rotate(360deg)}}
+/* ---- checklist chrome (removal + harden) ---- */
+.os-clhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px}
+.os-search{background:var(--os-bg);border:1px solid var(--os-border);border-radius:9px;color:var(--os-ink);font-size:.85rem;padding:8px 12px;outline:none;min-width:190px;flex:1}
+.os-search:focus{border-color:var(--os-border-h)}
+.os-pendbtn{font-size:.7rem;color:var(--os-dim);background:var(--os-surface);border:1px solid var(--os-border);border-radius:999px;padding:3px 11px;cursor:pointer;white-space:nowrap;transition:color .12s,border-color .12s}
+.os-pendbtn:hover{border-color:var(--os-border-h);color:var(--os-ink)}
+.os-pendbtn.on{color:var(--os-warn);border-color:rgba(224,168,58,.5);background:rgba(224,168,58,.1)}
+.os-clprog{display:flex;align-items:center;gap:12px;margin-top:10px}
+.os-clprog .os-mini{flex:1;margin-top:0}
+.os-clprog-lbl{font-size:.76rem;color:var(--os-dim);font-family:var(--os-mono);white-space:nowrap}
+.os-row-t a{color:var(--os-ink)}
+.os-row-t a:hover{color:var(--os-accent-l)}
+
 @media (max-width:560px){.os-nav{gap:0}.os-navlink{padding:8px 9px}}
