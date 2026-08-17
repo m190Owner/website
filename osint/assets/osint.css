@@ -349,3 +349,14 @@ a.os-top-l:hover{text-decoration:none}
 .os-graph-tip{position:absolute;pointer-events:none;background:var(--os-elevated);border:1px solid var(--os-border-h);border-radius:7px;padding:6px 9px;font-size:.76rem;max-width:200px;z-index:5;box-shadow:0 6px 20px rgba(0,0,0,.4)}
 .os-graph-tip b{display:block;color:var(--os-ink);word-break:break-all}
 .os-graph-tip span{color:var(--os-dim);font-size:.7rem}
+
+/* Threat-model lens */
+.os-threatpick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:6px}
+.os-threatopt{display:flex;flex-direction:column;align-items:center;gap:4px;min-width:96px;flex:1 1 96px;padding:10px 8px;background:var(--os-surface);border:1px solid var(--os-border);border-radius:10px;color:var(--os-dim);cursor:pointer;font:inherit;transition:border-color .12s,color .12s,background .12s}
+.os-threatopt:hover{border-color:var(--os-border-h);color:var(--os-ink)}
+.os-threatopt.on{border-color:var(--os-accent);background:rgba(55,201,139,.08);color:var(--os-ink)}
+.os-threatopt-ic{font-size:1.35rem;line-height:1}
+.os-threatopt-l{font-size:.72rem;text-align:center;font-weight:600;letter-spacing:.2px}
+.os-threatbrief{margin-top:12px;padding-top:12px;border-top:1px solid var(--os-border);font-size:.9rem;line-height:1.5}
+.os-prio{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--os-faint);margin-right:5px;vertical-align:middle}
+.os-prio-1{background:var(--os-faint)}.os-prio-2{background:var(--os-warn)}.os-prio-3{background:var(--os-danger)}

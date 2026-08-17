@@ -6,9 +6,20 @@ require __DIR__ . '/lib/scan.php';
 require __DIR__ . '/lib/osint_ui.php';
 osint_require();
 $u = osint_current_user();
+
+if (($_SERVER['REQUEST_METHOD'] ?? 'GET') === 'POST' && ($_POST['action'] ?? '') === 'set_threat') {
+    osint_csrf_require();
+    enforceRateLimit('osint_threat', 30, 60);
+    scan_threat_set((int) $u['id'], (string) ($_POST['threat'] ?? 'general'));
+    header('Location: /osint/'); exit;
+}
+
 $p = scan_profile_get((int) $u['id']);
 $nId = count($p['usernames']) + count($p['emails']) + count($p['phones']) + count($p['domains']);
 $latest = scan_latest((int) $u['id']);
+$threat = scan_threat_get((int) $u['id']);
+$threatModels = scan_threat_models();
+$threatBrief = scan_threat_brief($threat, $latest ? scan_findings((int) $u['id'], (int) $latest['id']) : []);
 $siteCount = count(scan_sites());
 $mon = scan_monitor_get((int) $u['id']);
 $monDue = $mon['enabled'] && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
@@ -57,6 +68,40 @@ osint_head('m190 finder', 'dashboard');
   <div class="os-panel">
     <h2>See what the internet knows about you</h2>
     <p>A private, invite-only footprint tool. It checks <b>your own</b> identifiers against <?= (int) $siteCount ?> public sites, breach databases, and public records — then tells you what it found, what it couldn't check, and how to get it removed. A hit is a lead to verify, not proof.</p>
+  </div>
+
+  <div class="os-panel">
+    <div class="os-sec-head">
+      <h3 class="os-h3"><?= $threatBrief['meta']['icon'] ?> Threat lens</h3>
+      <span class="os-dim" style="font-size:.8rem">who are you defending against?</span>
+    </div>
+    <p class="os-dim os-mb">Pick the adversary you care about most. The whole suite re-prioritizes around what <b>this</b> threat actually wants — the results, the attacker view, and your hardening plan all reorder to match.</p>
+    <form method="post">
+      <?= osint_csrf_field() ?><input type="hidden" name="action" value="set_threat">
+      <div class="os-threatpick">
+        <?php foreach ($threatModels as $key => $tm): ?>
+          <button type="submit" name="threat" value="<?= ose($key) ?>" class="os-threatopt<?= $key === $threat ? ' on' : '' ?>" title="<?= ose($tm['desc']) ?>">
+            <span class="os-threatopt-ic"><?= $tm['icon'] ?></span>
+            <span class="os-threatopt-l"><?= ose($tm['label']) ?></span>
+          </button>
+        <?php endforeach; ?>
+      </div>
+    </form>
+    <div class="os-threatbrief">
+      <p><b><?= ose($threatBrief['meta']['label']) ?> —</b> <?= ose($threatBrief['meta']['desc']) ?> <span class="os-dim"><?= ose($threatBrief['meta']['wants']) ?></span></p>
+      <?php if ($latest && $threatBrief['total']): ?>
+        <p class="os-dim" style="margin-top:10px">From your last scan: <b style="color:var(--os-danger)"><?= (int) $threatBrief['high'] ?></b> top-priority and <b><?= (int) $threatBrief['total'] ?></b> relevant exposure(s) for this threat.</p>
+        <div class="os-list" style="margin-top:8px">
+          <?php foreach (array_slice($threatBrief['top'], 0, 5) as $t): ?>
+            <div class="os-row"><div class="os-row-main"><div class="os-row-t"><span class="os-prio os-prio-<?= (int) $t['score'] ?>" title="priority <?= (int) $t['score'] ?>/3"></span> <?= ose($t['title']) ?></div><?= $t['detail'] ? '<div class="os-row-d">' . ose($t['detail']) . '</div>' : '' ?></div></div>
+          <?php endforeach; ?>
+        </div>
+      <?php elseif (!$latest): ?>
+        <p class="os-dim" style="margin-top:10px">Run a scan and this lens will rank what matters most against this adversary.</p>
+      <?php else: ?>
+        <p class="os-dim" style="margin-top:10px">Nothing in your last scan maps to this threat — a good sign for this adversary.</p>
+      <?php endif; ?>
+    </div>
   </div>
 
   <div class="os-grid2">

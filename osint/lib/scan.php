@@ -59,6 +59,8 @@ function scan_db(): ?PDO {
         try { $db->exec("ALTER TABLE osint_profile ADD COLUMN phones TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
         // Domains added to the profile (DNS / email-security / subdomain footprint).
         try { $db->exec("ALTER TABLE osint_profile ADD COLUMN domains TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
+        // The threat model the user is defending against — re-prioritizes everything (the "lens").
+        try { $db->exec("ALTER TABLE osint_profile ADD COLUMN threat TEXT NOT NULL DEFAULT 'general'"); } catch (\Throwable $e) {}
         // Generic per-user checklist state, backing the removal + hardening trackers.
         $db->exec("CREATE TABLE IF NOT EXISTS osint_checklist (
             user_id INTEGER NOT NULL, list TEXT NOT NULL, item TEXT NOT NULL,
@@ -2086,5 +2088,112 @@ function scan_email_intel(string $emailRaw): array {
         'span' => $years ? (reset($years) === end($years) ? (string) reset($years) : reset($years) . '–' . end($years)) : '',
         'pw_exposed' => $pw, 'dataclasses' => array_slice(array_values($classes), 0, 12),
         'pastes' => $pastes, 'leakcheck' => $leak, 'ts' => time(),
+    ];
+}
+
+// ---- threat-model lens: re-prioritize the whole suite for a chosen adversary ----
+/** The adversaries a user can defend against. Each names what it wants, the exposure
+ *  keywords/categories it prioritizes, and which hardening themes matter most. */
+function scan_threat_models(): array {
+    return [
+        'general' => [
+            'label' => 'General privacy', 'icon' => '🛡️',
+            'desc' => 'A balanced default — shrink your overall public footprint.',
+            'wants' => 'Less of you exposed everywhere — fewer accounts, fewer breaches, less reusable data.',
+            'keywords' => ['password'], 'cat' => ['breach' => 1, 'account' => 1, 'phone' => 1], 'pw' => 1,
+            'harden' => ['auth', 'email', 'footprint'],
+        ],
+        'stalker' => [
+            'label' => 'Stalker / abusive ex', 'icon' => '📍',
+            'desc' => 'Someone who wants to physically locate, contact, or monitor you in real time.',
+            'wants' => 'Your location, routine, phone number, and real-time whereabouts — from photos, check-ins, and fitness/social apps.',
+            'keywords' => ['location', 'address', 'geographic', 'strava', 'instagram', 'photo', 'phone', 'place', 'runner', 'check-in', 'gps'],
+            'cat' => ['phone' => 3, 'account' => 1, 'breach' => 1], 'pw' => 0,
+            'harden' => ['sim', 'device', 'footprint'],
+        ],
+        'doxxing' => [
+            'label' => 'Doxxing / harassment mob', 'icon' => '📢',
+            'desc' => 'A crowd trying to tie your anonymous handles to your real name and publish it.',
+            'wants' => 'The links between your pseudonyms and your legal identity, home, and employer.',
+            'keywords' => ['name', 'gravatar', 'location', 'address', 'geographic', 'instagram', 'handle', 'linked', 'reddit'],
+            'cat' => ['account' => 2, 'breach' => 1], 'pw' => 0,
+            'harden' => ['footprint', 'browser'],
+        ],
+        'identity_theft' => [
+            'label' => 'Identity theft / fraud', 'icon' => '💳',
+            'desc' => 'A criminal assembling enough on you to open accounts or pass verification.',
+            'wants' => 'Full name, date of birth, address, SSN, phone, and reusable passwords from breaches.',
+            'keywords' => ['password', 'date of birth', 'dates of birth', 'social security', 'ssn', 'address', 'phone', 'bank', 'payment', 'card', 'name'],
+            'cat' => ['breach' => 2, 'phone' => 2], 'pw' => 3,
+            'harden' => ['financial', 'auth', 'email'],
+        ],
+        'employer' => [
+            'label' => 'Employer / background check', 'icon' => '💼',
+            'desc' => 'A recruiter, investigator, or client vetting you through public records and old posts.',
+            'wants' => 'Your public accounts, old handles, opinions, photos, and anything reputationally awkward.',
+            'keywords' => ['reddit', 'instagram', 'twitter', 'post', 'account', 'photo', 'strava', 'github', 'profile'],
+            'cat' => ['account' => 2, 'identity' => 1], 'pw' => 0,
+            'harden' => ['footprint', 'browser'],
+        ],
+        'nation_state' => [
+            'label' => 'Targeted / advanced', 'icon' => '🎯',
+            'desc' => 'A resourced, persistent adversary who will use every signal against you.',
+            'wants' => 'Everything — identity, devices, network, metadata, and any reused credential to pivot from.',
+            'keywords' => ['password', 'location', 'address', 'phone', 'name', 'device', 'ip', 'metadata', 'email'],
+            'cat' => ['breach' => 1, 'account' => 1, 'phone' => 1], 'pw' => 1,
+            'harden' => ['device', 'auth', 'browser', 'sim'],
+        ],
+    ];
+}
+
+function scan_threat_get(int $uid): string {
+    $db = scan_db(); if (!$db) return 'general';
+    try {
+        $st = $db->prepare("SELECT threat FROM osint_profile WHERE user_id = ?");
+        $st->execute([$uid]);
+        $t = (string) $st->fetchColumn();
+        return isset(scan_threat_models()[$t]) ? $t : 'general';
+    } catch (\Throwable $e) { return 'general'; }
+}
+
+function scan_threat_set(int $uid, string $model): bool {
+    if (!isset(scan_threat_models()[$model])) return false;
+    $db = scan_db(); if (!$db) return false;
+    try {
+        $db->prepare("INSERT INTO osint_profile (user_id, threat, updated_at) VALUES (?,?,?)
+                      ON CONFLICT(user_id) DO UPDATE SET threat = excluded.threat, updated_at = excluded.updated_at")
+           ->execute([$uid, $model, time()]);
+        return true;
+    } catch (\Throwable $e) { return false; }
+}
+
+/** How relevant one finding is to a threat model: 0 (background) … 3 (a top concern). */
+function scan_threat_score(string $model, array $f): int {
+    $m = scan_threat_models()[$model] ?? scan_threat_models()['general'];
+    $cat = (string) ($f['category'] ?? '');
+    $isIdentity = $cat === 'account' && strpos((string) ($f['exposes'] ?? ''), 'email') !== false;
+    $text = strtolower((string) ($f['title'] ?? '') . ' ' . (string) ($f['detail'] ?? ''));
+    $score = (int) ($m['cat'][$isIdentity ? 'identity' : $cat] ?? 0);
+    foreach ($m['keywords'] as $kw) if (strpos($text, $kw) !== false) { $score += 2; break; }
+    if ($cat === 'breach' && strpos($text, 'password') !== false) $score += (int) ($m['pw'] ?? 0);
+    return max(0, min(3, $score));
+}
+
+/** For the chosen model + a scan's findings: the model meta, the findings ranked by
+ *  relevance to this adversary, and a count of high-priority hits. */
+function scan_threat_brief(string $model, array $findings): array {
+    $m = scan_threat_models()[$model] ?? scan_threat_models()['general'];
+    $scored = [];
+    foreach ($findings as $f) {
+        if (($f['status'] ?? 'new') === 'false') continue;
+        $s = scan_threat_score($model, $f);
+        if ($s > 0) $scored[] = ['score' => $s, 'title' => (string) $f['title'], 'category' => (string) $f['category'], 'detail' => (string) ($f['detail'] ?? ''), 'url' => (string) ($f['url'] ?? '')];
+    }
+    usort($scored, fn($a, $b) => $b['score'] <=> $a['score']);
+    return [
+        'model' => $model, 'meta' => $m,
+        'top' => array_slice($scored, 0, 10),
+        'high' => count(array_filter($scored, fn($x) => $x['score'] >= 3)),
+        'total' => count($scored),
     ];
 }
