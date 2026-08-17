@@ -75,6 +75,14 @@ function scan_db(): ?PDO {
         $db->exec("CREATE TABLE IF NOT EXISTS osint_monitor (
             user_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0,
             last_check INTEGER, known TEXT NOT NULL DEFAULT '{}', pending TEXT NOT NULL DEFAULT '[]')");
+        // Certificate-transparency monitoring: a second opt-in that watches the user's
+        // domains for newly-issued certs (early warning for phishing infra / takeover).
+        try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN ct_enabled INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
+        try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN ct_pending TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
+        // Per-domain CT baseline (the highest Cert Spotter issuance id seen so far).
+        $db->exec("CREATE TABLE IF NOT EXISTS osint_ct_state (
+            user_id INTEGER NOT NULL, domain TEXT NOT NULL, last_id TEXT NOT NULL DEFAULT '',
+            updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, domain))");
         // Persistent "not me" — keyed by a hash of the finding title, so future scans
         // auto-mark the same account/breach false. Survives "clear results".
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
@@ -1795,10 +1803,17 @@ function scan_monitor_clear_pending(int $uid): void {
     try { $db->prepare("UPDATE osint_monitor SET pending = '[]' WHERE user_id = ?")->execute([$uid]); } catch (\Throwable $e) {}
 }
 
-/** User ids with monitoring enabled (for the cron sweep). */
+/** User ids with breach monitoring enabled (for the cron sweep). */
 function scan_monitor_enabled_users(): array {
     $db = scan_db(); if (!$db) return [];
     try { return array_map('intval', $db->query("SELECT user_id FROM osint_monitor WHERE enabled = 1")->fetchAll(PDO::FETCH_COLUMN)); }
+    catch (\Throwable $e) { return []; }
+}
+
+/** User ids with certificate-transparency monitoring enabled (for the cron sweep). */
+function scan_ct_enabled_users(): array {
+    $db = scan_db(); if (!$db) return [];
+    try { return array_map('intval', $db->query("SELECT user_id FROM osint_monitor WHERE ct_enabled = 1")->fetchAll(PDO::FETCH_COLUMN)); }
     catch (\Throwable $e) { return []; }
 }
 
@@ -1848,6 +1863,79 @@ function scan_cron_token(): string {
     $t = bin2hex(random_bytes(16));
     @file_put_contents($path, $t);
     return $t;
+}
+
+// ---- certificate-transparency monitoring (opt-in; keyless via Cert Spotter) ----
+/** CT-monitoring state: [enabled, pending[]]. */
+function scan_ct_get(int $uid): array {
+    $db = scan_db(); if (!$db) return ['enabled' => false, 'pending' => []];
+    try {
+        $st = $db->prepare("SELECT ct_enabled, ct_pending FROM osint_monitor WHERE user_id = ?");
+        $st->execute([$uid]);
+        $r = $st->fetch();
+        return ['enabled' => $r ? (bool) $r['ct_enabled'] : false, 'pending' => $r ? (array) json_decode($r['ct_pending'] ?: '[]', true) : []];
+    } catch (\Throwable $e) { return ['enabled' => false, 'pending' => []]; }
+}
+function scan_ct_set_enabled(int $uid, bool $on): void {
+    $db = scan_db(); if (!$db) return;
+    try {
+        $db->prepare("INSERT INTO osint_monitor (user_id, ct_enabled, known, pending) VALUES (?,?,'{}','[]')
+                      ON CONFLICT(user_id) DO UPDATE SET ct_enabled = excluded.ct_enabled")->execute([$uid, $on ? 1 : 0]);
+    } catch (\Throwable $e) {}
+}
+function scan_ct_clear_pending(int $uid): void {
+    $db = scan_db(); if (!$db) return;
+    try { $db->prepare("UPDATE osint_monitor SET ct_pending = '[]' WHERE user_id = ?")->execute([$uid]); } catch (\Throwable $e) {}
+}
+
+/** Re-check each of the user's domains against Cert Spotter for NEWLY-issued certs.
+ *  First sight of a domain is baselined silently (records the latest issuance id, no
+ *  alert). Afterwards, any issuance after that id is new → recorded in ct_pending.
+ *  Returns the count of new certificates seen. Keyless. */
+function scan_ct_run(int $uid): int {
+    $db = scan_db(); if (!$db) return 0;
+    $p = scan_profile_get($uid);
+    $st = $db->prepare("SELECT ct_pending FROM osint_monitor WHERE user_id = ?");
+    $st->execute([$uid]);
+    $row = $st->fetch();
+    $pending = $row ? (array) json_decode($row['ct_pending'] ?: '[]', true) : [];
+
+    $newCount = 0;
+    foreach ($p['domains'] as $dom) {
+        $s = $db->prepare("SELECT last_id FROM osint_ct_state WHERE user_id = ? AND domain = ?");
+        $s->execute([$uid, $dom]);
+        $baseRow = $s->fetch();
+        $lastId = $baseRow ? (string) $baseRow['last_id'] : '';
+        $url = 'https://api.certspotter.com/v1/issuances?domain=' . rawurlencode($dom)
+             . '&include_subdomains=true&expand=dns_names&expand=issuer&expand=not_before'
+             . ($lastId !== '' ? '&after=' . rawurlencode($lastId) : '');
+        $r = scan_multi_get(['c' => ['url' => $url, 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 15]], 4194304)['c'] ?? null;
+        if (!$r || $r['err'] || (int) $r['code'] !== 200) continue;   // don't disturb the baseline on error/limit
+        $j = json_decode($r['body'], true);
+        if (!is_array($j)) continue;
+        $maxId = $lastId;
+        foreach ($j as $iss) { $id = (string) ($iss['id'] ?? ''); if ($id !== '' && ($maxId === '' || (int) $id > (int) $maxId)) $maxId = $id; }
+        if ($baseRow === false) {   // first sight — baseline silently
+            $db->prepare("INSERT INTO osint_ct_state (user_id,domain,last_id,updated_at) VALUES (?,?,?,?)
+                          ON CONFLICT(user_id,domain) DO UPDATE SET last_id=excluded.last_id, updated_at=excluded.updated_at")
+               ->execute([$uid, $dom, $maxId, time()]);
+            continue;
+        }
+        foreach ($j as $iss) {   // after=lastId means every result is genuinely new
+            $names = array_slice($iss['dns_names'] ?? [], 0, 5);
+            $iname = (string) ($iss['issuer']['name'] ?? '');
+            $ca = preg_match('/O=([^,]+)/', $iname, $mm) ? trim($mm[1]) : ($iname !== '' ? mb_substr($iname, 0, 40) : 'unknown CA');
+            $pending[] = ['domain' => $dom, 'name' => implode(', ', $names), 'issuer' => $ca, 'nb' => substr((string) ($iss['not_before'] ?? ''), 0, 10), 'at' => time()];
+            $newCount++;
+        }
+        if ($maxId !== $lastId) $db->prepare("UPDATE osint_ct_state SET last_id=?, updated_at=? WHERE user_id=? AND domain=?")->execute([$maxId, time(), $uid, $dom]);
+    }
+    $pending = array_slice($pending, -50);
+    try {
+        $db->prepare("INSERT INTO osint_monitor (user_id, ct_pending, known, pending) VALUES (?,?,'{}','[]')
+                      ON CONFLICT(user_id) DO UPDATE SET ct_pending = excluded.ct_pending")->execute([$uid, json_encode($pending)]);
+    } catch (\Throwable $e) {}
+    return $newCount;
 }
 
 /** Headline exposure index (0 = nothing found, 100 = heavy) from a scan's findings. */

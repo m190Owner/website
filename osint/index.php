@@ -22,7 +22,8 @@ $threatModels = scan_threat_models();
 $threatBrief = scan_threat_brief($threat, $latest ? scan_findings((int) $u['id'], (int) $latest['id']) : []);
 $siteCount = count(scan_sites());
 $mon = scan_monitor_get((int) $u['id']);
-$monDue = $mon['enabled'] && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
+$ct = scan_ct_get((int) $u['id']);
+$monDue = ($mon['enabled'] || $ct['enabled']) && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
 $expiryWarn = scan_expiry_warnings((int) $u['id']);
 
 // Tool cards for the hub grid: [icon, title, href, description].
@@ -61,6 +62,21 @@ osint_head('m190 finder', 'dashboard');
       <div class="os-inrow" style="margin-top:12px">
         <a class="os-btn os-btn-sm" href="/osint/harden.php">What to do</a>
         <button type="button" class="os-btn os-btn-sm" id="os-mon-dismiss">Got it, dismiss</button>
+      </div>
+    </div>
+  <?php endif; ?>
+  <?php if ($ct['pending']): ?>
+    <div class="os-panel os-alertbox" id="os-ct-alert">
+      <h3 class="os-h3">&#9888; New certificate issued for your domain</h3>
+      <p class="os-dim os-mb"><b><?= count($ct['pending']) ?></b> new certificate(s) appeared in the public logs for your monitored domains — verify you (or your host) issued them; if not, it may be phishing infrastructure or a takeover:</p>
+      <ul class="os-rlist">
+        <?php foreach (array_reverse($ct['pending']) as $ci): ?>
+          <li><b><?= ose($ci['name']) ?></b> <span class="os-dim">via <?= ose($ci['issuer']) ?><?= $ci['nb'] ? ' · ' . ose($ci['nb']) : '' ?></span></li>
+        <?php endforeach; ?>
+      </ul>
+      <div class="os-inrow" style="margin-top:12px">
+        <a class="os-btn os-btn-sm" href="/osint/domain.php">Review domains</a>
+        <button type="button" class="os-btn os-btn-sm" id="os-ct-dismiss">Got it, dismiss</button>
       </div>
     </div>
   <?php endif; ?>
@@ -151,6 +167,16 @@ osint_head('m190 finder', 'dashboard');
         <label class="os-switch"><input type="checkbox" id="os-mon-toggle" <?= $mon['enabled'] ? 'checked' : '' ?>><span class="os-switch-t"></span></label>
       </div>
       <p class="os-dim" id="os-mon-status"><?php if ($mon['enabled']): ?>On — we automatically re-check your emails when you visit (no setup needed) and flag any <b>new</b> breach here<?= $mon['last_check'] ? '. Last checked ' . ose(date('Y-m-d H:i', $mon['last_check'])) : '' ?>.<?php else: ?>Off — turn it on to be alerted when a <b>new</b> breach includes one of your emails, without re-running a full scan.<?php endif; ?></p>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($p['domains']): ?>
+    <div class="os-panel">
+      <div class="os-sec-head">
+        <h3 class="os-h3">Certificate transparency monitoring</h3>
+        <label class="os-switch"><input type="checkbox" id="os-ct-toggle" <?= $ct['enabled'] ? 'checked' : '' ?>><span class="os-switch-t"></span></label>
+      </div>
+      <p class="os-dim" id="os-ct-status"><?php if ($ct['enabled']): ?>On — we watch the public certificate-transparency logs for your domains and flag any <b>newly-issued</b> certificate here. An unexpected one is an early warning for phishing infrastructure or a subdomain takeover.<?php else: ?>Off — turn it on to be alerted the moment a certificate is issued for any name under your domains (early warning for impersonation or takeover), checked automatically when you visit.<?php endif; ?></p>
     </div>
   <?php endif; ?>
 

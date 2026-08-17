@@ -19,4 +19,10 @@ if (!$cli) {
 $users = scan_monitor_enabled_users();
 $new = 0;
 foreach ($users as $uid) $new += scan_monitor_run((int) $uid);
-echo 'ok: checked ' . count($users) . ' user(s), ' . $new . " new exposure(s)\n";
+
+$ctUsers = scan_ct_enabled_users();
+$ctNew = 0;
+foreach ($ctUsers as $uid) $ctNew += scan_ct_run((int) $uid);
+
+echo 'ok: breach — checked ' . count($users) . ' user(s), ' . $new . " new exposure(s); "
+   . 'CT — checked ' . count($ctUsers) . ' user(s), ' . $ctNew . " new cert(s)\n";
