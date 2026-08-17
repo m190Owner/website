@@ -905,6 +905,104 @@ function scan_expiry_warnings(int $uid): array {
     return $out;
 }
 
+// ---- look-alike / typosquat domains (dnstwist-style; keyless DoH resolution) ----
+/** QWERTY neighbour map — for typo (fat-finger) variant generation. */
+function scan_twist_kb(): array {
+    return ['q'=>'wa','w'=>'qeas','e'=>'wrsd','r'=>'etdf','t'=>'ryfg','y'=>'tugh','u'=>'yihj','i'=>'uojk','o'=>'ipkl','p'=>'ol',
+            'a'=>'qwsz','s'=>'wedxza','d'=>'erfcxs','f'=>'rtgvcd','g'=>'tyhbvf','h'=>'yujnbg','j'=>'uikmnh','k'=>'iolmj','l'=>'opk',
+            'z'=>'asx','x'=>'zsdc','c'=>'xdfv','v'=>'cfgb','b'=>'vghn','n'=>'bhjm','m'=>'njk'];
+}
+
+/** Generate look-alike variants of a domain → [domain => algorithm], deduped, capped,
+ *  and prioritised so the highest-signal families survive the cap. Mutates only the
+ *  first label; swaps the whole TLD for the tld-swap family. */
+function scan_twist_generate(string $domain, int $cap = 120): array {
+    $parts = explode('.', $domain);
+    $sld = array_shift($parts);
+    $tld = implode('.', $parts);
+    if ($sld === '' || $tld === '' || strlen($sld) < 2) return [];
+    $buckets = [];
+    $seen = [$domain => true];
+    $add = function (string $d, string $type) use (&$buckets, &$seen) {
+        $d = strtolower($d);
+        if (isset($seen[$d]) || strlen($d) > 253) return;
+        if (!filter_var($d, FILTER_VALIDATE_DOMAIN, FILTER_FLAG_HOSTNAME)) return;
+        $seen[$d] = true;
+        $buckets[$type][] = $d;
+    };
+    $chars = str_split($sld);
+    $n = count($chars);
+    $kb = scan_twist_kb();
+    $homo = ['a'=>['4'],'b'=>['d'],'c'=>['e'],'d'=>['cl','b'],'e'=>['3'],'g'=>['9','q'],'h'=>['n'],'i'=>['1','l','j'],'j'=>['i'],
+             'l'=>['1','i'],'m'=>['rn','nn'],'n'=>['m','r'],'o'=>['0'],'q'=>['g'],'r'=>['n'],'s'=>['5','z'],'t'=>['7'],
+             'u'=>['v'],'v'=>['u'],'w'=>['vv'],'y'=>['j'],'z'=>['s','2'],'0'=>['o'],'1'=>['l','i'],'5'=>['s']];
+    $vowels = ['a','e','i','o','u'];
+    for ($i = 0; $i < $n; $i++) {
+        $pre = substr($sld, 0, $i); $post = substr($sld, $i + 1); $ch = $chars[$i];
+        $add($pre . $post . '.' . $tld, 'omission');                       // drop a char
+        $add($pre . $ch . $ch . $post . '.' . $tld, 'repetition');         // double a char
+        if ($i < $n - 1) { $sw = $chars; [$sw[$i], $sw[$i+1]] = [$sw[$i+1], $sw[$i]]; $add(implode('', $sw) . '.' . $tld, 'transposition'); }
+        foreach (str_split($kb[$ch] ?? '') as $a) {
+            $add($pre . $a . $post . '.' . $tld, 'replacement');           // fat-finger swap
+            $add($pre . $ch . $a . $post . '.' . $tld, 'insertion');       // fat-finger insert
+        }
+        foreach (($homo[$ch] ?? []) as $gl) $add($pre . $gl . $post . '.' . $tld, 'homoglyph');
+        if (in_array($ch, $vowels, true)) foreach ($vowels as $v) if ($v !== $ch) $add($pre . $v . $post . '.' . $tld, 'vowel-swap');
+        if ($i > 0) $add($pre . '-' . $ch . $post . '.' . $tld, 'hyphenation');
+        $o = ord($ch);
+        for ($b = 0; $b < 7; $b++) { $x = chr($o ^ (1 << $b)); if (ctype_alnum($x)) $add($pre . strtolower($x) . $post . '.' . $tld, 'bitsquat'); }
+    }
+    foreach (['com','net','org','co','io','info','app','xyz','online','site','shop','biz','us','dev','me','cc','live','pro','store','link'] as $a)
+        if ($a !== $tld) $add($sld . '.' . $a, 'tld-swap');
+    foreach (['login','secure','account','verify','support','mail','my','app'] as $w) {
+        $add($sld . '-' . $w . '.' . $tld, 'addition');
+        $add($w . '-' . $sld . '.' . $tld, 'addition');
+    }
+    // Flatten in priority order (drop lowest-signal families first when over the cap).
+    $order = ['homoglyph','omission','transposition','replacement','tld-swap','repetition','insertion','vowel-swap','hyphenation','addition','bitsquat'];
+    $out = [];
+    foreach ($order as $type) foreach (($buckets[$type] ?? []) as $d) { $out[$d] = $type; if (count($out) >= $cap) return $out; }
+    return $out;
+}
+
+/** Generate + resolve look-alike domains, returning only the ones that are actually
+ *  registered (resolve to an IP), enriched with MX presence and same-host detection.
+ *  All keyless: Google DoH. Heavier than a normal lookup, so it's its own endpoint. */
+function scan_domain_twist(string $domainRaw): array {
+    $domain = scan_domain_normalize($domainRaw);
+    if ($domain === null) return ['error' => 'Not a valid domain.'];
+    $variants = scan_twist_generate($domain);
+    $doh = fn($name, $type) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($name) . '&type=' . $type,
+                                'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true, 'timeout' => 6];
+    if (!$variants) return ['ok' => true, 'domain' => $domain, 'generated' => 0, 'registered' => 0, 'hits' => [], 'ts' => time()];
+    $legitA = scan_doh_answers(scan_multi_get(['a' => $doh($domain, 'A')])['a'] ?? null, 1);
+
+    $aRec = [];
+    foreach (array_chunk(array_keys($variants), 40) as $chunk) {
+        $tasks = [];
+        foreach ($chunk as $d) $tasks[$d] = $doh($d, 'A');
+        $res = scan_multi_get($tasks);
+        foreach ($chunk as $d) { $a = scan_doh_answers($res[$d] ?? null, 1); if ($a) $aRec[$d] = $a; }
+    }
+    $mx = [];
+    foreach (array_chunk(array_keys($aRec), 40) as $chunk) {
+        if (!$chunk) break;
+        $tasks = [];
+        foreach ($chunk as $d) $tasks[$d] = $doh($d, 'MX');
+        $res = scan_multi_get($tasks);
+        foreach ($chunk as $d) if (scan_doh_answers($res[$d] ?? null, 15)) $mx[$d] = true;
+    }
+    $hits = [];
+    foreach ($aRec as $d => $a) {
+        $hits[] = ['domain' => $d, 'type' => $variants[$d], 'a' => array_slice($a, 0, 3),
+                   'mx' => isset($mx[$d]), 'same_ip' => (bool) array_intersect($a, $legitA)];
+    }
+    // Most dangerous first: receives mail (phishing-capable) + hosted somewhere other than you.
+    $rank = fn($h) => ($h['mx'] ? 0 : 2) + ($h['same_ip'] ? 1 : 0);
+    usort($hits, fn($x, $y) => [$rank($x), $x['domain']] <=> [$rank($y), $y['domain']]);
+    return ['ok' => true, 'domain' => $domain, 'generated' => count($variants), 'registered' => count($hits), 'hits' => $hits, 'ts' => time()];
+}
+
 // ---- network / IP self-footprint ----
 /** The caller's real public IP, honouring a Cloudflare / proxy front. */
 function os_client_ip(): string {

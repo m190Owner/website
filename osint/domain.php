@@ -133,7 +133,8 @@ osint_head('Domain footprint · m190 finder', 'domains');
   </div>
 
   <?php foreach ($p['domains'] as $i => $domain):
-    $cached = scan_domain_cache_get((int) $u['id'], $domain); ?>
+    $cached = scan_domain_cache_get((int) $u['id'], $domain);
+    $twist  = scan_domain_cache_get((int) $u['id'], 'twist:' . $domain); ?>
     <div class="os-panel">
       <div class="os-sec-head">
         <h3 class="os-h3">🌐 <?= ose($domain) ?></h3>
@@ -143,6 +144,17 @@ osint_head('Domain footprint · m190 finder', 'domains');
         <?= $cached ? 'Last scanned ' . ose(date('Y-m-d H:i', (int) $cached['ts'])) : 'Not scanned yet — hit Scan.' ?>
       </div>
       <?php if ($cached) os_domain_render($cached); ?>
+
+      <div class="os-twist-sec">
+        <div class="os-sec-head" style="margin-top:20px">
+          <div class="os-subhead" style="margin:0">🎭 Look-alike domains <span class="os-dim">(typosquatting)</span></div>
+          <button type="button" class="os-btn os-btn-sm" data-twist="<?= ose($domain) ?>" data-tidx="<?= $i ?>"><?= $twist ? 'Recheck' : 'Check' ?></button>
+        </div>
+        <p class="os-fineprint">Generates typo, homoglyph, and alternate-TLD variations of your domain, then checks which are <b>actually registered</b> — the ones an attacker could use to phish your users or spoof your brand. Public DNS only.</p>
+        <div id="os-twist-<?= $i ?>" class="os-twistout"<?= $twist ? '' : ' hidden' ?>><?php
+          if ($twist) echo '<script type="application/json" class="os-twist-data">' . json_encode($twist, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) . '</script>';
+        ?></div>
+      </div>
     </div>
   <?php endforeach; ?>
 <?php
