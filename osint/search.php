@@ -71,6 +71,29 @@ osint_head('Self-search · m190 finder', 'search');
     <p class="os-fineprint">Face-search engines like <a href="https://pimeyes.com/en" target="_blank" rel="noopener nofollow">PimEyes</a> and <a href="https://images.google.com/" target="_blank" rel="noopener nofollow">Google Images</a> need the photo uploaded directly — use them to see where your face shows up, then request removal where it doesn't belong.</p>
   </div>
 
+  <div class="os-panel" data-usernames="<?= ose(json_encode(array_values($p['usernames']))) ?>">
+    <h3 class="os-h3">🤖 AI exposure <span class="os-dim">— what the chatbots say about you</span></h3>
+    <p class="os-dim os-mb">Assistants have ingested much of the public web, and people now research each other by <b>asking a chatbot</b>. See what one will readily tell a stranger about you, then use the opt-outs to limit what future models learn. Your name stays in this browser; nothing is sent to our server.</p>
+    <div class="os-vfform" style="margin-bottom:10px">
+      <input type="text" id="os-ai-name" class="os-input" placeholder="Your full name (optional — makes the query far more useful)" autocomplete="off">
+    </div>
+    <div class="os-subhead">Ask an assistant about you</div>
+    <div class="os-srch" id="os-ai-links"></div>
+    <div class="os-inrow" style="margin-top:8px">
+      <button type="button" class="os-btn os-btn-sm" id="os-ai-copy">Copy the prompt</button>
+      <span class="os-dim" id="os-ai-copied" style="font-size:.8rem"></span>
+    </div>
+    <div class="os-subhead">Opt out of AI training</div>
+    <?php os_srch_block('', [
+        os_link('OpenAI / ChatGPT privacy', 'https://privacy.openai.com/policies', '⚙️'),
+        os_link('Google Gemini activity', 'https://myactivity.google.com/product/gemini', '⚙️'),
+        os_link('Meta AI data request', 'https://www.facebook.com/privacy/genai/', '⚙️'),
+        os_link('LinkedIn — data for AI', 'https://www.linkedin.com/mypreferences/d/settings/data-for-ai-improvement', '⚙️'),
+        os_link('X / Grok settings', 'https://x.com/settings/grok_settings', '⚙️'),
+    ]); ?>
+    <p class="os-fineprint">In ChatGPT, also turn off <b>Settings → Data Controls → Improve the model for everyone</b>. Removing yourself from the web (via the removal center) is what actually shrinks what future models can learn.</p>
+  </div>
+
   <?php foreach ($p['usernames'] as $v): $q = '"' . $v . '"'; ?>
     <div class="os-panel">
       <h3 class="os-h3">Username · <span class="os-code"><?= ose($v) ?></span></h3>
