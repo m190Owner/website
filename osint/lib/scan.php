@@ -566,11 +566,11 @@ function scan_multi_get(array $tasks, int $cap = 262144): array {
         return $out;
     }
     $mh = curl_multi_init();
-    $handles = []; $buf = [];
+    $handles = []; $buf = []; $hdrs = [];
     $localCa = 'C:/Program Files/Git/mingw64/etc/ssl/certs/ca-bundle.crt';
     foreach ($tasks as $key => $t) {
         $ch = curl_init();
-        $buf[$key] = '';
+        $buf[$key] = ''; $hdrs[$key] = [];
         curl_setopt_array($ch, [
             CURLOPT_URL            => $t['url'],
             CURLOPT_HTTPHEADER     => $t['headers'] ?? [],
@@ -590,6 +590,13 @@ function scan_multi_get(array $tasks, int $cap = 262144): array {
             },
         ]);
         if (isset($t['post'])) { curl_setopt($ch, CURLOPT_POST, true); curl_setopt($ch, CURLOPT_POSTFIELDS, (string) $t['post']); }
+        if (!empty($t['wanthdr'])) {
+            curl_setopt($ch, CURLOPT_HEADERFUNCTION, function ($c, $h) use (&$hdrs, $key) {
+                $p = strpos($h, ':');
+                if ($p !== false) $hdrs[$key][strtolower(trim(substr($h, 0, $p)))] = trim(substr($h, $p + 1));
+                return strlen($h);
+            });
+        }
         if (is_file($localCa)) curl_setopt($ch, CURLOPT_CAINFO, $localCa);
         curl_multi_add_handle($mh, $ch);
         $handles[$key] = $ch;
@@ -599,7 +606,7 @@ function scan_multi_get(array $tasks, int $cap = 262144): array {
     foreach ($handles as $key => $ch) {
         $errno = curl_errno($ch);
         $ok = ($errno === 0 || $errno === CURLE_WRITE_ERROR);   // 23 = we aborted at the cap, still valid
-        $out[$key] = ['code' => (int) curl_getinfo($ch, CURLINFO_HTTP_CODE), 'body' => $buf[$key], 'err' => !$ok];
+        $out[$key] = ['code' => (int) curl_getinfo($ch, CURLINFO_HTTP_CODE), 'body' => $buf[$key], 'err' => !$ok, 'headers' => $hdrs[$key] ?? []];
         curl_multi_remove_handle($mh, $ch);
         curl_close($ch);
     }
@@ -653,8 +660,24 @@ function scan_domain_lookup(string $domainRaw): array {
         'DS' => $doh($domain, 'DS'),
         'CRT' => ['url' => 'https://crt.sh/?q=' . rawurlencode('%.' . $domain) . '&output=json',
                   'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 22, 'contimeout' => 8],
+        'HOME' => ['url' => 'https://' . $domain . '/', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'wanthdr' => true, 'timeout' => 12],
+        'WB' => ['url' => 'https://web.archive.org/cdx/search/cdx?url=' . rawurlencode($domain) . '&matchType=domain&output=json&collapse=urlkey&fl=original,timestamp&limit=500',
+                 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 16],
     ];
     $res = scan_multi_get($tasks, 4194304);   // 4 MB — crt.sh can be large
+
+    $hh = $res['HOME']['headers'] ?? [];
+    $security = [
+        'reachable' => isset($res['HOME']) && !$res['HOME']['err'] && (int) $res['HOME']['code'] > 0,
+        'code'   => (int) ($res['HOME']['code'] ?? 0),
+        'hsts'   => isset($hh['strict-transport-security']),
+        'csp'    => isset($hh['content-security-policy']),
+        'xfo'    => isset($hh['x-frame-options']),
+        'xcto'   => isset($hh['x-content-type-options']),
+        'refpol' => isset($hh['referrer-policy']),
+        'perms'  => isset($hh['permissions-policy']),
+        'server' => mb_substr((string) ($hh['server'] ?? ''), 0, 60),
+    ];
 
     $A = scan_doh_answers($res['A'] ?? null, 1);
     $AAAA = scan_doh_answers($res['AAAA'] ?? null, 28);
@@ -678,6 +701,35 @@ function scan_domain_lookup(string $domainRaw): array {
         'subdomains' => scan_crt_subdomains($res['CRT'] ?? null, $domain),
         'crt_ok' => isset($res['CRT']) && !$res['CRT']['err'] && (int) $res['CRT']['code'] === 200,
         'resolves' => !empty($A) || !empty($AAAA), 'has_mail' => !empty($MX),
+        'security' => $security,
+        'wayback'  => scan_wayback($res['WB'] ?? null),
+    ];
+}
+
+/** Wayback Machine CDX response → [ok, count, first, last, urls[]] for a domain. */
+function scan_wayback(?array $r): array {
+    $empty = ['ok' => false, 'count' => 0, 'first' => '', 'last' => '', 'urls' => []];
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return $empty;
+    $j = json_decode($r['body'], true);
+    if (!is_array($j) || count($j) < 2) return ['ok' => true, 'count' => 0, 'first' => '', 'last' => '', 'urls' => []];
+    array_shift($j);   // header row ["original","timestamp"]
+    $urls = []; $ts = [];
+    foreach ($j as $row) {
+        if (!is_array($row)) continue;
+        $u = (string) ($row[0] ?? '');
+        $t = (string) ($row[1] ?? '');
+        if ($u !== '') $urls[] = $u;
+        if (preg_match('/^\d{8}/', $t)) $ts[] = $t;
+    }
+    sort($ts);
+    $fmt = fn($t) => $t ? substr($t, 0, 4) . '-' . substr($t, 4, 2) . '-' . substr($t, 6, 2) : '';
+    $urls = array_values(array_unique($urls));
+    return [
+        'ok'    => true,
+        'count' => count($urls),
+        'first' => $fmt($ts[0] ?? ''),
+        'last'  => $fmt($ts ? $ts[count($ts) - 1] : ''),
+        'urls'  => array_slice($urls, 0, 15),
     ];
 }
 

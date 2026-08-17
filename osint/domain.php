@@ -39,6 +39,23 @@ function os_domain_render(array $d): void {
           . os_reclist('NS', $d['ns']) . os_reclist('TXT', $d['txt']);
     if ($recs) echo '<div class="os-subhead">DNS records</div><dl class="os-kv">' . $recs . '</dl>';
 
+    // Web security headers
+    $sec = $d['security'] ?? [];
+    if (!empty($sec['reachable'])) {
+        echo '<div class="os-subhead">Web security headers</div><div class="os-posture">';
+        $hdr = fn($ok, $name, $desc) => os_prow($ok ? 'ok' : 'warn', $name, $ok ? 'Present' : ('Missing — ' . $desc));
+        echo $hdr($sec['hsts'], 'HSTS', 'HTTPS is not enforced against downgrade');
+        echo $hdr($sec['csp'], 'CSP', 'no content-injection defence');
+        echo $hdr($sec['xfo'], 'X-Frame-Options', 'clickjacking not blocked');
+        echo $hdr($sec['xcto'], 'X-Content-Type', 'MIME-sniffing not blocked');
+        echo $hdr($sec['refpol'], 'Referrer-Policy', 'referrers may leak');
+        echo $hdr($sec['perms'], 'Permissions-Policy', 'browser features unrestricted');
+        if (!empty($sec['server'])) echo os_prow('', 'Server', ose($sec['server']) . ' <span class="os-dim">— a version banner helps attackers target you</span>');
+        echo '</div>';
+    } elseif (isset($d['security'])) {
+        echo '<div class="os-subhead">Web security headers</div><p class="os-dim">The homepage didn\'t respond over HTTPS, so headers couldn\'t be read.</p>';
+    }
+
     // Subdomains via certificate transparency
     echo '<div class="os-subhead">Subdomains <span class="os-dim">(certificate transparency · ' . count($d['subdomains']) . ')</span></div>';
     if ($d['subdomains']) {
@@ -50,6 +67,21 @@ function os_domain_render(array $d): void {
         echo '<p class="os-dim">Certificate-transparency lookup was unavailable this run — hit Rescan to retry.</p>';
     } else {
         echo '<p class="os-dim">No subdomains found in certificate transparency logs.</p>';
+    }
+
+    // Wayback Machine — pages the internet still remembers
+    $wb = $d['wayback'] ?? [];
+    echo '<div class="os-subhead">Wayback Machine <span class="os-dim">(archived pages)</span></div>';
+    if (!empty($wb['ok']) && (int) $wb['count'] > 0) {
+        echo '<p class="os-dim os-mb"><b>' . (int) $wb['count'] . '</b> archived page(s)'
+           . ($wb['first'] ? ', ' . ose($wb['first']) . ' to ' . ose($wb['last']) : '')
+           . '. These snapshots persist even after you delete the live pages — check them for info you meant to remove.</p><div class="os-taglist">';
+        foreach ($wb['urls'] as $wu) echo '<a class="os-code" href="https://web.archive.org/web/*/' . ose($wu) . '" target="_blank" rel="noopener nofollow">' . ose(mb_substr($wu, 0, 64)) . '</a>';
+        echo '</div>';
+    } elseif (!empty($wb['ok'])) {
+        echo '<p class="os-dim">No archived captures found.</p>';
+    } else {
+        echo '<p class="os-dim">Wayback lookup was unavailable this run — hit Rescan to retry.</p>';
     }
 }
 
