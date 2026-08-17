@@ -299,4 +299,56 @@
     uuidOut.insertBefore(chip, uuidOut.firstChild);
     while (uuidOut.children.length > 6) uuidOut.removeChild(uuidOut.lastChild);
   });
+
+  // ---------- writing fingerprint (stylometry) ----------
+  var STY_FUNC = ('the of and to a in that it is was for on are as with his they i at be this have from or one had by word but not what all were we when your can said there use an each which she do how their if will up other about out many then them these so some her would make like him into time has look two more write go see number no way could people my than first been call who its now find long down day did get come made may part over new sound take only little work know place year live me back give most very after thing our just name good sentence man think say great where help through much before line right too mean old any same tell boy follow came want show also around form three small set put end does another well large must big even such because turn here why ask went men read need land different home us move try kind hand picture again change off play spell air away animal house point page letter mother answer found study still learn should america world').split(' ');
+  function styTokens(t) { return (t.toLowerCase().match(/[a-z']+/g) || []); }
+  function styFeatures(t) {
+    var words = styTokens(t), n = words.length || 1;
+    var fw = {}; STY_FUNC.forEach(function (w) { fw[w] = 0; });
+    var letters = 0, uniq = {};
+    words.forEach(function (w) { if (fw[w] !== undefined) fw[w]++; letters += w.length; uniq[w] = 1; });
+    var vec = STY_FUNC.map(function (w) { return fw[w] / n; });
+    var sentences = (t.match(/[.!?]+/g) || []).length || 1;
+    return {
+      vec: vec, words: n,
+      avgWord: letters / n,
+      avgSent: n / sentences,
+      commaRate: (t.match(/,/g) || []).length / n * 100,
+      ttr: Object.keys(uniq).length / n,
+      exclQ: ((t.match(/[!?]/g) || []).length) / sentences
+    };
+  }
+  function styBray(a, b) { var num = 0, den = 0; for (var i = 0; i < a.length; i++) { num += Math.abs(a[i] - b[i]); den += a[i] + b[i]; } return den ? 1 - num / den : 0; }
+  function styClose(a, b) { return 1 - Math.abs(a - b) / (Math.abs(a) + Math.abs(b) + 1e-9); }
+
+  var styRun = $('os-sty-run'), styOut = $('os-sty-out');
+  if (styRun) styRun.addEventListener('click', function () {
+    var A = styFeatures($('os-sty-a').value), B = styFeatures($('os-sty-b').value);
+    styOut.hidden = false;
+    if (A.words < 40 || B.words < 40) {
+      styOut.innerHTML = '<div class="os-warn-box" style="margin-top:0">Each sample needs at least ~40 words to be meaningful (A: ' + A.words + ', B: ' + B.words + '). Paste more text.</div>';
+      return;
+    }
+    var fwSim = styBray(A.vec, B.vec);
+    var structSim = (styClose(A.avgWord, B.avgWord) + styClose(A.avgSent, B.avgSent) + styClose(A.commaRate, B.commaRate) + styClose(A.ttr, B.ttr)) / 4;
+    var score = Math.round((0.7 * fwSim + 0.3 * structSim) * 100);
+    var verdict, cls;
+    if (score >= 85) { verdict = 'Very similar — consistent with the same author.'; cls = 'os-corr-high'; }
+    else if (score >= 70) { verdict = 'Similar — plausibly the same author; worth a closer look.'; cls = 'os-corr-med'; }
+    else if (score >= 55) { verdict = 'Some overlap — inconclusive from these samples.'; cls = 'os-corr-med'; }
+    else { verdict = 'Distinct — the two samples show different writing habits.'; cls = 'os-corr-low'; }
+    var row = function (label, a, b, unit) { return '<dt>' + label + '</dt><dd>' + a.toFixed(2) + unit + ' <span class="os-dim">vs</span> ' + b.toFixed(2) + unit + '</dd>'; };
+    styOut.innerHTML = '<div class="os-corr ' + cls + '"><div class="os-corr-h"><span class="os-corr-sev">' + score + '%</span><b>' + verdict + '</b></div>'
+      + '<p class="os-corr-d">A blend of function-word rhythm (70%) and structural habits (30%). Higher means more alike.</p></div>'
+      + '<div class="os-subhead">Side by side <span class="os-dim">(A vs B)</span></div>'
+      + '<dl class="os-kv">'
+      + row('Avg word length', A.avgWord, B.avgWord, ' ch')
+      + row('Avg sentence length', A.avgSent, B.avgSent, ' wd')
+      + row('Commas per 100 words', A.commaRate, B.commaRate, '')
+      + row('Vocabulary richness (TTR)', A.ttr, B.ttr, '')
+      + '<dt>Sample size</dt><dd>' + A.words + ' vs ' + B.words + ' words</dd>'
+      + '</dl>'
+      + '<p class="os-fineprint">Stylometry is a lead, not proof: it needs long samples, deliberate obfuscation can defeat it, and topic overlap can inflate the score. Use it to prioritise, then corroborate.</p>';
+  });
 })();

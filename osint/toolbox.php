@@ -120,5 +120,16 @@ osint_head('Toolbox · m190 finder', 'toolbox');
       <div id="os-uuid-out" class="os-taglist" style="margin-top:12px"></div>
     </div>
   </div>
+
+  <div class="os-panel">
+    <h3 class="os-h3">Writing fingerprint <span class="os-dim">(stylometry)</span></h3>
+    <p class="os-dim os-mb">Compare two writing samples — say your known/public writing against an &ldquo;anonymous&rdquo; post — to gauge how likely the <b>same person</b> wrote both. Style habits (function-word rhythm, sentence length, punctuation) are far harder to disguise than a username. Paste a few paragraphs in each. Runs entirely in your browser.</p>
+    <div class="os-grid2">
+      <textarea class="os-ta" id="os-sty-a" placeholder="Sample A — your known / public writing…" spellcheck="false" style="min-height:130px"></textarea>
+      <textarea class="os-ta" id="os-sty-b" placeholder="Sample B — the text to check…" spellcheck="false" style="min-height:130px"></textarea>
+    </div>
+    <div class="os-inrow" style="margin-top:10px"><button type="button" class="os-btn os-btn-accent" id="os-sty-run">Compare writing</button></div>
+    <div id="os-sty-out" hidden style="margin-top:14px"></div>
+  </div>
 <?php
 osint_foot(['jsqr.min.js', 'toolbox.js']);
