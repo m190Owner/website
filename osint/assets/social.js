@@ -73,6 +73,12 @@
   }
   wire('os-fedi-run', 'os-fedi-in', 'os-fedi-out', 'fediverse', function (d) {
     if (!d.exists) return '<p class="os-dim">No account found for <b>' + esc(d.handle) + '</b> on ' + esc(d.instance) + '.</p>';
+    if (d.name || d.bio || d.avatar) {
+      var stats = [];
+      if (d.followers != null) stats.push(d.followers + ' followers');
+      if (d.statuses != null) stats.push(d.statuses + ' posts');
+      return '<div class="os-scardgrid">' + scard({ platform: '@' + d.handle, url: d.profile || '#', name: d.name || '', bio: d.bio || '', location: '', avatar: d.avatar || '', joined: d.created || '', stats: stats.join(' · '), linked: [] }) + '</div>';
+    }
     return '<dl class="os-kv"><dt>Handle</dt><dd>' + esc(d.handle) + '</dd><dt>Instance</dt><dd>' + esc(d.instance) + '</dd>'
       + (d.profile ? '<dt>Profile</dt><dd><a href="' + esc(d.profile) + '" target="_blank" rel="noopener nofollow">' + esc(d.profile) + '</a></dd>' : '') + '</dl>';
   });
