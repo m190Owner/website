@@ -12,6 +12,9 @@ $state = scan_checklist_get((int) $u['id'], 'harden');
 $total = 0; foreach ($groups as $g) $total += count($g['items'] ?? []);
 $doneCount = count(array_filter($state, fn($s) => $s === 'done'));
 
+$plinks = json_decode((string) @file_get_contents(__DIR__ . '/assets/privacy-links.json'), true);
+$platforms = $plinks['platforms'] ?? [];
+
 osint_head('Hardening · m190 finder', 'harden');
 ?>
   <div class="os-panel">
@@ -30,6 +33,21 @@ osint_head('Hardening · m190 finder', 'harden');
       <input type="search" class="os-search" id="os-cl-search" placeholder="Filter steps…" autocomplete="off">
     </div>
   </div>
+
+  <?php if ($platforms): ?>
+    <div class="os-panel">
+      <h3 class="os-h3">Your privacy settings — direct links</h3>
+      <p class="os-dim os-mb">Jump straight to each platform's privacy, security, and &ldquo;download your data&rdquo; pages — lock down who can find you by email/phone, review active sessions, and turn off ad tracking. (You'll need to be signed in to each.)</p>
+      <?php foreach ($platforms as $pf): ?>
+        <div class="os-subhead"><?= $pf['icon'] ? ose($pf['icon']) . ' ' : '' ?><?= ose($pf['name']) ?></div>
+        <div class="os-srch">
+          <?php foreach ($pf['links'] as $l): ?>
+            <a href="<?= ose($l['url']) ?>" target="_blank" rel="noopener nofollow"><span class="os-srch-ic">&#8599;</span><?= ose($l['label']) ?></a>
+          <?php endforeach; ?>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  <?php endif; ?>
 
   <div data-checklist="harden">
   <?php foreach ($groups as $g): ?>
