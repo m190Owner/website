@@ -23,6 +23,7 @@ const OSINT_UA            = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebK
 const OSINT_XPOSED        = 'https://api.xposedornot.com/v1/breach-analytics?email=';
 const OSINT_GRAVATAR      = 'https://www.gravatar.com/';
 const OSINT_BREACH_CAP    = 60;    // most-recent breaches kept per email
+const OSINT_MONITOR_INTERVAL = 43200;   // 12h — min gap between automatic monitor re-checks
 
 function scan_db(): ?PDO {
     static $ready = false;

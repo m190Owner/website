@@ -129,8 +129,8 @@ function os_inv_status(array $i, int $now): array {
   <?php endif; ?>
 
   <?php $cronUrl = $origin . '/osint/cron.php?key=' . scan_cron_token(); ?>
-  <h2 class="ow-mh">Breach-monitoring cron</h2>
-  <p class="ow-dim" style="max-width:660px">Users can opt into automatic breach monitoring on the tool's dashboard. Trigger the re-check on a schedule (e.g. a daily Hostinger cron) with this token-gated URL — or run <span class="ow-mono">php&nbsp;/path/to/osint/cron.php</span> from a CLI cron. Keep the token private.</p>
+  <h2 class="ow-mh">Breach-monitoring cron <span class="ow-dim" style="font-size:.72em;font-weight:400">optional</span></h2>
+  <p class="ow-dim" style="max-width:660px">Monitoring already re-checks automatically whenever a user opens the dashboard, so <b>no cron is required</b>. Optionally, to also catch new breaches for users who don't log in for a while, schedule this token-gated URL (e.g. a daily Hostinger cron) or run <span class="ow-mono">php&nbsp;/path/to/osint/cron.php</span>. Keep the token private.</p>
   <div class="ow-copy" style="max-width:660px">
     <input readonly value="<?= oe($cronUrl) ?>">
     <button type="button" class="ow-btn ow-copy-btn" data-copy="<?= oe($cronUrl) ?>">Copy URL</button>

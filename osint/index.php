@@ -11,6 +11,7 @@ $nId = count($p['usernames']) + count($p['emails']) + count($p['phones']) + coun
 $latest = scan_latest((int) $u['id']);
 $siteCount = count(scan_sites());
 $mon = scan_monitor_get((int) $u['id']);
+$monDue = $mon['enabled'] && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
 
 // Tool cards for the hub grid: [icon, title, href, description].
 $tools = [
@@ -25,6 +26,7 @@ $tools = [
 ];
 osint_head('m190 finder', 'dashboard');
 ?>
+  <?php if ($monDue): ?><div id="os-mon-auto" hidden></div><?php endif; ?>
   <?php if ($mon['pending']): ?>
     <div class="os-panel os-alertbox" id="os-mon-alert">
       <h3 class="os-h3">&#9888; New exposure since your last check</h3>
@@ -91,7 +93,7 @@ osint_head('m190 finder', 'dashboard');
         <h3 class="os-h3">Breach monitoring</h3>
         <label class="os-switch"><input type="checkbox" id="os-mon-toggle" <?= $mon['enabled'] ? 'checked' : '' ?>><span class="os-switch-t"></span></label>
       </div>
-      <p class="os-dim" id="os-mon-status"><?php if ($mon['enabled']): ?>On — we'll re-check your emails and flag new breaches here<?= $mon['last_check'] ? '. Last checked ' . ose(date('Y-m-d H:i', $mon['last_check'])) : '' ?>.<?php else: ?>Off — turn it on to be alerted when a <b>new</b> breach includes one of your emails, without re-running a full scan.<?php endif; ?></p>
+      <p class="os-dim" id="os-mon-status"><?php if ($mon['enabled']): ?>On — we automatically re-check your emails when you visit (no setup needed) and flag any <b>new</b> breach here<?= $mon['last_check'] ? '. Last checked ' . ose(date('Y-m-d H:i', $mon['last_check'])) : '' ?>.<?php else: ?>Off — turn it on to be alerted when a <b>new</b> breach includes one of your emails, without re-running a full scan.<?php endif; ?></p>
     </div>
   <?php endif; ?>
 
