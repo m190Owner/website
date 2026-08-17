@@ -209,6 +209,8 @@ a.os-top-l:hover{text-decoration:none}
 .os-srch a:hover{border-color:var(--os-border-h);text-decoration:none}
 .os-srch .os-srch-ic{font-size:.9rem;opacity:.8}
 .os-subhead{font-size:.82rem;font-weight:700;color:var(--os-dim);margin:16px 0 2px;text-transform:uppercase;letter-spacing:.4px}
+.os-srch a.os-srch-del{border-color:rgba(229,105,95,.45);color:#ff9a92}
+.os-srch a.os-srch-del:hover{border-color:var(--os-danger)}
 
 /* ---- inline form controls ---- */
 .os-inrow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:6px}

@@ -1,41 +1,41 @@
 {
   "platforms": [
-    {"name":"Google","icon":"🔵","links":[
+    {"name":"Google","icon":"🔵","delete":"https://myaccount.google.com/deleteaccount","links":[
       {"label":"Privacy checkup","url":"https://myaccount.google.com/privacycheckup"},
       {"label":"Security checkup","url":"https://myaccount.google.com/security-checkup"},
       {"label":"Ad settings","url":"https://myadcenter.google.com/"},
       {"label":"Download your data","url":"https://takeout.google.com/"}
     ]},
-    {"name":"Facebook","icon":"🔷","links":[
+    {"name":"Facebook","icon":"🔷","delete":"https://www.facebook.com/help/delete_account","links":[
       {"label":"Privacy checkup","url":"https://www.facebook.com/privacy/checkup/"},
       {"label":"Off-Facebook activity","url":"https://www.facebook.com/off_facebook_activity/"},
       {"label":"Security & login","url":"https://www.facebook.com/settings?tab=security"},
       {"label":"Download your info","url":"https://www.facebook.com/dyi"}
     ]},
-    {"name":"Instagram","icon":"📸","links":[
+    {"name":"Instagram","icon":"📸","delete":"https://www.instagram.com/accounts/remove/request/permanent/","links":[
       {"label":"Privacy & security","url":"https://www.instagram.com/accounts/privacy_and_security/"},
       {"label":"Login activity","url":"https://www.instagram.com/session/login_activity/"},
       {"label":"Download your data","url":"https://www.instagram.com/download/request/"}
     ]},
-    {"name":"X (Twitter)","icon":"✖️","links":[
+    {"name":"X (Twitter)","icon":"✖️","delete":"https://x.com/settings/deactivate","links":[
       {"label":"Privacy & safety","url":"https://x.com/settings/privacy_and_safety"},
       {"label":"Discoverability (find by email/phone)","url":"https://x.com/settings/contacts_dashboard"},
       {"label":"Download an archive","url":"https://x.com/settings/download_your_data"}
     ]},
-    {"name":"LinkedIn","icon":"💼","links":[
+    {"name":"LinkedIn","icon":"💼","delete":"https://www.linkedin.com/psettings/account-management/close-submit","links":[
       {"label":"Data privacy","url":"https://www.linkedin.com/mypreferences/d/categories/privacy"},
       {"label":"Profile visibility","url":"https://www.linkedin.com/mypreferences/d/categories/visibility"},
       {"label":"Get a copy of your data","url":"https://www.linkedin.com/mypreferences/d/download-my-data"}
     ]},
-    {"name":"Microsoft","icon":"🪟","links":[
+    {"name":"Microsoft","icon":"🪟","delete":"https://account.live.com/closeaccount.aspx","links":[
       {"label":"Privacy dashboard","url":"https://account.microsoft.com/privacy"},
       {"label":"Security","url":"https://account.microsoft.com/security"}
     ]},
-    {"name":"Apple","icon":"","links":[
+    {"name":"Apple","icon":"","delete":"https://privacy.apple.com/","links":[
       {"label":"Data & Privacy","url":"https://privacy.apple.com/"},
       {"label":"Apple Account","url":"https://account.apple.com/"}
     ]},
-    {"name":"TikTok","icon":"🎵","links":[
+    {"name":"TikTok","icon":"🎵","delete":"https://support.tiktok.com/en/log-in-troubleshoot/log-in/deleting-an-account","links":[
       {"label":"Privacy settings","url":"https://www.tiktok.com/setting"},
       {"label":"Download your data","url":"https://www.tiktok.com/setting/download-your-data"}
     ]},
@@ -44,9 +44,37 @@
       {"label":"Request your data","url":"https://www.amazon.com/hz/privacy-central/data-requests/preview.html"},
       {"label":"Login & security","url":"https://www.amazon.com/ax/account/manage"}
     ]},
-    {"name":"Reddit","icon":"👽","links":[
+    {"name":"Reddit","icon":"👽","delete":"https://www.reddit.com/settings/account","links":[
       {"label":"Privacy settings","url":"https://www.reddit.com/settings/privacy"},
       {"label":"Request your data","url":"https://www.reddit.com/settings/data-request"}
+    ]},
+    {"name":"Snapchat","icon":"👻","delete":"https://accounts.snapchat.com/accounts/delete_account","links":[
+      {"label":"Manage account","url":"https://accounts.snapchat.com/"},
+      {"label":"My data","url":"https://accounts.snapchat.com/accounts/downloadmydata"}
+    ]},
+    {"name":"Discord","icon":"🎮","links":[
+      {"label":"Privacy & safety help","url":"https://support.discord.com/hc/en-us/articles/217916488"},
+      {"label":"Request your data","url":"https://support.discord.com/hc/en-us/articles/360004027692"}
+    ]},
+    {"name":"Pinterest","icon":"📌","delete":"https://www.pinterest.com/settings/account-management/","links":[
+      {"label":"Privacy & data","url":"https://www.pinterest.com/settings/privacy/"},
+      {"label":"Account management","url":"https://www.pinterest.com/settings/account-management/"}
+    ]},
+    {"name":"Twitch","icon":"🟣","delete":"https://www.twitch.tv/user/delete-account","links":[
+      {"label":"Security & privacy","url":"https://www.twitch.tv/settings/security"},
+      {"label":"Profile","url":"https://www.twitch.tv/settings/profile"}
+    ]},
+    {"name":"Strava","icon":"🏃","delete":"https://www.strava.com/athlete/delete_your_account","links":[
+      {"label":"Privacy controls","url":"https://www.strava.com/settings/privacy"},
+      {"label":"Download your data","url":"https://www.strava.com/athlete/delete_your_account"}
+    ]},
+    {"name":"Spotify","icon":"🎧","delete":"https://support.spotify.com/article/close-account/","links":[
+      {"label":"Privacy settings","url":"https://www.spotify.com/account/privacy/"},
+      {"label":"Apps & devices","url":"https://www.spotify.com/account/apps/"}
+    ]},
+    {"name":"YouTube","icon":"▶️","links":[
+      {"label":"Your YouTube data","url":"https://myaccount.google.com/yourdata/youtube"},
+      {"label":"Privacy settings","url":"https://www.youtube.com/account_privacy"}
     ]}
   ]
 }

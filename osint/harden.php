@@ -37,13 +37,16 @@ osint_head('Hardening · m190 finder', 'harden');
   <?php if ($platforms): ?>
     <div class="os-panel">
       <h3 class="os-h3">Your privacy settings — direct links</h3>
-      <p class="os-dim os-mb">Jump straight to each platform's privacy, security, and &ldquo;download your data&rdquo; pages — lock down who can find you by email/phone, review active sessions, and turn off ad tracking. (You'll need to be signed in to each.)</p>
+      <p class="os-dim os-mb">Jump straight to each platform's privacy, security, and &ldquo;download your data&rdquo; pages — lock down who can find you by email/phone, review active sessions, turn off ad tracking, or delete the account entirely. (You'll need to be signed in to each.)</p>
       <?php foreach ($platforms as $pf): ?>
         <div class="os-subhead"><?= $pf['icon'] ? ose($pf['icon']) . ' ' : '' ?><?= ose($pf['name']) ?></div>
         <div class="os-srch">
           <?php foreach ($pf['links'] as $l): ?>
             <a href="<?= ose($l['url']) ?>" target="_blank" rel="noopener nofollow"><span class="os-srch-ic">&#8599;</span><?= ose($l['label']) ?></a>
           <?php endforeach; ?>
+          <?php if (!empty($pf['delete'])): ?>
+            <a class="os-srch-del" href="<?= ose($pf['delete']) ?>" target="_blank" rel="noopener nofollow"><span class="os-srch-ic">&#128465;</span>Delete / deactivate</a>
+          <?php endif; ?>
         </div>
       <?php endforeach; ?>
     </div>
