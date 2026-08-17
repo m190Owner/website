@@ -52,9 +52,12 @@ osint_head('Exposure report · m190 finder', '');
         <h2 style="margin:0">Personal exposure report</h2>
         <p class="os-dim" style="margin:0">Prepared for <b><?= ose($u['username']) ?></b> · <?= ose(date('Y-m-d H:i')) ?></p>
       </div>
-      <button class="os-btn os-btn-accent os-noprint" style="margin-left:auto" onclick="window.print()">Print / Save as PDF</button>
+      <div class="os-noprint" style="margin-left:auto;display:flex;gap:8px">
+        <a class="os-btn os-btn-sm" href="/osint/receipt.php">Timestamped receipt</a>
+        <button class="os-btn os-btn-accent" onclick="window.print()">Print / Save as PDF</button>
+      </div>
     </div>
-    <p class="os-fineprint">A snapshot of what's publicly discoverable about your identifiers, and your progress reducing it. Scoped entirely to your own profile.</p>
+    <p class="os-fineprint">A snapshot of what's publicly discoverable about your identifiers, and your progress reducing it. Scoped entirely to your own profile. For a dated, integrity-stamped record, generate a <a href="/osint/receipt.php">timestamped receipt</a>.</p>
   </div>
 
   <div class="os-panel">

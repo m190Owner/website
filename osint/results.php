@@ -72,6 +72,7 @@ osint_head('Results · m190 finder', 'results');
       </div>
       <div class="os-resultbtns" style="margin-top:16px">
         <a class="os-btn os-btn-sm" href="/osint/report.php">Printable report</a>
+        <a class="os-btn os-btn-sm" href="/osint/receipt.php">Timestamped receipt</a>
         <a class="os-btn os-btn-sm" href="/osint/export.php?scan=<?= (int) $scan['id'] ?>">Export CSV</a>
         <a class="os-btn os-btn-sm" href="/osint/export.php?format=json">Export JSON</a>
         <a class="os-btn os-btn-sm" href="/osint/harden.php">Fix these &rarr;</a>

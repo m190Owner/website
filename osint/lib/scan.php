@@ -2393,6 +2393,59 @@ function scan_attacker_dossier(int $uid): array {
     ];
 }
 
+/** Live, lightweight mail-security check for a domain (SPF + DMARC + DNSSEC) via DoH —
+ *  the checkable slice of the hardening plan, verified fresh at receipt time. */
+function scan_domain_mailsec(string $domainRaw): array {
+    $domain = scan_domain_normalize($domainRaw);
+    if ($domain === null) return ['domain' => $domainRaw, 'ok' => false];
+    $doh = fn($n, $t) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($n) . '&type=' . $t, 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true, 'timeout' => 8];
+    $res = scan_multi_get(['txt' => $doh($domain, 'TXT'), 'dmarc' => $doh('_dmarc.' . $domain, 'TXT'), 'a' => $doh($domain, 'A'), 'ds' => $doh($domain, 'DS')]);
+    $spf = false;
+    foreach (array_map(fn($t) => str_replace('"', '', $t), scan_doh_answers($res['txt'] ?? null, 16)) as $t) if (stripos($t, 'v=spf1') === 0) { $spf = true; break; }
+    $dmarc = null;
+    foreach (array_map(fn($t) => str_replace('"', '', $t), scan_doh_answers($res['dmarc'] ?? null, 16)) as $t) if (stripos($t, 'v=DMARC1') === 0 && preg_match('/\bp=([a-z]+)/i', $t, $m)) { $dmarc = strtolower($m[1]); break; }
+    $dnssec = scan_doh_ad($res['a'] ?? null) || !empty(scan_doh_answers($res['ds'] ?? null, 43));
+    return ['domain' => $domain, 'ok' => true, 'spf' => $spf, 'dmarc' => $dmarc, 'dnssec' => $dnssec,
+            'enforced' => $spf && ($dmarc === 'reject' || $dmarc === 'quarantine')];
+}
+
+/** A timestamped, integrity-stamped snapshot of the user's exposure state — for their
+ *  records / disputes. Live-verifies domain mail security at stamp time. The SHA-256 of
+ *  the canonical payload lets the holder prove the record wasn't altered afterwards. */
+function scan_exposure_receipt(int $uid, string $subject = '', bool $verifyDomains = true): array {
+    $p = scan_profile_get($uid);
+    $scan = scan_latest($uid);
+    $findings = $scan ? scan_findings($uid, (int) $scan['id']) : [];
+    $ex = scan_exposure($findings);
+    $items = [];
+    foreach ($findings as $f) { if (($f['status'] ?? 'new') === 'false') continue; $items[] = ['category' => (string) $f['category'], 'title' => (string) $f['title']]; }
+    $brokerData = json_decode((string) @file_get_contents(__DIR__ . '/../assets/brokers.json'), true);
+    $brokerTotal = count($brokerData['brokers'] ?? []);
+    $brokerDone = count(array_filter(scan_checklist_get($uid, 'brokers'), fn($s) => $s === 'done'));
+    $brokerVerified = count(array_filter(scan_checklist_get($uid, 'brokerverify'), fn($s) => $s === 'done'));
+    $hardenData = json_decode((string) @file_get_contents(__DIR__ . '/../assets/harden.json'), true);
+    $hardenTotal = 0; foreach (($hardenData['groups'] ?? []) as $g) $hardenTotal += count($g['items'] ?? []);
+    $hardenDone = count(array_filter(scan_checklist_get($uid, 'harden'), fn($s) => $s === 'done'));
+    $mailsec = [];
+    if ($verifyDomains) foreach ($p['domains'] as $dom) $mailsec[] = scan_domain_mailsec($dom);
+    $mon = scan_monitor_get($uid); $ct = scan_ct_get($uid);
+    $ts = time();
+    $payload = [
+        'document'      => 'm190 finder — exposure receipt',
+        'subject'       => $subject,
+        'generated_at'  => gmdate('Y-m-d\TH:i:s\Z', $ts),
+        'exposure'      => ['score' => $ex['score'], 'level' => $ex['level'], 'accounts' => $ex['accounts'], 'email_identity' => $ex['identity'], 'breaches' => $ex['breaches'], 'passwords_exposed' => (bool) $ex['pw'], 'breach_span' => $ex['span'], 'data_classes' => $ex['dataclasses']],
+        'identifiers'   => ['usernames' => count($p['usernames']), 'emails' => count($p['emails']), 'phones' => count($p['phones']), 'domains' => count($p['domains'])],
+        'findings'      => $items,
+        'domain_mail_security' => $mailsec,
+        'progress'      => ['brokers_total' => $brokerTotal, 'brokers_opted_out' => $brokerDone, 'brokers_verified_removed' => $brokerVerified, 'hardening_total' => $hardenTotal, 'hardening_done' => $hardenDone],
+        'monitoring'    => ['breach' => (bool) $mon['enabled'], 'certificate_transparency' => (bool) $ct['enabled']],
+        'last_scan_at'  => $scan ? gmdate('Y-m-d\TH:i:s\Z', (int) $scan['started_at']) : null,
+    ];
+    $canonical = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+    return ['payload' => $payload, 'hash' => hash('sha256', (string) $canonical), 'ts' => $ts];
+}
+
 /** Exposure score + account/breach counts for each of the user's scans, oldest→newest,
  *  for the exposure-over-time chart. */
 function scan_timeline(int $uid, int $limit = 20): array {

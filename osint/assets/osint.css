@@ -398,3 +398,7 @@ a.os-top-l:hover{text-decoration:none}
 .os-vf-removed .os-verify-btn[data-v=done]{color:var(--os-accent-l);border-color:rgba(55,201,139,.5);background:rgba(55,201,139,.1)}
 .os-verify-badge{font-size:.66rem;text-transform:uppercase;letter-spacing:.4px;font-weight:700}
 .os-vf-ok{color:var(--os-accent-l)}.os-vf-bad{color:#ff9a92}
+
+/* Exposure receipt: integrity fingerprint block */
+.os-receipt-hash{margin-top:14px;padding:12px 14px;border:1px solid var(--os-border);border-radius:9px;background:var(--os-surface)}
+.os-receipt-hash code{display:block;margin-top:4px;font-family:var(--os-mono);font-size:.78rem;color:var(--os-accent-l);word-break:break-all;line-height:1.5}
