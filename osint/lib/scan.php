@@ -1997,3 +1997,94 @@ function scan_graph_data(array $findings, array $profile): array {
     }
     return ['nodes' => array_values($nodes), 'edges' => $edges];
 }
+
+// ---- consolidated email intelligence (Mosint-style; keyless, one email at a time) ----
+/** Common free / consumer webmail providers (an email here is personal, not corporate). */
+function scan_email_free_providers(): array {
+    return ['gmail.com','googlemail.com','yahoo.com','ymail.com','outlook.com','hotmail.com','live.com','msn.com',
+            'icloud.com','me.com','mac.com','aol.com','proton.me','protonmail.com','pm.me','gmx.com','gmx.net',
+            'mail.com','yandex.com','yandex.ru','zoho.com','tutanota.com','tuta.io','hey.com','fastmail.com'];
+}
+
+/** Everything public a single email address reveals, in one report: deliverability +
+ *  disposable/role/free classification, domain spoofability (SPF/DMARC), Gravatar
+ *  profile, breach corpora (XposedOrNot + LeakCheck + pastes), and where it's a known
+ *  registered account (Duolingo / GitHub-by-email). All keyless; nothing is emailed. */
+function scan_email_intel(string $emailRaw): array {
+    $email = strtolower(trim($emailRaw));
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['error' => 'Not a valid email address.'];
+    [$local, $domain] = explode('@', $email, 2);
+    $canonical = null;
+    if (preg_match('/@(gmail|googlemail)\.com$/', $email)) {   // Gmail ignores dots + everything after +
+        $c = str_replace('.', '', preg_replace('/\+.*$/', '', $local)) . '@gmail.com';
+        if ($c !== $email) $canonical = $c;
+    }
+    $ua  = ['User-Agent: ' . OSINT_UA];
+    $doh = fn($n, $t) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($n) . '&type=' . $t, 'headers' => array_merge($ua, ['Accept: application/dns-json']), 'follow' => true, 'timeout' => 8];
+    $res = scan_multi_get([
+        'breach' => ['url' => OSINT_XPOSED . rawurlencode($email), 'headers' => $ua, 'follow' => true],
+        'leak'   => ['url' => 'https://leakcheck.io/api/public?check=' . rawurlencode($email), 'headers' => $ua, 'follow' => true],
+        'grav'   => ['url' => 'https://gravatar.com/' . md5($email) . '.json', 'headers' => $ua, 'follow' => true],
+        'duo'    => ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($email), 'headers' => $ua, 'follow' => true],
+        'gh'     => ['url' => 'https://api.github.com/search/users?q=' . rawurlencode($email) . '+in:email', 'headers' => array_merge($ua, ['Accept: application/vnd.github+json']), 'follow' => true],
+        'mx'     => $doh($domain, 'MX'), 'txt' => $doh($domain, 'TXT'), 'dmarc' => $doh('_dmarc.' . $domain, 'TXT'),
+    ]);
+
+    // Domain deliverability + classification.
+    $mxHosts = array_values(array_filter(array_map(function ($m) { $p = preg_split('/\s+/', trim($m)); return rtrim((string) end($p), '.'); }, scan_doh_answers($res['mx'] ?? null, 15))));
+    $disp = json_decode((string) @file_get_contents(__DIR__ . '/../assets/disposable.json'), true);
+    $roles = ['admin','administrator','info','support','sales','contact','help','billing','noreply','no-reply','postmaster','webmaster','abuse','office','hello','team','marketing','hr','jobs','careers','service','security','root','mail'];
+    // Domain spoofability.
+    $spf = false;
+    foreach (array_map(fn($t) => str_replace('"', '', $t), scan_doh_answers($res['txt'] ?? null, 16)) as $t) if (stripos($t, 'v=spf1') === 0) { $spf = true; break; }
+    $dmarc = null;
+    foreach (array_map(fn($t) => str_replace('"', '', $t), scan_doh_answers($res['dmarc'] ?? null, 16)) as $t) if (stripos($t, 'v=DMARC1') === 0 && preg_match('/\bp=([a-z]+)/i', $t, $m)) { $dmarc = strtolower($m[1]); break; }
+
+    // Breaches — XposedOrNot per-breach + pastes, plus LeakCheck as a second corpus.
+    $breaches = []; $years = []; $pw = false; $classes = [];
+    if (($res['breach']['code'] ?? 0) === 200 && empty($res['breach']['err'])) {
+        foreach (scan_breach_details($res['breach']['body']) as $b) {
+            $breaches[] = ['name' => $b['name'], 'date' => $b['date'], 'data' => $b['data'], 'src' => 'XposedOrNot'];
+            if ($b['date'] && preg_match('/(19|20)\d\d/', $b['date'], $mm)) $years[] = (int) $mm[0];
+            if (stripos($b['data'], 'password') !== false) $pw = true;
+            foreach (explode(',', $b['data']) as $c) { $c = trim($c); if ($c !== '') $classes[mb_strtolower($c)] = $c; }
+        }
+    }
+    $pj = json_decode($res['breach']['body'] ?? '', true);
+    $pastes = is_array($pj) ? (int) ($pj['PastesSummary']['cnt'] ?? 0) : 0;
+    $leak = null;
+    if (($res['leak']['code'] ?? 0) === 200 && empty($res['leak']['err'])) {
+        $lj = json_decode($res['leak']['body'], true);
+        if (is_array($lj) && !empty($lj['success']) && (int) ($lj['found'] ?? 0) > 0) {
+            $ls = [];
+            foreach (($lj['sources'] ?? []) as $s) { $n = (string) ($s['name'] ?? ''); if ($n !== '') $ls[] = $n . (!empty($s['date']) ? ' (' . substr((string) $s['date'], 0, 4) . ')' : ''); }
+            $leak = ['found' => (int) $lj['found'], 'sources' => array_slice($ls, 0, 12), 'fields' => array_slice(array_map(fn($x) => ucfirst(str_replace('_', ' ', (string) $x)), (array) ($lj['fields'] ?? [])), 0, 12)];
+        }
+    }
+
+    // Gravatar profile + registered-account signals.
+    $grav = null;
+    if (($res['grav']['code'] ?? 0) === 200 && empty($res['grav']['err'])) {
+        $prof = scan_gravatar_profile($res['grav']['body']);
+        if ($prof) $grav = ['name' => $prof['name'], 'location' => $prof['location'], 'about' => $prof['about'],
+                            'avatar' => 'https://gravatar.com/avatar/' . md5($email) . '?s=200', 'accounts' => $prof['accounts'], 'urls' => $prof['urls']];
+    }
+    $accounts = [];
+    if (!empty($res['duo']) && empty($res['duo']['err'])) { $pic = scan_duolingo_pic($res['duo']['body']); if ($pic !== null) $accounts[] = ['label' => 'Duolingo', 'url' => 'https://www.duolingo.com/']; }
+    if (($res['gh']['code'] ?? 0) === 200) { $gj = json_decode($res['gh']['body'], true); foreach (array_slice(is_array($gj) ? ($gj['items'] ?? []) : [], 0, 3) as $it) { $lg = (string) ($it['login'] ?? ''); if ($lg !== '') $accounts[] = ['label' => 'GitHub @' . $lg, 'url' => (string) ($it['html_url'] ?? 'https://github.com/' . $lg)]; } }
+
+    sort($years);
+    return [
+        'ok' => true, 'email' => $email, 'local' => $local, 'domain' => $domain, 'canonical' => $canonical,
+        'deliverable' => !empty($mxHosts), 'mx_hosts' => array_slice($mxHosts, 0, 4),
+        'disposable' => is_array($disp) && in_array($domain, $disp, true),
+        'role' => in_array($local, $roles, true),
+        'free' => in_array($domain, scan_email_free_providers(), true),
+        'spf' => $spf, 'dmarc' => $dmarc,
+        'gravatar' => $grav, 'accounts' => $accounts,
+        'breaches' => $breaches, 'breach_count' => count($breaches),
+        'span' => $years ? (reset($years) === end($years) ? (string) reset($years) : reset($years) . '–' . end($years)) : '',
+        'pw_exposed' => $pw, 'dataclasses' => array_slice(array_values($classes), 0, 12),
+        'pastes' => $pastes, 'leakcheck' => $leak, 'ts' => time(),
+    ];
+}
