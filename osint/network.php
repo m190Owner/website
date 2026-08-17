@@ -90,8 +90,15 @@ osint_head('Network footprint · m190 finder', 'network');
   </div>
 
   <div class="os-panel">
+    <h3 class="os-h3">Browser fingerprint</h3>
+    <p class="os-dim os-mb">Even with cookies blocked, the unique combination of your browser, screen, GPU, fonts, and settings forms a fingerprint that tracks you across sites. Here's yours.</p>
+    <button type="button" class="os-btn os-btn-accent" id="os-fp-run">Analyze my fingerprint</button>
+    <div id="os-fp-out" hidden style="margin-top:12px"></div>
+  </div>
+
+  <div class="os-panel">
     <h3 class="os-h3">What this reveals — and how to shrink it</h3>
     <p class="os-dim">Your IP alone doesn't give a street address, but combined with your ISP and timezone it narrows you down, and every site logs it. To reduce it: use a reputable <b>VPN</b> (hides your IP and location from sites), a privacy-respecting <b>DNS</b> resolver, and keep your devices clean so your IP never lands on a blocklist. The <a href="/osint/harden.php">hardening checklist</a> covers the device and network steps.</p>
   </div>
 <?php
-osint_foot(['netleak.js']);
+osint_foot(['netleak.js', 'fingerprint.js']);

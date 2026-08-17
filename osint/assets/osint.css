@@ -248,6 +248,8 @@ a.os-top-l:hover{text-decoration:none}
 .os-str-bad{background:var(--os-danger)}
 .os-str-warn{background:var(--os-warn)}
 .os-str-good{background:var(--os-accent)}
+.os-idbox{background:var(--os-bg);border:1px solid var(--os-border);border-radius:9px;padding:12px 14px}
+.os-idhash{display:block;margin:4px 0;font-size:.95rem;color:var(--os-accent-l);word-break:break-all}
 .os-genctl{display:flex;gap:18px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 .os-seg{display:inline-flex;border:1px solid var(--os-border);border-radius:9px;overflow:hidden}
 .os-seg button{background:var(--os-surface);border:none;color:var(--os-dim);font:inherit;font-size:.82rem;padding:7px 15px;cursor:pointer;transition:background .12s,color .12s}
