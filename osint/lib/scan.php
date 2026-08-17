@@ -1003,6 +1003,86 @@ function scan_domain_twist(string $domainRaw): array {
     return ['ok' => true, 'domain' => $domain, 'generated' => count($variants), 'registered' => count($hits), 'hits' => $hits, 'ts' => time()];
 }
 
+// ---- active subdomain enumeration (theHarvester / Amass-style; keyless) ----
+/** Common subdomain labels to brute-force via DNS (infra + dev + mail + admin surface). */
+function scan_subdomain_wordlist(): array {
+    return ['www','mail','smtp','imap','pop','webmail','ns1','ns2','ns','dns','api','api2','dev','staging','stage','test','uat','qa',
+            'admin','portal','vpn','remote','gateway','gw','cpanel','whm','autodiscover','autoconfig','mx','mx1','mx2','blog',
+            'shop','store','app','apps','m','mobile','cdn','static','assets','img','images','media','files','ftp','sftp','git',
+            'gitlab','jenkins','ci','jira','confluence','wiki','docs','support','help','status','monitor','grafana','kibana',
+            'dashboard','internal','intranet','corp','ad','dc','ldap','proxy','db','sql','secure','login','sso','auth','id',
+            'account','my','beta','demo','sandbox','preprod','prod','backup','old','new','email','cloud','host','server','vps',
+            'connect','edge','v1','v2','origin','direct','go','get','share','download','upload','data','stats','analytics'];
+}
+
+/** Enumerate a domain's subdomains from certificate transparency + live cert SANs +
+ *  a DNS brute of common labels, resolving each to separate the LIVE attack surface
+ *  from historical-only names. Detects wildcard DNS so brute hits stay honest. Keyless. */
+function scan_subdomain_enum(string $domainRaw): array {
+    $domain = scan_domain_normalize($domainRaw);
+    if ($domain === null) return ['error' => 'Not a valid domain.'];
+    $doh = fn($name, $type) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($name) . '&type=' . $type,
+                                'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true, 'timeout' => 6];
+    $suffix = '.' . $domain;
+
+    // Passive: certificate transparency (crt.sh) + the live leaf certificate's SANs.
+    $crtRes = scan_multi_get(['c' => ['url' => 'https://crt.sh/?q=' . rawurlencode('%.' . $domain) . '&output=json',
+                                      'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 12, 'contimeout' => 5]], 4194304);
+    $src = [];   // name => [source => true]
+    foreach (scan_crt_subdomains($crtRes['c'] ?? null, $domain) as $n) $src[$n]['ct'] = true;
+    $tls = scan_tls_cert($domain);
+    if ($tls) foreach ($tls['sans'] as $s) {
+        $s = ltrim(strtolower(trim($s)), '*.');
+        if ($s !== $domain && substr($s, -strlen($suffix)) === $suffix && !preg_match('/[^a-z0-9.\-]/', $s)) $src[$s]['san'] = true;
+    }
+    // Active: brute-force common labels.
+    foreach (scan_subdomain_wordlist() as $w) $src[$w . $suffix]['brute'] = true;
+
+    // Wildcard DNS detection — a random label that resolves means brute results are unreliable.
+    $wildIps = scan_doh_answers(scan_multi_get(['w' => $doh('zz' . bin2hex(random_bytes(5)) . 'zz' . $suffix, 'A')])['w'] ?? null, 1);
+    $wildcard = (bool) $wildIps;
+
+    // Resolve every candidate (capped for a bounded request).
+    $names = array_slice(array_keys($src), 0, 240);
+    $pubIp = function ($ip) {
+        if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return false;
+        foreach (['192.0.2.', '198.51.100.', '203.0.113.'] as $doc) if (strpos($ip, $doc) === 0) return false;   // RFC 5737 black-holes
+        return true;
+    };
+    $live = [];
+    foreach (array_chunk($names, 40) as $chunk) {
+        $tasks = [];
+        foreach ($chunk as $n) $tasks[$n] = $doh($n, 'A');
+        $res = scan_multi_get($tasks);
+        // Only publicly-routable answers count as live — drop TEST-NET/private black-holes
+        // (e.g. GitHub points non-existent names at 192.0.2.x).
+        foreach ($chunk as $n) { $a = array_values(array_filter(scan_doh_answers($res[$n] ?? null, 1), $pubIp)); if ($a) $live[$n] = array_slice($a, 0, 2); }
+    }
+
+    $rows = [];
+    foreach ($names as $n) {
+        $s = $src[$n];
+        $passive = isset($s['ct']) || isset($s['san']);
+        $resolves = isset($live[$n]);
+        // A brute-only name that merely matches the wildcard catch-all isn't a real host.
+        if ($resolves && !$passive && $wildcard && !array_diff($live[$n], $wildIps)) $resolves = false;
+        if (!$resolves && !$passive) continue;   // drop brute misses; keep passive-known (historical)
+        $tags = [];
+        if (isset($s['ct']))    $tags[] = 'ct';
+        if (isset($s['san']))   $tags[] = 'cert';
+        if (isset($s['brute'])) $tags[] = 'brute';
+        $rows[] = ['name' => $n, 'resolves' => $resolves, 'a' => $resolves ? $live[$n] : [], 'src' => $tags];
+    }
+    usort($rows, fn($x, $y) => [$x['resolves'] ? 0 : 1, $x['name']] <=> [$y['resolves'] ? 0 : 1, $y['name']]);
+    return [
+        'ok' => true, 'domain' => $domain, 'total' => count($rows),
+        'live' => count(array_filter($rows, fn($r) => $r['resolves'])),
+        'wildcard' => $wildcard,
+        'crt_ok' => isset($crtRes['c']) && !$crtRes['c']['err'] && (int) $crtRes['c']['code'] === 200,
+        'rows' => $rows, 'ts' => time(),
+    ];
+}
+
 // ---- network / IP self-footprint ----
 /** The caller's real public IP, honouring a Cloudflare / proxy front. */
 function os_client_ip(): string {

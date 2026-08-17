@@ -134,6 +134,7 @@ osint_head('Domain footprint · m190 finder', 'domains');
 
   <?php foreach ($p['domains'] as $i => $domain):
     $cached = scan_domain_cache_get((int) $u['id'], $domain);
+    $subs   = scan_domain_cache_get((int) $u['id'], 'subs:' . $domain);
     $twist  = scan_domain_cache_get((int) $u['id'], 'twist:' . $domain); ?>
     <div class="os-panel">
       <div class="os-sec-head">
@@ -144,6 +145,17 @@ osint_head('Domain footprint · m190 finder', 'domains');
         <?= $cached ? 'Last scanned ' . ose(date('Y-m-d H:i', (int) $cached['ts'])) : 'Not scanned yet — hit Scan.' ?>
       </div>
       <?php if ($cached) os_domain_render($cached); ?>
+
+      <div class="os-subenum-sec">
+        <div class="os-sec-head" style="margin-top:20px">
+          <div class="os-subhead" style="margin:0">🔎 Active subdomain enumeration</div>
+          <button type="button" class="os-btn os-btn-sm" data-subs="<?= ose($domain) ?>" data-sidx="<?= $i ?>"><?= $subs ? 'Re-enumerate' : 'Enumerate' ?></button>
+        </div>
+        <p class="os-fineprint">Goes beyond certificate transparency: merges cert SANs and brute-forces ~100 common labels (dev, vpn, admin, mail, staging…), then resolves each so you see which subdomains are <b>live right now</b> vs historical. Public DNS only.</p>
+        <div id="os-subs-<?= $i ?>" class="os-subsout"<?= $subs ? '' : ' hidden' ?>><?php
+          if ($subs) echo '<script type="application/json" class="os-subs-data">' . json_encode($subs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) . '</script>';
+        ?></div>
+      </div>
 
       <div class="os-twist-sec">
         <div class="os-sec-head" style="margin-top:20px">

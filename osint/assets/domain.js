@@ -76,4 +76,50 @@
       });
     });
   });
+
+  // --- active subdomain enumeration ---
+  function renderSubs(d) {
+    if (d.error) return '<p class="os-dim">' + esc(d.error) + '</p>';
+    if (!d.total) {
+      return '<p class="os-dim">No subdomains found via certificate transparency, cert SANs, or the common-label brute-force'
+        + (d.crt_ok ? '' : ' (the certificate-transparency lookup was unavailable this run — retry)') + '.</p>';
+    }
+    var srcTag = { ct: 'CT log', cert: 'cert SAN', brute: 'brute' };
+    var head = '<p class="os-dim os-mb"><b>' + d.live + '</b> live of <b>' + d.total + '</b> known name(s). '
+      + 'Live subdomains resolve to an IP right now — that\'s your active attack surface; retire the ones you don\'t use.</p>';
+    if (d.wildcard) head += '<div class="os-warn-box" style="margin-bottom:10px">Wildcard DNS is enabled on this domain, so brute-forced names can resolve even when they\'re not real hosts. Trust the CT-log / cert-SAN names over brute-only ones here.</div>';
+    var rows = d.rows.map(function (r) {
+      var tags = (r.src || []).map(function (s) { return '<span class="os-tag">' + esc(srcTag[s] || s) + '</span>'; }).join('');
+      var dot = r.resolves ? '<span class="os-pdot os-pdot-ok"></span>' : '<span class="os-pdot"></span>';
+      var ip = (r.a && r.a.length) ? '<div class="os-row-d">→ ' + esc(r.a.join(', ')) + '</div>' : (r.resolves ? '' : '<div class="os-row-d os-dim">not resolving (historical)</div>');
+      return '<div class="os-row"><div class="os-row-main"><div class="os-row-t">' + dot + '<span class="os-code">' + esc(r.name) + '</span> ' + tags + '</div>' + ip + '</div></div>';
+    }).join('');
+    return head + '<div class="os-list">' + rows + '</div>';
+  }
+
+  document.querySelectorAll('.os-subsout .os-subs-data').forEach(function (s) {
+    try { s.parentNode.innerHTML = renderSubs(JSON.parse(s.textContent)); } catch (e) {}
+  });
+
+  document.querySelectorAll('[data-subs]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var domain = btn.getAttribute('data-subs');
+      var out = document.getElementById('os-subs-' + btn.getAttribute('data-sidx'));
+      btn.disabled = true;
+      var old = btn.textContent;
+      btn.innerHTML = '<span class="os-spinner"></span> Enumerating…';
+      if (out) { out.hidden = false; out.innerHTML = '<p class="os-dim"><span class="os-spinner"></span> Querying certificate transparency and resolving common labels… this takes a few seconds.</p>'; }
+      fetch('/osint/subdomains.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: new URLSearchParams({ csrf: csrf, domain: domain })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        btn.disabled = false; btn.textContent = 'Re-enumerate';
+        if (out) out.innerHTML = renderSubs(j);
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = old;
+        if (out) out.innerHTML = '<p class="os-dim">Enumeration failed — try again.</p>';
+      });
+    });
+  });
 })();
