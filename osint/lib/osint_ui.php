@@ -10,6 +10,7 @@ function osint_nav(): array {
         'dashboard' => ['/osint/',             'Dashboard'],
         'profile'   => ['/osint/profile.php',  'Profile'],
         'results'   => ['/osint/results.php',  'Results'],
+        'analysis'  => ['/osint/analysis.php', 'Analysis'],
         'removal'   => ['/osint/brokers.php',  'Removal'],
         'takedowns' => ['/osint/takedowns.php', 'Takedowns'],
         'search'    => ['/osint/search.php',   'Self-search'],

@@ -1820,3 +1820,116 @@ function scan_exposure(array $findings): array {
         'dataclasses' => array_values($classes),
     ];
 }
+
+// ---- analysis: correlations (SpiderFoot-style) + entity graph (Maltego-style) ----
+/** The email a breach/identity finding is about (token before " in the " / " — "). */
+function scan_finding_email(string $title): string {
+    $head = preg_split('/ in the | — /', $title, 2)[0];
+    $head = trim($head);
+    return filter_var($head, FILTER_VALIDATE_EMAIL) ? strtolower($head) : $head;
+}
+
+/** Cross-finding correlation rules over a scan's findings. Each rule links several
+ *  findings into one insight (e.g. a reused password, a widely-reused handle). Returns
+ *  [ ['severity'(high|med|low),'title','detail','items'[]], ... ], most severe first. */
+function scan_correlations(array $findings): array {
+    $emailBreaches = []; $emailPwYear = []; $usernamePlats = []; $recent = []; $emailAccounts = [];
+    $thisYear = (int) date('Y');
+    foreach ($findings as $f) {
+        if (($f['status'] ?? 'new') === 'false') continue;
+        $cat = (string) $f['category']; $title = (string) $f['title']; $detail = (string) ($f['detail'] ?? '');
+        if ($cat === 'breach') {
+            $em = scan_finding_email($title);
+            $emailBreaches[$em][] = $title;
+            if (stripos($detail, 'password') !== false) $emailPwYear[$em]['pw'] = true;
+            if (preg_match('/\b(20\d\d)\b/', $detail, $m)) {
+                $y = (int) $m[1];
+                $emailPwYear[$em]['year'] = max($emailPwYear[$em]['year'] ?? 0, $y);
+                if ($y >= $thisYear - 2) $recent[$title] = $y;
+            }
+        } elseif ($cat === 'account') {
+            if (strpos((string) $f['exposes'], 'email') !== false) {
+                $emailAccounts[scan_finding_email($title)][] = $title;
+            } elseif (preg_match('/^(.*) on (.+)$/', $title, $m)) {
+                $usernamePlats[strtolower(trim($m[1]))][trim($m[2])] = true;
+            }
+        }
+    }
+    $out = [];
+    // A password was exposed for an address — highest priority (credential-reuse risk).
+    foreach ($emailBreaches as $em => $bs) {
+        if (!empty($emailPwYear[$em]['pw'])) {
+            $out[] = ['severity' => 'high', 'title' => 'Password exposed for ' . $em,
+                'detail' => 'This address is in ' . count($bs) . ' breach(es), at least one exposing passwords. Any account reusing that password is exposed — rotate it everywhere and enable 2FA.',
+                'items' => array_slice($bs, 0, 6)];
+        }
+    }
+    // Fresh breaches (last 2 years) — credentials may still be live.
+    if ($recent) {
+        arsort($recent);
+        $out[] = ['severity' => 'high', 'title' => count($recent) . ' recent breach(es) — last 2 years',
+            'detail' => 'Recent breaches are the most likely to contain still-valid credentials. Deal with these first.',
+            'items' => array_slice(array_keys($recent), 0, 8)];
+    }
+    // The same email tying together many accounts + breaches (a strong pivot identifier).
+    foreach ($emailBreaches as $em => $bs) {
+        $na = count($emailAccounts[$em] ?? []);
+        if (count($bs) >= 5 || ($na >= 1 && count($bs) >= 3)) {
+            $out[] = ['severity' => 'med', 'title' => $em . ' is a heavily-linked identity',
+                'detail' => 'In ' . count($bs) . ' breach(es)' . ($na ? ' and tied to ' . $na . ' public account(s)' : '') . '. This one address links your footprint together — use a separate address for high-value logins.',
+                'items' => array_slice(array_merge($emailAccounts[$em] ?? [], $bs), 0, 8)];
+        }
+    }
+    // A handle reused across many platforms (one profile → all the others).
+    foreach ($usernamePlats as $un => $plats) {
+        if (count($plats) >= 3) {
+            $out[] = ['severity' => 'med', 'title' => 'Handle "' . $un . '" reused on ' . count($plats) . ' platforms',
+                'detail' => 'A consistent username across sites lets anyone pivot from one profile to all the rest. Use site-specific handles where anonymity matters.',
+                'items' => array_slice(array_keys($plats), 0, 10)];
+        }
+    }
+    $rank = ['high' => 0, 'med' => 1, 'low' => 2];
+    usort($out, fn($a, $b) => $rank[$a['severity']] <=> $rank[$b['severity']]);
+    return $out;
+}
+
+/** Build an entity graph (nodes + edges) from a scan's findings + the profile anchors,
+ *  for the Maltego-style view. Node types: username|email|domain|phone|account|breach. */
+function scan_graph_data(array $findings, array $profile): array {
+    $nodes = []; $edges = []; $edgeSeen = [];
+    $node = function (string $id, string $type, string $label, string $sub = '', string $url = '') use (&$nodes) {
+        if (!isset($nodes[$id])) $nodes[$id] = ['id' => $id, 'type' => $type, 'label' => mb_substr($label, 0, 48), 'sub' => mb_substr($sub, 0, 60), 'url' => $url];
+    };
+    $edge = function (string $a, string $b, string $rel) use (&$edges, &$edgeSeen) {
+        $k = $a . '>' . $b; if (isset($edgeSeen[$k]) || $a === $b) return; $edgeSeen[$k] = true; $edges[] = ['from' => $a, 'to' => $b, 'rel' => $rel];
+    };
+    foreach ($profile['usernames'] as $un) $node('u:' . strtolower($un), 'username', $un);
+    foreach ($profile['emails'] as $em)    $node('e:' . strtolower($em), 'email', $em);
+    foreach ($profile['domains'] as $dm)   $node('d:' . strtolower($dm), 'domain', $dm);
+    foreach ($profile['phones'] as $ph)    $node('p:' . $ph, 'phone', $ph);
+
+    $count = 0;
+    foreach ($findings as $f) {
+        if (($f['status'] ?? 'new') === 'false') continue;
+        if (++$count > 160) break;
+        $cat = (string) $f['category']; $title = (string) $f['title']; $url = (string) ($f['url'] ?? '');
+        if ($cat === 'account') {
+            if (strpos((string) $f['exposes'], 'email') !== false) {
+                $em = scan_finding_email($title); $emId = 'e:' . strtolower($em); $node($emId, 'email', $em);
+                $label = trim((string) preg_replace('/^.*? — /', '', $title));
+                $aid = 'a:' . substr(md5($title), 0, 10); $node($aid, 'account', $label, '', $url); $edge($emId, $aid, 'account');
+            } elseif (preg_match('/^(.*) on (.+)$/', $title, $m)) {
+                $un = trim($m[1]); $plat = trim($m[2]); $unId = 'u:' . strtolower($un); $node($unId, 'username', $un);
+                $aid = 'a:' . substr(md5($title), 0, 10); $node($aid, 'account', $plat, '', $url); $edge($unId, $aid, 'account');
+            }
+        } elseif ($cat === 'breach') {
+            $em = scan_finding_email($title); $emId = 'e:' . strtolower($em); $node($emId, 'email', $em);
+            if (preg_match('/ in the (.+) breach$/', $title, $m)) $label = $m[1];
+            elseif (stripos($title, 'paste') !== false) $label = 'Public pastes';
+            elseif (stripos($title, 'leakcheck') !== false) $label = 'LeakCheck records';
+            else $label = 'Breach';
+            $bid = 'b:' . substr(md5($title), 0, 10); $node($bid, 'breach', $label, (string) ($f['detail'] ?? ''), $url); $edge($emId, $bid, 'breach');
+        }
+    }
+    return ['nodes' => array_values($nodes), 'edges' => $edges];
+}
