@@ -268,7 +268,7 @@ function osint_deep_modules(): array {
 
 /** Per-email checks in order. $deep adds the no-email modules, $probe adds emailing ones. */
 function scan_email_checks(bool $deep, bool $probe): array {
-    $c = ['breach', 'gravatar', 'duolingo'];
+    $c = ['breach', 'gravatar', 'duolingo', 'ghemail'];
     foreach (osint_deep_modules() as $id => $m) {
         $emailing = !empty($m['emails']);
         if (($emailing && $probe) || (!$emailing && $deep)) $c[] = 'deep:' . $id;
@@ -373,6 +373,8 @@ function scan_chunk(int $uid, int $scanId): array {
             $tasks[$i] = ['url' => 'https://gravatar.com/' . md5(strtolower(trim($t['email']))) . '.json', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } elseif ($t['kind'] === 'duolingo') { // public users API by email, no email is sent
             $tasks[$i] = ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
+        } elseif ($t['kind'] === 'ghemail') { // GitHub user whose PUBLIC email matches (no email sent)
+            $tasks[$i] = ['url' => 'https://api.github.com/search/users?q=' . rawurlencode($t['email']) . '+in:email', 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/vnd.github+json'], 'follow' => true];
         } else { // deep:<module>
             $id  = substr($t['kind'], 5);
             $mod = osint_deep_modules()[$id] ?? null;
@@ -402,8 +404,10 @@ function scan_chunk(int $uid, int $scanId): array {
         if ($t['kind'] === 'account') {
             if (!$r || $r['err']) { $unreachInc++; continue; }
             if (scan_matches($t['site'], $r['code'], $r['body'])) {
+                $m2 = scan_extract_meta($r['body'], $t['site']['name']);   // display name + bio, to eyeball if it's really you
                 $emit('account', $t['user'] . ' on ' . $t['site']['name'], $tasks[$i]['url'], 'account',
-                      scan_extract_image($r['body'], $tasks[$i]['url']), '');   // og:image avatar to eyeball it
+                      scan_extract_image($r['body'], $tasks[$i]['url']),
+                      trim($m2['title'] . ($m2['desc'] ? ' · ' . $m2['desc'] : ''), ' ·'));
             } elseif (scan_blocked($r['code'], (int) $t['site']['ec'])) {
                 $unreachInc++;   // 403/429/5xx: blocked, so "couldn't check", not "clean"
             }
@@ -437,6 +441,17 @@ function scan_chunk(int $uid, int $scanId): array {
             $pic = scan_duolingo_pic($r['body']);
             if ($pic === null) continue;   // no Duolingo account for this email
             $emit('account', $t['email'] . ' — Duolingo account', 'https://www.duolingo.com/', 'email,account', $pic, 'Email is registered on Duolingo.');
+        } elseif ($t['kind'] === 'ghemail') {
+            if (!$r || $r['err'] || $r['code'] !== 200) { $unreachInc++; continue; }
+            $j = json_decode($r['body'], true);
+            $items = is_array($j) ? ($j['items'] ?? []) : [];
+            if (!$items) continue;   // no GitHub account with this email public
+            foreach (array_slice($items, 0, 2) as $it) {
+                $login = (string) ($it['login'] ?? '');
+                if ($login === '') continue;
+                $emit('account', $t['email'] . ' — GitHub @' . $login, (string) ($it['html_url'] ?? 'https://github.com/' . $login),
+                      'email,account', (string) ($it['avatar_url'] ?? ''), 'A GitHub user has this email public on their commits or profile.');
+            }
         } else { // deep:<module>
             $mod = osint_deep_modules()[substr($t['kind'], 5)] ?? null;
             if (!$mod || !$r || $r['err']) { $unreachInc++; continue; }
@@ -502,6 +517,24 @@ function scan_breach_details(string $body): array {
     }
     usort($out, fn($a, $b) => strcmp($b['date'], $a['date']));   // newest first
     return array_slice($out, 0, OSINT_BREACH_CAP);
+}
+
+/** Display name (og:title) + bio (og:description) from a profile page, for triage. */
+function scan_extract_meta(string $html, string $siteName): array {
+    $head = substr($html, 0, 24000);
+    $get = function ($props) use ($head) {
+        foreach ((array) $props as $p) {
+            $q = preg_quote($p, '#');
+            if (preg_match('#<meta[^>]+(?:property|name)=["\']' . $q . '["\'][^>]+content=["\']([^"\']+)["\']#i', $head, $m)
+             || preg_match('#<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']' . $q . '["\']#i', $head, $m)) return trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5));
+        }
+        return '';
+    };
+    $title = $get(['og:title', 'twitter:title']);
+    $desc  = $get(['og:description', 'twitter:description', 'description']);
+    $title = preg_replace('/\s*[-|•·—:]\s*' . preg_quote($siteName, '/') . '\b.*$/iu', '', $title);   // drop trailing site name
+    if (mb_strtolower(trim($title)) === mb_strtolower($siteName)) $title = '';
+    return ['title' => mb_substr($title, 0, 80), 'desc' => mb_substr($desc, 0, 160)];
 }
 
 /** Pull a profile avatar (og:image / twitter:image) out of an already-fetched page. */

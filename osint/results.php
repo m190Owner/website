@@ -96,9 +96,10 @@ osint_head('Results · m190 finder', 'results');
       <?php if (!$accounts): ?><p class="os-dim">Nothing matched.</p><?php else: ?>
         <div class="os-cardgrid">
           <?php foreach ($accounts as $f):
+            $t = ose($f['title']) . ($f['detail'] ? '<br><span class="os-dim">' . ose($f['detail']) . '</span>' : '');
             $main = '<a class="os-fcard-main" href="' . ose($f['url']) . '" target="_blank" rel="noopener nofollow">'
                   . '<span class="os-av">' . os_avatar($f) . '</span>'
-                  . '<span class="os-acard-t">' . ose($f['title']) . '</span></a>';
+                  . '<span class="os-acard-t">' . $t . '</span></a>';
             echo os_fcard($f, $main, $isNew($f));
           endforeach; ?>
         </div>
