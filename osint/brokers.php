@@ -10,7 +10,16 @@ $u = osint_current_user();
 $data = json_decode((string) @file_get_contents(__DIR__ . '/assets/brokers.json'), true);
 $brokers = $data['brokers'] ?? [];
 $state = scan_checklist_get((int) $u['id'], 'brokers');
+$verify = scan_checklist_get((int) $u['id'], 'brokerverify');
 $doneCount = count(array_filter($state, fn($s) => $s === 'done'));
+$verifiedCount = count(array_filter($verify, fn($s) => $s === 'done'));
+/** Registrable base domain from a broker URL, for a `site:` listing search. */
+$baseDomain = function (string $url): string {
+    $h = strtolower((string) parse_url($url, PHP_URL_HOST));
+    $h = preg_replace('/^www\./', '', $h);
+    $parts = explode('.', $h);
+    return count($parts) > 2 ? implode('.', array_slice($parts, -2)) : $h;
+};
 
 $tiers = [
     'peoplesearch' => 'People-search sites',
@@ -42,6 +51,19 @@ osint_head('Removal center · m190 finder', 'removal');
     </div>
   </div>
 
+  <div class="os-panel">
+    <div class="os-sec-head">
+      <h3 class="os-h3">&#10003; Verify your removals</h3>
+      <span class="os-clprog-lbl" id="os-vf-lbl"><?= (int) $verifiedCount ?> verified removed</span>
+    </div>
+    <p class="os-dim os-mb">Opting out isn't the end — brokers miss requests and silently re-list. After you opt out, come back and <b>re-check</b> each one. Enter the name you're listed under (and city, to narrow it); each broker gets a one-click search of its own site for you. <b>Your name stays in this browser only — it is never sent to our server.</b></p>
+    <div class="os-vfform">
+      <input type="text" id="os-vf-name" class="os-input" placeholder="Full name (e.g. Jane Smith)" autocomplete="off">
+      <input type="text" id="os-vf-city" class="os-input" placeholder="City, State (optional)" autocomplete="off">
+    </div>
+    <p class="os-fineprint" id="os-vf-hint">Brokers block automated checks, so this opens each search in your own browser — look for your profile, then mark it <b>still listed</b> or <b>removed</b> below.</p>
+  </div>
+
   <div data-checklist="brokers">
   <?php foreach ($tiers as $tk => $tlabel): if (empty($grouped[$tk])) continue; ?>
     <div class="os-panel">
@@ -62,6 +84,13 @@ osint_head('Removal center · m190 finder', 'removal');
                 <?php if (($b['effort'] ?? '') === 'hard'): ?><span class="os-tag os-tag-hi">tougher</span><?php endif; ?>
               </div>
               <div class="os-row-d"><?= ose($b['note']) ?> · <a href="<?= ose($b['site']) ?>" target="_blank" rel="noopener nofollow">site</a></div>
+              <?php $vst = $verify[$b['id']] ?? ''; ?>
+              <div class="os-verify" data-vitem="<?= ose($b['id']) ?>" data-domain="<?= ose($baseDomain($b['site'] ?? $b['optout'])) ?>" data-vstatus="<?= ose($vst) ?>">
+                <a class="os-verify-link" href="#" target="_blank" rel="noopener nofollow">&#128269; Check listing</a>
+                <button type="button" class="os-verify-btn" data-v="started">Still listed</button>
+                <button type="button" class="os-verify-btn" data-v="done">Removed &#10003;</button>
+                <span class="os-verify-badge"></span>
+              </div>
             </div>
             <div class="os-row-side">
               <button type="button" class="os-pendbtn<?= $st === 'started' ? ' on' : '' ?>"<?= $done ? ' hidden' : '' ?>>Pending</button>
@@ -75,4 +104,4 @@ osint_head('Removal center · m190 finder', 'removal');
 
   <p class="os-fineprint"><?= ose($data['note'] ?? '') ?> Opt-outs can take days to weeks to process, and some brokers re-list after a while — mark those <b>pending</b> and recheck in a few months.</p>
 <?php
-osint_foot(['checklist.js']);
+osint_foot(['checklist.js', 'brokerverify.js']);

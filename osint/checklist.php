@@ -12,7 +12,7 @@ enforceRateLimit('osint_checklist', 200, 60);
 $list   = (string) ($_POST['list'] ?? '');
 $item   = (string) ($_POST['item'] ?? '');
 $status = (string) ($_POST['status'] ?? '');
-if (!in_array($list, ['brokers', 'harden'], true) || $item === '') {
+if (!in_array($list, ['brokers', 'harden', 'brokerverify', 'hardenverify'], true) || $item === '') {
     echo json_encode(['ok' => false, 'error' => 'bad request']); exit;
 }
 echo json_encode(['ok' => scan_checklist_set((int) $u['id'], $list, $item, $status)]);
