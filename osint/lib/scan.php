@@ -669,6 +669,8 @@ function scan_domain_lookup(string $domainRaw): array {
         'HOME' => ['url' => 'https://' . $domain . '/', 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'wanthdr' => true, 'timeout' => 12],
         'WB' => ['url' => 'https://web.archive.org/cdx/search/cdx?url=' . rawurlencode($domain) . '&matchType=domain&output=json&collapse=urlkey&fl=original,timestamp&limit=500',
                  'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 16],
+        'CAA' => $doh($domain, 'CAA'), 'MTASTS' => $doh('_mta-sts.' . $domain, 'TXT'), 'BIMI' => $doh('default._bimi.' . $domain, 'TXT'),
+        'RDAP' => ['url' => 'https://rdap.org/domain/' . rawurlencode($domain), 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/rdap+json'], 'follow' => true, 'timeout' => 12],
     ];
     $res = scan_multi_get($tasks, 4194304);   // 4 MB — crt.sh can be large
 
@@ -684,6 +686,20 @@ function scan_domain_lookup(string $domainRaw): array {
         'perms'  => isset($hh['permissions-policy']),
         'server' => mb_substr((string) ($hh['server'] ?? ''), 0, 60),
     ];
+
+    // Registration (RDAP), live TLS cert, and the deeper email-security records.
+    $caa = [];
+    foreach (scan_doh_answers($res['CAA'] ?? null, 257) as $c) if (preg_match('/\bissue(?:wild)?\s+"?([^"\s]+)"?/i', $c, $mm)) $caa[] = trim($mm[1]);
+    $caa = array_values(array_unique($caa));
+    $mtaSts = false;
+    foreach (scan_doh_answers($res['MTASTS'] ?? null, 16) as $t) if (stripos(str_replace('"', '', $t), 'v=STSv1') !== false) $mtaSts = true;
+    $bimi = false;
+    foreach (scan_doh_answers($res['BIMI'] ?? null, 16) as $t) if (stripos(str_replace('"', '', $t), 'v=BIMI1') !== false) $bimi = true;
+    $rdap = scan_rdap($res['RDAP'] ?? null);
+    $tls = scan_tls_cert($domain);
+    $nowT = time();
+    $domExp = ($rdap['ok'] && $rdap['expires']) ? (int) floor((strtotime($rdap['expires'] . ' 00:00:00 UTC') - $nowT) / 86400) : null;
+    $certExp = ($tls && $tls['valid_to']) ? (int) floor(($tls['valid_to'] - $nowT) / 86400) : null;
 
     $A = scan_doh_answers($res['A'] ?? null, 1);
     $AAAA = scan_doh_answers($res['AAAA'] ?? null, 28);
@@ -709,6 +725,71 @@ function scan_domain_lookup(string $domainRaw): array {
         'resolves' => !empty($A) || !empty($AAAA), 'has_mail' => !empty($MX),
         'security' => $security,
         'wayback'  => scan_wayback($res['WB'] ?? null),
+        'rdap' => $rdap, 'tls' => $tls,
+        'caa' => $caa, 'mta_sts' => $mtaSts, 'bimi' => $bimi,
+        'domain_expiry_days' => $domExp, 'cert_expiry_days' => $certExp,
+    ];
+}
+
+/** Pull the 'fn' (display name) out of an RDAP vcardArray. */
+function scan_vcard_fn($vcardArray): string {
+    if (!is_array($vcardArray) || count($vcardArray) < 2 || !is_array($vcardArray[1])) return '';
+    foreach ($vcardArray[1] as $field) if (is_array($field) && ($field[0] ?? '') === 'fn') return (string) ($field[3] ?? '');
+    return '';
+}
+
+/** RDAP (registration data) response → registrar, dates, status, nameservers, DNSSEC. */
+function scan_rdap(?array $r): array {
+    $empty = ['ok' => false, 'registrar' => '', 'created' => '', 'expires' => '', 'updated' => '', 'statuses' => [], 'nameservers' => [], 'dnssec' => null];
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return $empty;
+    $j = json_decode($r['body'], true);
+    if (!is_array($j)) return $empty;
+    $created = $expires = $updated = '';
+    foreach (($j['events'] ?? []) as $e) {
+        $a = strtolower((string) ($e['eventAction'] ?? '')); $d = substr((string) ($e['eventDate'] ?? ''), 0, 10);
+        if ($a === 'registration') $created = $d;
+        elseif ($a === 'expiration') $expires = $d;
+        elseif ($a === 'last changed') $updated = $d;
+    }
+    $registrar = '';
+    foreach (($j['entities'] ?? []) as $ent) {
+        if (in_array('registrar', (array) ($ent['roles'] ?? []), true)) { $registrar = scan_vcard_fn($ent['vcardArray'] ?? null) ?: (string) ($ent['handle'] ?? ''); break; }
+    }
+    $ns = [];
+    foreach (($j['nameservers'] ?? []) as $n) { $h = strtolower((string) ($n['ldhName'] ?? '')); if ($h) $ns[] = $h; }
+    $statuses = array_values(array_filter(array_map('strval', (array) ($j['status'] ?? []))));
+    return [
+        'ok' => true, 'registrar' => mb_substr($registrar, 0, 80),
+        'created' => $created, 'expires' => $expires, 'updated' => $updated,
+        'statuses' => array_slice($statuses, 0, 8), 'nameservers' => array_slice($ns, 0, 8),
+        'dnssec' => isset($j['secureDNS']['delegationSigned']) ? (bool) $j['secureDNS']['delegationSigned'] : null,
+    ];
+}
+
+/** Inspect the live TLS certificate for a domain (issuer, validity, SANs). Null if unreachable. */
+function scan_tls_cert(string $domain): ?array {
+    if (!function_exists('stream_socket_client') || !function_exists('openssl_x509_parse')) return null;
+    $ctx = stream_context_create(['ssl' => ['capture_peer_cert' => true, 'verify_peer' => false, 'verify_peer_name' => false, 'SNI_enabled' => true, 'peer_name' => $domain]]);
+    $errno = 0; $errstr = '';
+    $c = @stream_socket_client('ssl://' . $domain . ':443', $errno, $errstr, 8, STREAM_CLIENT_CONNECT, $ctx);
+    if (!$c) return null;
+    $params = stream_context_get_params($c);
+    $cert = $params['options']['ssl']['peer_certificate'] ?? null;
+    @fclose($c);
+    if (!$cert) return null;
+    $info = openssl_x509_parse($cert);
+    if (!is_array($info)) return null;
+    $sans = [];
+    foreach (explode(',', (string) ($info['extensions']['subjectAltName'] ?? '')) as $s) {
+        $s = trim($s);
+        if (stripos($s, 'DNS:') === 0) $sans[] = substr($s, 4);
+    }
+    return [
+        'issuer'     => (string) ($info['issuer']['O'] ?? $info['issuer']['CN'] ?? ''),
+        'subject'    => (string) ($info['subject']['CN'] ?? ''),
+        'valid_from' => (int) ($info['validFrom_time_t'] ?? 0),
+        'valid_to'   => (int) ($info['validTo_time_t'] ?? 0),
+        'sans'       => array_slice(array_values(array_unique($sans)), 0, 50),
     ];
 }
 

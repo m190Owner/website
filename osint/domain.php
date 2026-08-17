@@ -32,12 +32,49 @@ function os_domain_render(array $d): void {
     else
         echo os_prow('warn', 'DMARC', 'Missing — no anti-spoofing policy');
     echo os_prow($d['dnssec'] ? 'ok' : '', 'DNSSEC', $d['dnssec'] ? 'Signed' : 'Not enabled');
+    if (!empty($d['caa'])) echo os_prow('ok', 'CAA', 'Cert issuance restricted to ' . ose(implode(', ', array_slice($d['caa'], 0, 4))));
+    else echo os_prow('warn', 'CAA', 'None — any certificate authority may issue certs for this domain');
+    if (!empty($d['mta_sts'])) echo os_prow('ok', 'MTA-STS', 'Enabled (enforces TLS for inbound mail)');
+    if (!empty($d['bimi'])) echo os_prow('ok', 'BIMI', 'Published');
     echo '</div>';
 
     // Raw DNS records
     $recs = os_reclist('A', $d['a']) . os_reclist('AAAA', $d['aaaa']) . os_reclist('MX', $d['mx'])
           . os_reclist('NS', $d['ns']) . os_reclist('TXT', $d['txt']);
     if ($recs) echo '<div class="os-subhead">DNS records</div><dl class="os-kv">' . $recs . '</dl>';
+
+    // Registration (RDAP / WHOIS)
+    $rd = $d['rdap'] ?? [];
+    $expTag = function (?int $days, int $warnAt) {
+        if ($days === null) return '';
+        $cls = $days < 0 ? 'os-exp-bad' : ($days < $warnAt ? 'os-exp-warn' : 'os-dim');
+        return ' <span class="' . $cls . '">(' . ($days < 0 ? 'EXPIRED' : 'in ' . $days . ' days') . ')</span>';
+    };
+    if (!empty($rd['ok'])) {
+        echo '<div class="os-subhead">Registration <span class="os-dim">(RDAP / WHOIS)</span></div><dl class="os-kv">';
+        if ($rd['registrar']) echo '<dt>Registrar</dt><dd>' . ose($rd['registrar']) . '</dd>';
+        if ($rd['created'])   echo '<dt>Registered</dt><dd>' . ose($rd['created']) . '</dd>';
+        if ($rd['expires'])   echo '<dt>Expires</dt><dd>' . ose($rd['expires']) . $expTag($d['domain_expiry_days'] ?? null, 60) . '</dd>';
+        if ($rd['updated'])   echo '<dt>Updated</dt><dd>' . ose($rd['updated']) . '</dd>';
+        if ($rd['statuses'])  echo '<dt>Status</dt><dd>' . ose(implode(', ', $rd['statuses'])) . '</dd>';
+        if ($rd['nameservers']) echo '<dt>Nameservers</dt><dd>' . ose(implode(', ', $rd['nameservers'])) . '</dd>';
+        echo '</dl>';
+    }
+
+    // TLS certificate
+    $tls = $d['tls'] ?? null;
+    if ($tls) {
+        echo '<div class="os-subhead">TLS certificate</div><dl class="os-kv">';
+        if ($tls['issuer'])  echo '<dt>Issuer</dt><dd>' . ose($tls['issuer']) . '</dd>';
+        if ($tls['subject']) echo '<dt>Subject</dt><dd>' . ose($tls['subject']) . '</dd>';
+        if ($tls['valid_to']) echo '<dt>Valid until</dt><dd>' . ose(date('Y-m-d', $tls['valid_to'])) . $expTag($d['cert_expiry_days'] ?? null, 14) . '</dd>';
+        echo '</dl>';
+        if ($tls['sans']) {
+            echo '<div class="os-subhead">Certificate SANs <span class="os-dim">(' . count($tls['sans']) . ')</span></div><div class="os-taglist">';
+            foreach ($tls['sans'] as $s) echo '<span class="os-code">' . ose($s) . '</span>';
+            echo '</div><p class="os-fineprint">Every hostname on your certificate is public — SANs can expose internal or forgotten subdomains.</p>';
+        }
+    }
 
     // Web security headers
     $sec = $d['security'] ?? [];

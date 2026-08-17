@@ -199,6 +199,8 @@ a.os-top-l:hover{text-decoration:none}
 .os-pdot-warn{background:var(--os-warn)}
 .os-pk{font-weight:600;min-width:96px;flex:0 0 auto}
 .os-code{font-family:var(--os-mono);font-size:.78rem;background:var(--os-bg);border:1px solid var(--os-border);border-radius:6px;padding:1px 6px;word-break:break-all}
+.os-exp-bad{color:#ff9a92;font-weight:600}
+.os-exp-warn{color:var(--os-warn);font-weight:600}
 .os-taglist{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 
 /* ---- self-search links ---- */
