@@ -216,6 +216,16 @@ a.os-top-l:hover{text-decoration:none}
 .os-note{font-size:.78rem;color:var(--os-dim);line-height:1.6;border-left:2px solid var(--os-border);padding-left:12px;margin-top:10px}
 .os-spinner{display:inline-block;width:14px;height:14px;border:2px solid var(--os-border);border-top-color:var(--os-accent);border-radius:50%;animation:os-spin .7s linear infinite;vertical-align:-2px}
 @keyframes os-spin{to{transform:rotate(360deg)}}
+/* ---- breach-monitoring alert + toggle ---- */
+.os-alertbox{border-color:rgba(224,168,58,.55);background:rgba(224,168,58,.07)}
+.os-alertbox .os-h3{color:var(--os-warn)}
+.os-switch{position:relative;display:inline-block;width:42px;height:24px;flex:0 0 auto}
+.os-switch input{opacity:0;width:0;height:0;position:absolute}
+.os-switch-t{position:absolute;inset:0;background:var(--os-elevated);border:1px solid var(--os-border);border-radius:999px;cursor:pointer;transition:background .15s,border-color .15s}
+.os-switch-t::before{content:"";position:absolute;left:3px;top:2px;width:16px;height:16px;border-radius:50%;background:var(--os-faint);transition:transform .15s,background .15s}
+.os-switch input:checked + .os-switch-t{background:rgba(55,201,139,.25);border-color:var(--os-accent)}
+.os-switch input:checked + .os-switch-t::before{transform:translateX(18px);background:var(--os-accent)}
+
 /* ---- checklist chrome (removal + harden) ---- */
 .os-clhead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-top:12px}
 .os-search{background:var(--os-bg);border:1px solid var(--os-border);border-radius:9px;color:var(--os-ink);font-size:.85rem;padding:8px 12px;outline:none;min-width:190px;flex:1}

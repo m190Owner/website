@@ -66,6 +66,11 @@ function scan_db(): ?PDO {
         $db->exec("CREATE TABLE IF NOT EXISTS osint_domain_cache (
             user_id INTEGER NOT NULL, domain TEXT NOT NULL, json TEXT NOT NULL DEFAULT '{}',
             updated_at INTEGER NOT NULL, PRIMARY KEY (user_id, domain))");
+        // Opt-in breach monitoring: a baseline of known breaches per email, plus any new
+        // ones found since (surfaced in-app on next login). Driven by osint/cron.php.
+        $db->exec("CREATE TABLE IF NOT EXISTS osint_monitor (
+            user_id INTEGER PRIMARY KEY, enabled INTEGER NOT NULL DEFAULT 0,
+            last_check INTEGER, known TEXT NOT NULL DEFAULT '{}', pending TEXT NOT NULL DEFAULT '[]')");
         // Persistent "not me" — keyed by a hash of the finding title, so future scans
         // auto-mark the same account/breach false. Survives "clear results".
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
@@ -936,6 +941,90 @@ function scan_checklist_set(int $uid, string $list, string $item, string $status
         }
         return true;
     } catch (\Throwable $e) { return false; }
+}
+
+// ---- breach monitoring (opt-in; driven by osint/cron.php) ----
+/** Monitoring state for a user: [enabled, last_check, pending[]]. */
+function scan_monitor_get(int $uid): array {
+    $db = scan_db(); if (!$db) return ['enabled' => false, 'last_check' => 0, 'pending' => []];
+    try {
+        $st = $db->prepare("SELECT enabled, last_check, pending FROM osint_monitor WHERE user_id = ?");
+        $st->execute([$uid]);
+        $r = $st->fetch();
+        return [
+            'enabled'    => $r ? (bool) $r['enabled'] : false,
+            'last_check' => $r ? (int) $r['last_check'] : 0,
+            'pending'    => $r ? (array) json_decode($r['pending'] ?: '[]', true) : [],
+        ];
+    } catch (\Throwable $e) { return ['enabled' => false, 'last_check' => 0, 'pending' => []]; }
+}
+
+function scan_monitor_set_enabled(int $uid, bool $on): void {
+    $db = scan_db(); if (!$db) return;
+    try {
+        $db->prepare("INSERT INTO osint_monitor (user_id,enabled,known,pending) VALUES (?,?,'{}','[]')
+                      ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled")->execute([$uid, $on ? 1 : 0]);
+    } catch (\Throwable $e) {}
+}
+
+function scan_monitor_clear_pending(int $uid): void {
+    $db = scan_db(); if (!$db) return;
+    try { $db->prepare("UPDATE osint_monitor SET pending = '[]' WHERE user_id = ?")->execute([$uid]); } catch (\Throwable $e) {}
+}
+
+/** User ids with monitoring enabled (for the cron sweep). */
+function scan_monitor_enabled_users(): array {
+    $db = scan_db(); if (!$db) return [];
+    try { return array_map('intval', $db->query("SELECT user_id FROM osint_monitor WHERE enabled = 1")->fetchAll(PDO::FETCH_COLUMN)); }
+    catch (\Throwable $e) { return []; }
+}
+
+/** Re-check one user's emails against XposedOrNot, recording NEW breaches vs the stored
+ *  baseline. First sight of an email is baselined silently. Returns the count of new hits. */
+function scan_monitor_run(int $uid): int {
+    $db = scan_db(); if (!$db) return 0;
+    $p = scan_profile_get($uid);
+    if (!$p['emails']) {
+        try { $db->prepare("UPDATE osint_monitor SET last_check = ? WHERE user_id = ?")->execute([time(), $uid]); } catch (\Throwable $e) {}
+        return 0;
+    }
+    $st = $db->prepare("SELECT known, pending FROM osint_monitor WHERE user_id = ?");
+    $st->execute([$uid]);
+    $row = $st->fetch();
+    $known = $row ? (array) json_decode($row['known'] ?: '{}', true) : [];
+    $pending = $row ? (array) json_decode($row['pending'] ?: '[]', true) : [];
+
+    $tasks = [];
+    foreach ($p['emails'] as $i => $em) $tasks[$i] = ['url' => OSINT_XPOSED . rawurlencode($em), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
+    $res = scan_multi_get($tasks);
+
+    $newCount = 0;
+    foreach ($p['emails'] as $i => $em) {
+        $r = $res[$i] ?? null;
+        if (!$r || $r['err'] || (int) $r['code'] !== 200) continue;   // 404 = clean, or error → don't disturb baseline
+        $names = [];
+        foreach (scan_breach_details($r['body']) as $b) $names[] = $b['name'];
+        $prev = $known[$em] ?? null;
+        if ($prev === null) { $known[$em] = array_values(array_unique($names)); continue; }   // baseline silently
+        foreach (array_values(array_diff($names, $prev)) as $bn) { $pending[] = ['email' => $em, 'breach' => $bn, 'at' => time()]; $newCount++; }
+        $known[$em] = array_values(array_unique(array_merge($prev, $names)));
+    }
+    $pending = array_slice($pending, -50);   // bound
+    try {
+        $db->prepare("INSERT INTO osint_monitor (user_id,enabled,last_check,known,pending) VALUES (?,1,?,?,?)
+                      ON CONFLICT(user_id) DO UPDATE SET last_check = excluded.last_check, known = excluded.known, pending = excluded.pending")
+           ->execute([$uid, time(), json_encode($known), json_encode($pending)]);
+    } catch (\Throwable $e) {}
+    return $newCount;
+}
+
+/** The shared secret for the monitoring cron endpoint. Created (gitignored) on first use. */
+function scan_cron_token(): string {
+    $path = OSINT_DATA_DIR . '/cron.key';
+    if (is_file($path)) { $t = trim((string) @file_get_contents($path)); if ($t !== '') return $t; }
+    $t = bin2hex(random_bytes(16));
+    @file_put_contents($path, $t);
+    return $t;
 }
 
 /** Headline exposure index (0 = nothing found, 100 = heavy) from a scan's findings. */

@@ -4,6 +4,7 @@
 // — they use the separate /osint/ login. "Only I can invite" == this page.
 require __DIR__ . '/lib/audit.php';                 // owner_auth + audit_log
 require __DIR__ . '/../osint/lib/osint_auth.php';   // osint_invite_* / osint_users_* / ose()
+require __DIR__ . '/../osint/lib/scan.php';          // scan_cron_token() for the monitoring cron
 owner_require();
 
 $origin = (osint_https() ? 'https' : 'http') . '://' . (preg_match('/^[A-Za-z0-9.\-:]{1,255}$/', (string) ($_SERVER['HTTP_HOST'] ?? '')) ? $_SERVER['HTTP_HOST'] : 'logansandivar.com');
@@ -126,6 +127,14 @@ function os_inv_status(array $i, int $now): array {
       <?php endforeach; ?>
     </tbody></table>
   <?php endif; ?>
+
+  <?php $cronUrl = $origin . '/osint/cron.php?key=' . scan_cron_token(); ?>
+  <h2 class="ow-mh">Breach-monitoring cron</h2>
+  <p class="ow-dim" style="max-width:660px">Users can opt into automatic breach monitoring on the tool's dashboard. Trigger the re-check on a schedule (e.g. a daily Hostinger cron) with this token-gated URL — or run <span class="ow-mono">php&nbsp;/path/to/osint/cron.php</span> from a CLI cron. Keep the token private.</p>
+  <div class="ow-copy" style="max-width:660px">
+    <input readonly value="<?= oe($cronUrl) ?>">
+    <button type="button" class="ow-btn ow-copy-btn" data-copy="<?= oe($cronUrl) ?>">Copy URL</button>
+  </div>
 </main>
 
 <script>

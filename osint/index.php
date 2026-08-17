@@ -10,6 +10,7 @@ $p = scan_profile_get((int) $u['id']);
 $nId = count($p['usernames']) + count($p['emails']) + count($p['phones']) + count($p['domains']);
 $latest = scan_latest((int) $u['id']);
 $siteCount = count(scan_sites());
+$mon = scan_monitor_get((int) $u['id']);
 
 // Tool cards for the hub grid: [icon, title, href, description].
 $tools = [
@@ -24,6 +25,22 @@ $tools = [
 ];
 osint_head('m190 finder', 'dashboard');
 ?>
+  <?php if ($mon['pending']): ?>
+    <div class="os-panel os-alertbox" id="os-mon-alert">
+      <h3 class="os-h3">&#9888; New exposure since your last check</h3>
+      <p class="os-dim os-mb"><b><?= count($mon['pending']) ?></b> new breach record(s) appeared for your monitored emails:</p>
+      <ul class="os-rlist">
+        <?php foreach (array_reverse($mon['pending']) as $pi): ?>
+          <li><b><?= ose($pi['email']) ?></b> in the <b><?= ose($pi['breach']) ?></b> breach <span class="os-dim"><?= ose(date('Y-m-d', (int) $pi['at'])) ?></span></li>
+        <?php endforeach; ?>
+      </ul>
+      <div class="os-inrow" style="margin-top:12px">
+        <a class="os-btn os-btn-sm" href="/osint/harden.php">What to do</a>
+        <button type="button" class="os-btn os-btn-sm" id="os-mon-dismiss">Got it, dismiss</button>
+      </div>
+    </div>
+  <?php endif; ?>
+
   <div class="os-panel">
     <h2>See what the internet knows about you</h2>
     <p>A private, invite-only footprint tool. It checks <b>your own</b> identifiers against <?= (int) $siteCount ?> public sites, breach databases, and public records — then tells you what it found, what it couldn't check, and how to get it removed. A hit is a lead to verify, not proof.</p>
@@ -68,6 +85,16 @@ osint_head('m190 finder', 'dashboard');
     </div>
   </div>
 
+  <?php if ($p['emails']): ?>
+    <div class="os-panel">
+      <div class="os-sec-head">
+        <h3 class="os-h3">Breach monitoring</h3>
+        <label class="os-switch"><input type="checkbox" id="os-mon-toggle" <?= $mon['enabled'] ? 'checked' : '' ?>><span class="os-switch-t"></span></label>
+      </div>
+      <p class="os-dim" id="os-mon-status"><?php if ($mon['enabled']): ?>On — we'll re-check your emails and flag new breaches here<?= $mon['last_check'] ? '. Last checked ' . ose(date('Y-m-d H:i', $mon['last_check'])) : '' ?>.<?php else: ?>Off — turn it on to be alerted when a <b>new</b> breach includes one of your emails, without re-running a full scan.<?php endif; ?></p>
+    </div>
+  <?php endif; ?>
+
   <div class="os-panel" id="os-live" hidden>
     <h3 class="os-h3">Found so far <span class="os-livecount" id="os-livecount">0</span></h3>
     <ul class="os-findlist" id="os-findlist"></ul>
@@ -100,4 +127,4 @@ osint_head('m190 finder', 'dashboard');
     </div>
   </div>
 <?php
-osint_foot(['osint.js']);
+osint_foot(['osint.js', 'monitor.js']);
