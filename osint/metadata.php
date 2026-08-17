@@ -18,5 +18,17 @@ osint_head('File metadata · m190 finder', 'metadata', ['narrow' => true]);
     <div id="os-mout" hidden style="margin-top:4px"></div>
     <p class="os-note" style="margin-top:16px"><b>Fully private:</b> files are read entirely inside your browser (File, Canvas, and the built-in decompression API). No upload, no server round-trip — watch the network tab. The cleaned image copy is re-encoded, which discards EXIF, GPS, and every embedded tag.</p>
   </div>
+
+  <div class="os-panel">
+    <h2>🗺️ Pattern of life</h2>
+    <p>Drop in <b>several</b> photos at once. Where they carry GPS, this maps <b>where and when</b> you were — the home, workplace, and daily routine a stalker or investigator can reconstruct from a handful of your public photos. It clusters the locations, guesses your likely home and work, and charts the times of day. Everything is computed in your browser.</p>
+    <div class="os-drop" id="os-pdrop" style="margin-top:14px">
+      <div style="font-size:1.6rem">📍</div>
+      <div style="margin-top:6px"><b>Drop multiple photos</b> or click to choose</div>
+      <div class="os-dim" style="font-size:.78rem;margin-top:4px">JPEG with GPS works best · analyzed entirely in your browser, never uploaded</div>
+      <input type="file" id="os-pf" accept="image/*" multiple hidden>
+    </div>
+    <div id="os-pout" hidden style="margin-top:4px"></div>
+  </div>
 <?php
-osint_foot(['metadata.js']);
+osint_foot(['metadata.js', 'photomap.js']);

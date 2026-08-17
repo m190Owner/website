@@ -402,3 +402,14 @@ a.os-top-l:hover{text-decoration:none}
 /* Exposure receipt: integrity fingerprint block */
 .os-receipt-hash{margin-top:14px;padding:12px 14px;border:1px solid var(--os-border);border-radius:9px;background:var(--os-surface)}
 .os-receipt-hash code{display:block;margin-top:4px;font-family:var(--os-mono);font-size:.78rem;color:var(--os-accent-l);word-break:break-all;line-height:1.5}
+
+/* Pattern-of-life: scatter map + time histogram */
+.os-pmsvg{display:block;width:100%;min-width:300px;height:auto;border:1px solid var(--os-border);border-radius:10px;background:radial-gradient(circle at 50% 50%,rgba(110,168,254,.05),transparent 70%),var(--os-bg)}
+.os-pm-n{fill:var(--os-faint);font-size:10px;text-anchor:middle;font-family:var(--os-sans)}
+.os-pm-dot{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:middle;margin-right:2px}
+.os-pmhist{display:flex;gap:8px;align-items:flex-end;height:120px;padding:8px 4px;border-bottom:1px solid var(--os-border)}
+.os-pmbar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;height:100%;position:relative}
+.os-pmbar-fill{width:70%;min-height:2px;background:linear-gradient(var(--os-accent-l),var(--os-accent));border-radius:4px 4px 0 0}
+.os-pmbar-n{font-size:.7rem;color:var(--os-dim);margin-top:3px}
+.os-pmbar-l{font-size:.62rem;color:var(--os-faint);position:absolute;bottom:-16px;white-space:nowrap}
+.os-pmhist+*{margin-top:22px}
