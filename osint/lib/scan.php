@@ -912,6 +912,103 @@ function scan_ip_footprint(string $ip): array {
     return $out;
 }
 
+// ---- investigation lookups (arbitrary URL / IP / domain / cert — public infra data) ----
+/** Resolve a (possibly relative) Location against a base URL. */
+function scan_abs_url(string $loc, string $base): string {
+    $loc = trim($loc);
+    if ($loc === '') return '';
+    if (preg_match('#^https?://#i', $loc)) return $loc;
+    $p = parse_url($base);
+    if (!$p || empty($p['host'])) return '';
+    $scheme = $p['scheme'] ?? 'http';
+    $origin = $scheme . '://' . $p['host'] . (isset($p['port']) ? ':' . $p['port'] : '');
+    if (strpos($loc, '//') === 0) return $scheme . ':' . $loc;
+    if ($loc[0] === '/') return $origin . $loc;
+    $dir = preg_replace('#/[^/]*$#', '/', $p['path'] ?? '/');
+    return $origin . ($dir ?: '/') . $loc;
+}
+
+/** Phishing/obfuscation red flags for a URL + its redirect chain. [ [level,text], ... ]. */
+function scan_url_flags(string $url, array $chain): array {
+    $p = parse_url($url); $host = strtolower((string) ($p['host'] ?? '')); $flags = [];
+    if (($p['scheme'] ?? '') !== 'https') $flags[] = ['bad', 'Not served over HTTPS'];
+    if ($host !== '' && filter_var($host, FILTER_VALIDATE_IP)) $flags[] = ['bad', 'Host is a raw IP address, not a domain'];
+    if (strpos($host, 'xn--') !== false) $flags[] = ['warn', 'Punycode/IDN host — may visually mimic a real brand'];
+    if (!empty($p['user'])) $flags[] = ['bad', 'Credentials embedded in the URL (user@…)'];
+    $subs = substr_count($host, '.');
+    if ($subs >= 4) $flags[] = ['warn', 'Many subdomains (' . $subs . ') — a common cloaking trick'];
+    $tld = strtolower((string) substr((string) strrchr($host, '.'), 1));
+    if (in_array($tld, ['zip', 'mov', 'tk', 'ml', 'ga', 'cf', 'gq', 'top', 'xyz', 'click', 'link', 'work', 'loan', 'rest'], true)) $flags[] = ['warn', 'Higher-abuse TLD .' . $tld];
+    if (count($chain) > 2) $flags[] = ['warn', (count($chain) - 1) . ' redirects — a shortener or cloaked link'];
+    if (mb_strlen($url) > 120) $flags[] = ['warn', 'Unusually long URL'];
+    return $flags;
+}
+
+/** Follow a URL's redirect chain (hop by hop) and flag it. */
+function scan_url_trace(string $input, int $maxHops = 10): array {
+    $input = trim($input);
+    if (!preg_match('#^https?://#i', $input)) $input = 'http://' . $input;
+    if (!filter_var($input, FILTER_VALIDATE_URL)) return ['error' => 'Not a valid URL.'];
+    $chain = []; $url = $input; $hops = 0;
+    while ($hops++ < $maxHops) {
+        $r = scan_multi_get(['h' => ['url' => $url, 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => false, 'wanthdr' => true, 'timeout' => 10]])['h'] ?? null;
+        if (!$r || $r['err']) { $chain[] = ['url' => $url, 'code' => 0]; break; }
+        $code = (int) $r['code'];
+        $chain[] = ['url' => $url, 'code' => $code];
+        $loc = $r['headers']['location'] ?? '';
+        if ($code >= 300 && $code < 400 && $loc !== '') { $next = scan_abs_url($loc, $url); if ($next === '' || $next === $url) break; $url = $next; }
+        else break;
+    }
+    $final = $chain ? end($chain)['url'] : $input;
+    return ['ok' => true, 'chain' => $chain, 'final' => $final, 'flags' => scan_url_flags($final, $chain)];
+}
+
+/** All common DNS records for a domain via DoH. */
+function scan_dns_all(string $domain): array {
+    $domain = scan_domain_normalize($domain);
+    if ($domain === null) return ['error' => 'Not a valid domain.'];
+    $types = ['A' => 1, 'AAAA' => 28, 'MX' => 15, 'NS' => 2, 'TXT' => 16, 'CAA' => 257, 'SOA' => 6, 'SRV' => 33];
+    $tasks = [];
+    foreach ($types as $t => $n) $tasks[$t] = ['url' => 'https://dns.google/resolve?name=' . rawurlencode($domain) . '&type=' . $t, 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true];
+    $res = scan_multi_get($tasks);
+    $out = ['ok' => true, 'domain' => $domain, 'records' => []];
+    foreach ($types as $t => $n) {
+        $vals = scan_doh_answers($res[$t] ?? null, $n);
+        if ($vals) $out['records'][$t] = array_slice(array_map(fn($v) => str_replace('"', '', $v), $vals), 0, 20);
+    }
+    return $out;
+}
+
+/** Reverse-DNS (PTR) for an IPv4 address via DoH. */
+function scan_ptr(string $ip): string {
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) return '';
+    $rev = implode('.', array_reverse(explode('.', $ip))) . '.in-addr.arpa';
+    $r = scan_multi_get(['p' => ['url' => 'https://dns.google/resolve?name=' . $rev . '&type=PTR', 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true]])['p'] ?? null;
+    $a = scan_doh_answers($r, 12);
+    return $a ? rtrim($a[0], '.') : '';
+}
+
+/** Parse a pasted PEM certificate. */
+function scan_cert_pem(string $pem): array {
+    $pem = trim($pem);
+    if (strpos($pem, 'BEGIN CERTIFICATE') === false) return ['error' => 'Paste a PEM certificate (-----BEGIN CERTIFICATE-----).'];
+    if (!function_exists('openssl_x509_parse')) return ['error' => 'Certificate parsing is unavailable.'];
+    $info = @openssl_x509_parse($pem);
+    if (!is_array($info)) return ['error' => 'Could not parse that certificate.'];
+    $sans = [];
+    foreach (explode(',', (string) ($info['extensions']['subjectAltName'] ?? '')) as $s) { $s = trim($s); if (stripos($s, 'DNS:') === 0) $sans[] = substr($s, 4); }
+    return [
+        'ok' => true,
+        'subject' => (string) ($info['subject']['CN'] ?? ''),
+        'issuer'  => (string) ($info['issuer']['O'] ?? $info['issuer']['CN'] ?? ''),
+        'valid_from' => (int) ($info['validFrom_time_t'] ?? 0),
+        'valid_to'   => (int) ($info['validTo_time_t'] ?? 0),
+        'serial' => (string) ($info['serialNumberHex'] ?? $info['serialNumber'] ?? ''),
+        'sigalg' => (string) ($info['signatureTypeSN'] ?? ''),
+        'sans'   => array_slice(array_values(array_unique($sans)), 0, 50),
+    ];
+}
+
 // ---- read side ----
 function scan_get(int $uid, int $scanId): ?array {
     $db = scan_db(); if (!$db) return null;

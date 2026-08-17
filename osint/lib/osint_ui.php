@@ -17,6 +17,7 @@ function osint_nav(): array {
         'domains'   => ['/osint/domain.php',   'Domains'],
         'password'  => ['/osint/password.php', 'Passwords'],
         'network'   => ['/osint/network.php',  'Network'],
+        'lookups'   => ['/osint/lookups.php',  'Lookups'],
         'toolbox'   => ['/osint/toolbox.php',  'Toolbox'],
         'harden'    => ['/osint/harden.php',   'Harden'],
     ];
