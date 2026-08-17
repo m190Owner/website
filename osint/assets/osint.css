@@ -360,3 +360,15 @@ a.os-top-l:hover{text-decoration:none}
 .os-threatbrief{margin-top:12px;padding-top:12px;border-top:1px solid var(--os-border);font-size:.9rem;line-height:1.5}
 .os-prio{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--os-faint);margin-right:5px;vertical-align:middle}
 .os-prio-1{background:var(--os-faint)}.os-prio-2{background:var(--os-warn)}.os-prio-3{background:var(--os-danger)}
+
+/* Attacker view: dossier + spear-phish mockup */
+.os-dosslist{display:flex;flex-direction:column;gap:1px;background:var(--os-border);border:1px solid var(--os-border);border-radius:9px;overflow:hidden}
+.os-doss{display:grid;grid-template-columns:150px 1fr;gap:12px;padding:10px 14px;background:var(--os-surface)}
+.os-doss-k{color:var(--os-dim);font-size:.8rem;font-weight:600;padding-top:2px}
+.os-doss-v{display:flex;flex-wrap:wrap;gap:6px;align-items:center;min-width:0}
+.os-doss-v .os-code{white-space:normal}
+.os-phish{border:1px solid var(--os-border-h);border-radius:9px;overflow:hidden;margin:14px 0 6px;background:var(--os-bg)}
+.os-phish-hdr{padding:11px 14px;border-bottom:1px solid var(--os-border);background:var(--os-surface);font-size:.82rem;line-height:1.7;word-break:break-word}
+.os-phish-k{display:inline-block;min-width:56px;color:var(--os-faint);text-transform:uppercase;font-size:.66rem;letter-spacing:.5px}
+.os-phish-body{margin:0;padding:14px;font-family:var(--os-mono);font-size:.82rem;line-height:1.6;color:var(--os-ink);white-space:pre-wrap;word-break:break-word;overflow-x:auto}
+@media (max-width:560px){.os-doss{grid-template-columns:1fr;gap:4px}}

@@ -11,6 +11,7 @@ function osint_nav(): array {
         'profile'   => ['/osint/profile.php',  'Profile'],
         'results'   => ['/osint/results.php',  'Results'],
         'analysis'  => ['/osint/analysis.php', 'Analysis'],
+        'attacker'  => ['/osint/attacker.php', 'Attacker view'],
         'removal'   => ['/osint/brokers.php',  'Removal'],
         'takedowns' => ['/osint/takedowns.php', 'Takedowns'],
         'search'    => ['/osint/search.php',   'Self-search'],

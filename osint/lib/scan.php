@@ -2197,3 +2197,110 @@ function scan_threat_brief(string $model, array $findings): array {
         'total' => count($scored),
     ];
 }
+
+// ---- attacker view: the dossier + spear-phish + KBA exposure an adversary could build ----
+/** Build a realistic (but clearly-labelled SIMULATION) spear-phish pretext from the
+ *  user's real exposed data — the whole point is to show why it would land. */
+function scan_phish_pretext(string $name, string $svc, string $email, bool $pw): array {
+    $greet = $name !== '' ? $name : 'there';
+    $svc = trim($svc) !== '' ? trim($svc) : 'your account';
+    $dom = preg_replace('/[^a-z0-9]/', '', strtolower($svc)) ?: 'account';
+    return [
+        'from'    => '"' . $svc . ' Security" <no-reply@' . $dom . '-secure.com>',
+        'to'      => $email,
+        'subject' => '[' . $svc . '] Unusual sign-in detected — confirm it was you',
+        'body'    => "Hi " . $greet . ",\n\nWe detected a sign-in to your " . $svc . " account from a new device. "
+                   . "If this was you, you can ignore this message. If not, your account may be at risk — "
+                   . "recent breach activity has been associated with this address.\n\n"
+                   . "Please confirm your identity within 24 hours to avoid a temporary lock:\n\n"
+                   . "    https://" . $dom . "-secure.com/verify?u=" . rawurlencode($email) . "\n\n"
+                   . "Thank you,\nThe " . $svc . " Account Security Team",
+        'why'     => array_values(array_filter([
+            $name !== '' ? 'Greets you by your real name ("' . $name . '") — taken from public data, not guessed.' : null,
+            'Name-drops ' . $svc . ', a service you actually used (it shows up in your account/breach data), so the story is believable.',
+            $pw ? 'Cites "recent breach activity" — and a password of yours genuinely leaked, so the threat feels real.'
+                : 'Manufactures urgency with a 24-hour deadline and an account-lock threat.',
+            'The look-alike sender domain ("' . $dom . '-secure.com") mimics a real security team; most people never read the full address.',
+        ])),
+    ];
+}
+
+/** The OSINT dossier an attacker could assemble from the user's OWN scan: identity,
+ *  contact, handles, compromised credentials — plus derived attack vectors, a spear-phish
+ *  built from it, and security-question (KBA) exposure. Read-only over findings. */
+function scan_attacker_dossier(int $uid): array {
+    $p = scan_profile_get($uid);
+    $latest = scan_latest($uid);
+    $findings = $latest ? scan_findings($uid, (int) $latest['id']) : [];
+
+    $names = []; $locations = []; $bios = []; $accounts = []; $breaches = []; $pwBreaches = []; $classes = []; $recent = [];
+    $thisYear = (int) date('Y');
+    foreach ($findings as $f) {
+        if (($f['status'] ?? 'new') === 'false') continue;
+        $cat = (string) $f['category']; $title = (string) $f['title']; $detail = (string) ($f['detail'] ?? '');
+        if ($cat === 'account') {
+            if (strpos((string) $f['exposes'], 'email') !== false) {
+                foreach (explode('·', $detail) as $seg) {
+                    $seg = trim($seg);
+                    if (preg_match('/^[A-Z][A-Za-z.\'\-]+(?: [A-Z][A-Za-z.\'\-]+){1,3}$/', $seg)) $names[$seg] = true;
+                }
+            } else {
+                if (preg_match('/^(.*) on (.+)$/', $title, $m)) $accounts[] = ['handle' => trim($m[1]), 'platform' => trim($m[2]), 'url' => (string) $f['url']];
+                if ($detail !== '') $bios[] = $detail;
+            }
+            if (preg_match('/^([A-Z][A-Za-z.\'\- ]{2,40}?)\s*\(@/', $detail, $m)) $names[trim($m[1])] = true;
+            if (preg_match_all('/\b([A-Z][a-z]+(?:[ -][A-Z][a-z]+)*),\s*([A-Z]{2})\b/', $detail, $mm, PREG_SET_ORDER)) foreach ($mm as $loc) $locations[$loc[0]] = true;
+        } elseif ($cat === 'breach') {
+            $bn = preg_match('/ in the (.+) breach$/', $title, $m) ? $m[1] : preg_replace('/ — .*$/', '', $title);
+            $breaches[] = $bn;
+            if (stripos($detail, 'password') !== false) $pwBreaches[] = $bn;
+            if (preg_match('/\b(20\d\d)\b/', $detail, $m) && (int) $m[1] >= $thisYear - 3) $recent[$bn] = (int) $m[1];
+            foreach (explode(',', preg_replace('/^\s*(19|20)\d\d\s*·?\s*/', '', $detail)) as $c) {
+                $c = trim($c);
+                if ($c !== '' && !preg_match('/^(19|20)\d\d$/', $c)) $classes[mb_strtolower($c)] = $c;
+            }
+        }
+    }
+    $names = array_keys($names); $locations = array_keys($locations); $classes = array_values($classes);
+    $pwBreaches = array_values(array_unique($pwBreaches)); $breaches = array_values(array_unique($breaches));
+    $hasClass = fn($kw) => (bool) array_filter($classes, fn($c) => stripos($c, $kw) !== false);
+
+    $vectors = [];
+    if ($pwBreaches) $vectors[] = ['sev' => 'high', 'name' => 'Credential stuffing', 'why' => 'A password of yours leaked in ' . count($pwBreaches) . ' breach(es) (' . implode(', ', array_slice($pwBreaches, 0, 3)) . '). If you reused it, every account sharing it is one login away.'];
+    if ($p['emails'] && $breaches) $vectors[] = ['sev' => 'high', 'name' => 'Targeted phishing', 'why' => 'Your email plus a real breach you\'re in lets an attacker name-drop a service you actually use — see the simulation below.'];
+    if ($p['phones']) $vectors[] = ['sev' => 'med', 'name' => 'SIM-swap & smishing', 'why' => 'Your number is known; combined with the personal facts above it helps a caller pass carrier verification or send convincing texts.'];
+    if ($locations || $hasClass('address') || $hasClass('geographic') || $hasClass('birth')) $vectors[] = ['sev' => 'high', 'name' => 'Account-recovery / security-question bypass', 'why' => 'Enough personal facts are public to answer the "prove it\'s you" questions that reset accounts — see below.'];
+    if (count($accounts) >= 3) $vectors[] = ['sev' => 'med', 'name' => 'Cross-platform profiling', 'why' => 'The same handle on ' . count($accounts) . ' sites lets someone stitch your full activity and social graph together.'];
+    $sev = ['high' => 0, 'med' => 1, 'low' => 2];
+    usort($vectors, fn($a, $b) => $sev[$a['sev']] <=> $sev[$b['sev']]);
+
+    $svc = $recent ? array_key_first($recent) : ($breaches[0] ?? ($accounts[0]['platform'] ?? 'your account'));
+    $phish = scan_phish_pretext($names[0] ?? '', $svc, $p['emails'][0] ?? 'you@example.com', !empty($pwBreaches));
+
+    $kba = [
+        ['q' => 'What city do you live in / were you born in?', 'ans' => ($locations || $hasClass('geographic') || $hasClass('address')) ? 'yes' : 'maybe',
+         'src' => $locations ? implode(', ', array_slice($locations, 0, 2)) : ($hasClass('address') || $hasClass('geographic') ? 'exposed in a breach' : 'inferable from your accounts')],
+        ['q' => 'What is your date of birth?', 'ans' => $hasClass('birth') ? 'yes' : 'maybe',
+         'src' => $hasClass('birth') ? 'exposed in a breach' : 'often inferable from public records / social'],
+        ['q' => 'What is your phone number?', 'ans' => ($p['phones'] || $hasClass('phone')) ? 'yes' : 'no',
+         'src' => $p['phones'] ? 'on your profile / exposed' : ($hasClass('phone') ? 'exposed in a breach' : 'not seen in your data')],
+        ['q' => 'Your full legal name / relatives?', 'ans' => ($names || $hasClass('name')) ? 'yes' : 'maybe',
+         'src' => $names ? implode(', ', array_slice($names, 0, 2)) : ($hasClass('name') ? 'names exposed in a breach' : 'derivable from public records')],
+        ['q' => 'Mother\'s maiden name?', 'ans' => 'maybe', 'src' => 'derivable from genealogy sites + your surname'],
+        ['q' => 'First school / employer?', 'ans' => ($locations || $bios) ? 'maybe' : 'maybe', 'src' => $bios ? 'hinted in your public bios' : 'narrowed by your city + age'],
+    ];
+
+    return [
+        'threat'      => scan_threat_get($uid),
+        'threat_meta' => scan_threat_models()[scan_threat_get($uid)] ?? scan_threat_models()['general'],
+        'has_scan'    => (bool) $latest,
+        'identity'    => ['names' => $names, 'locations' => $locations, 'bios' => array_slice(array_values(array_unique($bios)), 0, 4)],
+        'contact'     => ['emails' => $p['emails'], 'phones' => $p['phones'], 'domains' => $p['domains']],
+        'usernames'   => $p['usernames'],
+        'handles'     => array_slice($accounts, 0, 20),
+        'credentials' => ['pw_breaches' => $pwBreaches, 'breaches' => $breaches, 'classes' => $classes],
+        'vectors'     => $vectors,
+        'phish'       => $phish,
+        'kba'         => $kba,
+    ];
+}

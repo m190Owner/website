@@ -96,6 +96,7 @@ osint_head('m190 finder', 'dashboard');
             <div class="os-row"><div class="os-row-main"><div class="os-row-t"><span class="os-prio os-prio-<?= (int) $t['score'] ?>" title="priority <?= (int) $t['score'] ?>/3"></span> <?= ose($t['title']) ?></div><?= $t['detail'] ? '<div class="os-row-d">' . ose($t['detail']) . '</div>' : '' ?></div></div>
           <?php endforeach; ?>
         </div>
+        <a class="os-btn os-btn-sm" href="/osint/attacker.php" style="margin-top:12px;display:inline-block">See the attacker's view &rarr;</a>
       <?php elseif (!$latest): ?>
         <p class="os-dim" style="margin-top:10px">Run a scan and this lens will rank what matters most against this adversary.</p>
       <?php else: ?>
