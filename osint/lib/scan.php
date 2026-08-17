@@ -1158,6 +1158,53 @@ function scan_social_telegram(?array $r, string $u): array {
     return $c;
 }
 
+function scan_social_dockerhub(?array $r, string $u): array {
+    $c = scan_social_card('Docker Hub', 'https://hub.docker.com/u/' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    $j = json_decode($r['body'], true);
+    if (!is_array($j) || empty($j['username'])) return $c;
+    $c['exists'] = true;
+    $c['name'] = (string) ($j['full_name'] ?? ''); $c['location'] = (string) ($j['location'] ?? '');
+    $c['avatar'] = (string) ($j['gravatar_url'] ?? ''); $c['joined'] = isset($j['date_joined']) ? substr($j['date_joined'], 0, 10) : '';
+    if (!empty($j['company'])) $c['stats'] = (string) $j['company'];
+    return $c;
+}
+function scan_social_steam(?array $r, string $u): array {
+    $c = scan_social_card('Steam', 'https://steamcommunity.com/id/' . $u);
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return $c;
+    $x = $r['body'];
+    if (stripos($x, 'could not be found') !== false || stripos($x, '<steamID>') === false) { $c['exists'] = false; return $c; }
+    $g = function ($t) use ($x) {
+        if (preg_match('#<' . $t . '><!\[CDATA\[(.*?)\]\]></' . $t . '>#s', $x, $m)) return trim($m[1]);
+        if (preg_match('#<' . $t . '>(.*?)</' . $t . '>#s', $x, $m)) return trim($m[1]);
+        return '';
+    };
+    $c['exists'] = true;
+    $c['name'] = $g('steamID'); $c['location'] = $g('location');
+    $c['bio'] = trim(html_entity_decode(strip_tags($g('summary')), ENT_QUOTES | ENT_HTML5));
+    $c['avatar'] = $g('avatarFull') ?: $g('avatarMedium');
+    $c['joined'] = preg_replace('/^Since\s*/i', '', $g('memberSince'));
+    $c['stats'] = trim(strip_tags($g('stateMessage')));
+    return $c;
+}
+/** Generic og-based profile card (YouTube/SoundCloud/DeviantArt/Twitch). */
+function scan_social_og_card(?array $r, string $platform, string $url): array {
+    $c = scan_social_card($platform, $url);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404 || (int) $r['code'] === 410) { $c['exists'] = false; return $c; }
+    $h = $r['body'];
+    $title = scan_og_tag($h, 'og:title'); $desc = scan_og_tag($h, 'og:description'); $img = scan_og_tag($h, 'og:image');
+    if ($title === '' && $desc === '') { $c['exists'] = ((int) $r['code'] === 200) ? null : false; return $c; }
+    $c['exists'] = true;
+    $name = preg_replace('/\s*[-|•·]\s*' . preg_quote($platform, '/') . '\b.*$/i', '', $title);
+    $name = preg_replace('/\s+on ' . preg_quote($platform, '/') . '$/i', '', $name);
+    $c['name'] = trim($name) ?: $title;
+    $c['bio'] = $desc;
+    if (preg_match('#^https?://#', $img)) $c['avatar'] = $img;
+    return $c;
+}
+
 /** Aggregate public profiles for one username across keyless-API platforms. */
 function scan_social_lookup(string $username): array {
     $u = trim($username);
@@ -1174,6 +1221,12 @@ function scan_social_lookup(string $username): array {
         'instagram'=> ['url' => 'https://www.instagram.com/' . rawurlencode($u) . '/', 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
         'bluesky'  => ['url' => 'https://public.api.bsky.app/xrpc/app.bsky.actor.getProfile?actor=' . rawurlencode($u . '.bsky.social'), 'headers' => $ua, 'follow' => true],
         'telegram' => ['url' => 'https://t.me/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 10],
+        'dockerhub'=> ['url' => 'https://hub.docker.com/v2/users/' . rawurlencode(strtolower($u)) . '/', 'headers' => $ua, 'follow' => true],
+        'steam'    => ['url' => 'https://steamcommunity.com/id/' . rawurlencode($u) . '?xml=1', 'headers' => $ua, 'follow' => true, 'timeout' => 10],
+        'youtube'  => ['url' => 'https://www.youtube.com/@' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'soundcloud'=>['url' => 'https://soundcloud.com/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'deviantart'=>['url' => 'https://www.deviantart.com/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'twitch'   => ['url' => 'https://www.twitch.tv/' . rawurlencode(strtolower($u)), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
     ], 400000);
     $cards = [
         scan_social_github($res['github'] ?? null, $u),
@@ -1182,6 +1235,12 @@ function scan_social_lookup(string $username): array {
         scan_social_bluesky($res['bluesky'] ?? null, $u),
         scan_social_hn($res['hn'] ?? null, $u),
         scan_social_telegram($res['telegram'] ?? null, $u),
+        scan_social_og_card($res['youtube'] ?? null, 'YouTube', 'https://www.youtube.com/@' . $u),
+        scan_social_og_card($res['soundcloud'] ?? null, 'SoundCloud', 'https://soundcloud.com/' . $u),
+        scan_social_og_card($res['twitch'] ?? null, 'Twitch', 'https://www.twitch.tv/' . $u),
+        scan_social_og_card($res['deviantart'] ?? null, 'DeviantArt', 'https://www.deviantart.com/' . $u),
+        scan_social_dockerhub($res['dockerhub'] ?? null, $u),
+        scan_social_steam($res['steam'] ?? null, $u),
         scan_social_chess($res['chess'] ?? null, $u),
         scan_social_lichess($res['lichess'] ?? null, $u),
         scan_social_reddit($res['reddit'] ?? null, $u),
