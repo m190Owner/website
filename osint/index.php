@@ -12,6 +12,7 @@ $latest = scan_latest((int) $u['id']);
 $siteCount = count(scan_sites());
 $mon = scan_monitor_get((int) $u['id']);
 $monDue = $mon['enabled'] && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
+$expiryWarn = scan_expiry_warnings((int) $u['id']);
 
 // Tool cards for the hub grid: [icon, title, href, description].
 $tools = [
@@ -27,6 +28,16 @@ $tools = [
 osint_head('m190 finder', 'dashboard');
 ?>
   <?php if ($monDue): ?><div id="os-mon-auto" hidden></div><?php endif; ?>
+  <?php if ($expiryWarn): ?>
+    <div class="os-panel os-alertbox">
+      <h3 class="os-h3">&#9888; Expiring soon</h3>
+      <ul class="os-rlist">
+        <?php foreach ($expiryWarn as $w): ?>
+          <li><b><?= ose($w['domain']) ?></b> <?= ose($w['kind']) ?> <?= $w['days'] < 0 ? 'has <b>expired</b>' : 'expires in <b>' . (int) $w['days'] . ' day' . ($w['days'] === 1 ? '' : 's') . '</b>' ?> — <a href="/osint/domain.php">details</a></li>
+        <?php endforeach; ?>
+      </ul>
+    </div>
+  <?php endif; ?>
   <?php if ($mon['pending']): ?>
     <div class="os-panel os-alertbox" id="os-mon-alert">
       <h3 class="os-h3">&#9888; New exposure since your last check</h3>

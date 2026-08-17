@@ -841,6 +841,22 @@ function scan_domain_cache_set(int $uid, string $domain, array $data): void {
     } catch (\Throwable $e) {}
 }
 
+/** Near-expiry (or expired) domain registrations + TLS certs from the user's cached
+ *  domain footprints. [ ['domain','kind','days'], ... ]. */
+function scan_expiry_warnings(int $uid): array {
+    $p = scan_profile_get($uid);
+    $out = [];
+    foreach ($p['domains'] as $dom) {
+        $c = scan_domain_cache_get($uid, $dom);
+        if (!$c) continue;
+        $de = $c['domain_expiry_days'] ?? null;
+        if ($de !== null && $de < 30) $out[] = ['domain' => $dom, 'kind' => 'registration', 'days' => (int) $de];
+        $ce = $c['cert_expiry_days'] ?? null;
+        if ($ce !== null && $ce < 21) $out[] = ['domain' => $dom, 'kind' => 'TLS certificate', 'days' => (int) $ce];
+    }
+    return $out;
+}
+
 // ---- network / IP self-footprint ----
 /** The caller's real public IP, honouring a Cloudflare / proxy front. */
 function os_client_ip(): string {
