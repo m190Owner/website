@@ -199,4 +199,104 @@
         emlOut.innerHTML = html;
       }).catch(function () { emlOut.innerHTML = prow('bad', 'Error', 'Request failed.'); });
   });
+
+  // ---------- punycode / IDN homograph ----------
+  function punyDecode(input) {
+    var base = 36, tmin = 1, tmax = 26, skew = 38, damp = 700, out = [], i = 0, n = 128, bias = 72, b = input.lastIndexOf('-');
+    if (b < 0) b = 0;
+    for (var j = 0; j < b; j++) { if (input.charCodeAt(j) >= 0x80) return null; out.push(input.charCodeAt(j)); }
+    function adapt(d, np, first) { d = first ? Math.floor(d / damp) : d >> 1; d += Math.floor(d / np); var k = 0; for (; d > ((base - tmin) * tmax) >> 1; k += base) d = Math.floor(d / (base - tmin)); return Math.floor(k + (base - tmin + 1) * d / (d + skew)); }
+    for (var idx = b > 0 ? b + 1 : 0; idx < input.length;) {
+      var oldi = i, w = 1;
+      for (var k = base; ; k += base) {
+        if (idx >= input.length) return null;
+        var c = input.charCodeAt(idx++), digit = c - 48 < 10 ? c - 22 : (c - 65 < 26 ? c - 65 : (c - 97 < 26 ? c - 97 : base));
+        if (digit >= base) return null;
+        i += digit * w;
+        var t = k <= bias ? tmin : (k >= bias + tmax ? tmax : k - bias);
+        if (digit < t) break;
+        w *= base - t;
+      }
+      var outLen = out.length + 1;
+      bias = adapt(i - oldi, outLen, oldi === 0);
+      n += Math.floor(i / outLen); i %= outLen;
+      out.splice(i++, 0, n);
+    }
+    try { return String.fromCodePoint.apply(null, out); } catch (e) { return null; }
+  }
+  window.__osPuny = punyDecode;
+  function idnDecode(d) { return d.split('.').map(function (l) { return l.toLowerCase().indexOf('xn--') === 0 ? (punyDecode(l.slice(4)) || l) : l; }).join('.'); }
+  function idnEncode(d) { try { return new URL('http://' + d).hostname; } catch (e) { return d; } }
+  function homograph(u) {
+    if (!/[^\x00-\x7f]/.test(u)) return null;
+    var latin = /[a-z]/i.test(u), cyr = /[Ѐ-ӿ]/.test(u), grk = /[Ͱ-Ͽ]/.test(u);
+    if ((cyr || grk) && latin) return 'Mixes Latin with ' + (cyr ? 'Cyrillic' : 'Greek') + ' letters — a classic look-alike (homograph) domain.';
+    if (cyr || grk) return 'Uses ' + (cyr ? 'Cyrillic' : 'Greek') + ' letters that can mimic a Latin brand.';
+    return 'Contains non-ASCII characters — verify it is the genuine domain.';
+  }
+  var idnIn = $('os-idn-in'), idnOut = $('os-idn-out');
+  if (idnIn) idnIn.addEventListener('input', function () {
+    var v = idnIn.value.trim(); if (!v) { idnOut.innerHTML = ''; return; }
+    var uni = /xn--/i.test(v) ? idnDecode(v) : v, ascii = idnEncode(v), risk = homograph(uni);
+    idnOut.innerHTML = '<dl class="os-kv"><dt>Displays as</dt><dd>' + esc(uni) + '</dd><dt>ASCII (punycode)</dt><dd>' + esc(ascii) + '</dd></dl>'
+      + (risk ? '<div class="os-warn-box" style="margin-top:10px"><b>⚠ ' + esc(risk) + '</b></div>' : '<p class="os-dim" style="margin-top:8px">Plain ASCII — no homograph risk.</p>');
+  });
+
+  // ---------- user-agent parser ----------
+  function parseUA(ua) {
+    var o = {};
+    if (/windows nt 10/i.test(ua)) o.OS = 'Windows 10/11';
+    else if (/windows nt 6\.3/i.test(ua)) o.OS = 'Windows 8.1';
+    else if (/windows nt 6\.1/i.test(ua)) o.OS = 'Windows 7';
+    else if (/windows/i.test(ua)) o.OS = 'Windows';
+    else if (/mac os x ([0-9_]+)/i.test(ua)) o.OS = 'macOS ' + RegExp.$1.replace(/_/g, '.');
+    else if (/android ([0-9.]+)/i.test(ua)) o.OS = 'Android ' + RegExp.$1;
+    else if (/iphone os ([0-9_]+)/i.test(ua)) o.OS = 'iOS ' + RegExp.$1.replace(/_/g, '.');
+    else if (/ipad/i.test(ua)) o.OS = 'iPadOS';
+    else if (/cros/i.test(ua)) o.OS = 'ChromeOS';
+    else if (/linux/i.test(ua)) o.OS = 'Linux';
+    if (/edg\/([0-9.]+)/i.test(ua)) o.Browser = 'Edge ' + RegExp.$1;
+    else if (/opr\/([0-9.]+)/i.test(ua)) o.Browser = 'Opera ' + RegExp.$1;
+    else if (/firefox\/([0-9.]+)/i.test(ua)) o.Browser = 'Firefox ' + RegExp.$1;
+    else if (/chrome\/([0-9.]+)/i.test(ua)) o.Browser = 'Chrome ' + RegExp.$1;
+    else if (/version\/([0-9.]+).*safari/i.test(ua)) o.Browser = 'Safari ' + RegExp.$1;
+    else if (/safari/i.test(ua)) o.Browser = 'Safari';
+    o.Device = /mobile|iphone|android/i.test(ua) ? 'Mobile' : (/ipad|tablet/i.test(ua) ? 'Tablet' : 'Desktop');
+    if (/bot|crawl|spider|slurp|curl|wget|python|go-http|headless|monitor/i.test(ua)) o.Note = 'Looks like a bot / automated client';
+    return o;
+  }
+  var uaIn = $('os-ua-in'), uaOut = $('os-ua-out');
+  if (uaIn) uaIn.addEventListener('input', function () {
+    if (!uaIn.value.trim()) { uaOut.innerHTML = ''; return; }
+    var o = parseUA(uaIn.value);
+    uaOut.innerHTML = Object.keys(o).map(function (k) { return '<dt>' + k + '</dt><dd>' + esc(o[k]) + '</dd>'; }).join('') || '<dt>—</dt><dd>Unrecognised</dd>';
+  });
+
+  // ---------- CIDR calculator ----------
+  function cidrCalc(input) {
+    var m = input.trim().match(/^(\d{1,3}(?:\.\d{1,3}){3})(?:\/(\d{1,2}))?$/); if (!m) return null;
+    var ip = m[1].split('.').map(Number); if (ip.some(function (o) { return o > 255; })) return null;
+    var bits = m[2] !== undefined ? +m[2] : 32; if (bits > 32) return null;
+    var ipn = ((ip[0] << 24) | (ip[1] << 16) | (ip[2] << 8) | ip[3]) >>> 0;
+    var mask = bits === 0 ? 0 : (0xFFFFFFFF << (32 - bits)) >>> 0;
+    var net = (ipn & mask) >>> 0, bc = (net | (~mask >>> 0)) >>> 0;
+    var toIp = function (n) { return [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255].join('.'); };
+    var hosts = bits >= 31 ? (bits === 32 ? 1 : 2) : (bc - net - 1);
+    return { Network: toIp(net), Broadcast: toIp(bc), Netmask: toIp(mask), 'Usable range': toIp(bits >= 31 ? net : net + 1) + ' – ' + toIp(bits >= 31 ? bc : bc - 1), 'Usable hosts': String(hosts < 0 ? 0 : hosts) };
+  }
+  var cidrIn = $('os-cidr-in'), cidrOut = $('os-cidr-out');
+  if (cidrIn) cidrIn.addEventListener('input', function () {
+    if (!cidrIn.value.trim()) { cidrOut.innerHTML = ''; return; }
+    var r = cidrCalc(cidrIn.value);
+    cidrOut.innerHTML = r ? Object.keys(r).map(function (k) { return '<dt>' + k + '</dt><dd>' + esc(r[k]) + '</dd>'; }).join('') : '<dt>—</dt><dd>Enter an IPv4 address or CIDR (e.g. 10.0.0.0/24).</dd>';
+  });
+
+  // ---------- UUID ----------
+  var uuidGen = $('os-uuid-gen'), uuidOut = $('os-uuid-out');
+  if (uuidGen) uuidGen.addEventListener('click', function () {
+    var id = (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) { var r = crypto.getRandomValues(new Uint8Array(1))[0] % 16, v = c === 'x' ? r : (r & 0x3 | 0x8); return v.toString(16); }));
+    var chip = document.createElement('span'); chip.className = 'os-code'; chip.textContent = id;
+    uuidOut.insertBefore(chip, uuidOut.firstChild);
+    while (uuidOut.children.length > 6) uuidOut.removeChild(uuidOut.lastChild);
+  });
 })();

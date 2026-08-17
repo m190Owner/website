@@ -90,5 +90,35 @@ osint_head('Toolbox · m190 finder', 'toolbox');
     </div>
     <div id="os-eml-out" class="os-posture" style="margin-top:12px" hidden></div>
   </div>
+
+  <div class="os-grid2">
+    <div class="os-panel">
+      <h3 class="os-h3">Punycode / IDN homograph</h3>
+      <p class="os-dim os-mb">Reveal what a fancy or <span class="os-code">xn--</span> domain really displays as — and catch look-alike (homograph) phishing domains.</p>
+      <input class="os-input" id="os-idn-in" placeholder="paypal.com or xn--pypl-53d.com" autocomplete="off" style="min-width:0">
+      <div id="os-idn-out" style="margin-top:10px"></div>
+    </div>
+    <div class="os-panel">
+      <h3 class="os-h3">User-agent parser</h3>
+      <p class="os-dim os-mb">Break down a User-Agent string into OS, browser, and device.</p>
+      <input class="os-input" id="os-ua-in" placeholder="Paste a User-Agent string…" autocomplete="off" style="min-width:0">
+      <dl class="os-kv" id="os-ua-out" style="margin-top:10px"></dl>
+    </div>
+  </div>
+
+  <div class="os-grid2">
+    <div class="os-panel">
+      <h3 class="os-h3">CIDR / subnet calculator</h3>
+      <p class="os-dim os-mb">Network, broadcast, usable range, and host count for an IPv4 block.</p>
+      <input class="os-input" id="os-cidr-in" placeholder="192.168.1.0/24" autocomplete="off" style="min-width:0">
+      <dl class="os-kv" id="os-cidr-out" style="margin-top:10px"></dl>
+    </div>
+    <div class="os-panel">
+      <h3 class="os-h3">UUID generator</h3>
+      <p class="os-dim os-mb">Random v4 UUIDs from a cryptographic RNG.</p>
+      <button type="button" class="os-btn os-btn-accent" id="os-uuid-gen">Generate</button>
+      <div id="os-uuid-out" class="os-taglist" style="margin-top:12px"></div>
+    </div>
+  </div>
 <?php
 osint_foot(['jsqr.min.js', 'toolbox.js']);
