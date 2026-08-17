@@ -1009,6 +1009,204 @@ function scan_cert_pem(string $pem): array {
     ];
 }
 
+// ---- social profile aggregation (public profiles for a username; keyless) ----
+function scan_social_card(string $platform, string $url): array {
+    return ['platform' => $platform, 'url' => $url, 'exists' => null, 'name' => '', 'bio' => '', 'location' => '', 'avatar' => '', 'joined' => '', 'stats' => '', 'linked' => []];
+}
+function scan_social_github(?array $r, string $u): array {
+    $c = scan_social_card('GitHub', 'https://github.com/' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    if ((int) $r['code'] !== 200) return $c;
+    $j = json_decode($r['body'], true); if (!is_array($j) || empty($j['login'])) return $c;
+    $c['exists'] = true;
+    $c['name'] = (string) ($j['name'] ?? ''); $c['bio'] = (string) ($j['bio'] ?? '');
+    $c['location'] = (string) ($j['location'] ?? ''); $c['avatar'] = (string) ($j['avatar_url'] ?? '');
+    $c['url'] = (string) ($j['html_url'] ?? $c['url']); $c['joined'] = isset($j['created_at']) ? substr($j['created_at'], 0, 10) : '';
+    $bits = [];
+    if (isset($j['public_repos'])) $bits[] = (int) $j['public_repos'] . ' repos';
+    if (isset($j['followers'])) $bits[] = (int) $j['followers'] . ' followers';
+    if (!empty($j['company'])) $bits[] = trim($j['company']);
+    $c['stats'] = implode(' · ', $bits);
+    if (!empty($j['twitter_username'])) $c['linked'][] = ['service' => 'twitter', 'name' => $j['twitter_username'], 'url' => 'https://twitter.com/' . $j['twitter_username']];
+    if (!empty($j['blog'])) $c['linked'][] = ['service' => 'website', 'name' => $j['blog'], 'url' => preg_match('#^https?://#', $j['blog']) ? $j['blog'] : 'https://' . $j['blog']];
+    return $c;
+}
+function scan_social_hn(?array $r, string $u): array {
+    $c = scan_social_card('Hacker News', 'https://news.ycombinator.com/user?id=' . $u);
+    if (!$r || $r['err']) return $c;
+    $j = json_decode($r['body'], true);
+    if (!is_array($j) || empty($j['id'])) { $c['exists'] = ($r['code'] === 200) ? false : null; return $c; }
+    $c['exists'] = true;
+    $c['bio'] = trim(html_entity_decode(strip_tags((string) ($j['about'] ?? '')), ENT_QUOTES | ENT_HTML5));
+    $c['joined'] = isset($j['created']) ? date('Y-m-d', (int) $j['created']) : '';
+    $c['stats'] = isset($j['karma']) ? (int) $j['karma'] . ' karma' : '';
+    return $c;
+}
+function scan_social_keybase(?array $r, string $u): array {
+    $c = scan_social_card('Keybase', 'https://keybase.io/' . $u);
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return $c;
+    $j = json_decode($r['body'], true);
+    $them = is_array($j) ? ($j['them'] ?? null) : null;
+    if (!is_array($them) || empty($them['basics']['username'])) { $c['exists'] = false; return $c; }
+    $c['exists'] = true;
+    $c['name'] = (string) ($them['profile']['full_name'] ?? '');
+    $c['bio'] = (string) ($them['profile']['bio'] ?? '');
+    $c['location'] = (string) ($them['profile']['location'] ?? '');
+    $c['avatar'] = (string) ($them['pictures']['primary']['url'] ?? '');
+    $c['joined'] = isset($them['basics']['ctime']) ? date('Y-m-d', (int) $them['basics']['ctime']) : '';
+    foreach (($them['proofs_summary']['all'] ?? []) as $p) {
+        $svc = (string) ($p['proof_type'] ?? ''); $tag = (string) ($p['nametag'] ?? '');
+        if ($svc === '' || $tag === '') continue;
+        $c['linked'][] = ['service' => $svc, 'name' => $tag, 'url' => (string) ($p['service_url'] ?? $p['proof_url'] ?? '')];
+    }
+    $c['linked'] = array_slice($c['linked'], 0, 12);
+    return $c;
+}
+function scan_social_chess(?array $r, string $u): array {
+    $c = scan_social_card('Chess.com', 'https://www.chess.com/member/' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    $j = json_decode($r['body'], true); if (!is_array($j) || empty($j['username'])) return $c;
+    $c['exists'] = true;
+    $c['name'] = (string) ($j['name'] ?? ''); $c['location'] = (string) ($j['location'] ?? '');
+    $c['avatar'] = (string) ($j['avatar'] ?? ''); $c['url'] = (string) ($j['url'] ?? $c['url']);
+    $c['joined'] = isset($j['joined']) ? date('Y-m-d', (int) $j['joined']) : '';
+    $c['stats'] = isset($j['followers']) ? (int) $j['followers'] . ' followers' : '';
+    return $c;
+}
+function scan_social_lichess(?array $r, string $u): array {
+    $c = scan_social_card('Lichess', 'https://lichess.org/@/' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    $j = json_decode($r['body'], true); if (!is_array($j) || empty($j['username'])) return $c;
+    $c['exists'] = true;
+    $c['name'] = (string) ($j['profile']['realName'] ?? '');
+    $c['bio'] = (string) ($j['profile']['bio'] ?? '');
+    $c['location'] = (string) ($j['profile']['location'] ?? '');
+    $c['url'] = (string) ($j['url'] ?? $c['url']);
+    $c['joined'] = isset($j['createdAt']) ? date('Y-m-d', (int) ($j['createdAt'] / 1000)) : '';
+    if (!empty($j['disabled'])) $c['stats'] = 'account closed';
+    return $c;
+}
+function scan_social_reddit(?array $r, string $u): array {
+    $c = scan_social_card('Reddit', 'https://www.reddit.com/user/' . $u);
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return $c;   // Reddit often 403s from servers
+    $j = json_decode($r['body'], true);
+    $d = is_array($j) ? ($j['data'] ?? null) : null;
+    if (!is_array($d) || empty($d['name'])) { $c['exists'] = false; return $c; }
+    $c['exists'] = true;
+    $c['avatar'] = preg_replace('/\?.*$/', '', (string) ($d['icon_img'] ?? ''));
+    $c['joined'] = isset($d['created_utc']) ? date('Y-m-d', (int) $d['created_utc']) : '';
+    $c['stats'] = isset($d['total_karma']) ? (int) $d['total_karma'] . ' karma' : '';
+    return $c;
+}
+
+/** Aggregate public profiles for one username across keyless-API platforms. */
+function scan_social_lookup(string $username): array {
+    $u = trim($username);
+    if ($u === '' || !preg_match('/^[A-Za-z0-9._\-]{1,40}$/', $u)) return ['error' => 'Invalid username.'];
+    $ua = ['User-Agent: ' . OSINT_UA];
+    $res = scan_multi_get([
+        'github'  => ['url' => 'https://api.github.com/users/' . rawurlencode($u), 'headers' => array_merge($ua, ['Accept: application/vnd.github+json']), 'follow' => true],
+        'hn'      => ['url' => 'https://hacker-news.firebaseio.com/v0/user/' . rawurlencode($u) . '.json', 'headers' => $ua, 'follow' => true],
+        'keybase' => ['url' => 'https://keybase.io/_/api/1.0/user/lookup.json?username=' . rawurlencode($u), 'headers' => $ua, 'follow' => true],
+        'chess'   => ['url' => 'https://api.chess.com/pub/player/' . rawurlencode(strtolower($u)), 'headers' => $ua, 'follow' => true],
+        'lichess' => ['url' => 'https://lichess.org/api/user/' . rawurlencode($u), 'headers' => $ua, 'follow' => true],
+        'reddit'  => ['url' => 'https://www.reddit.com/user/' . rawurlencode($u) . '/about.json', 'headers' => $ua, 'follow' => true],
+    ], 262144);
+    $cards = [
+        scan_social_github($res['github'] ?? null, $u),
+        scan_social_keybase($res['keybase'] ?? null, $u),
+        scan_social_hn($res['hn'] ?? null, $u),
+        scan_social_chess($res['chess'] ?? null, $u),
+        scan_social_lichess($res['lichess'] ?? null, $u),
+        scan_social_reddit($res['reddit'] ?? null, $u),
+    ];
+    return ['ok' => true, 'username' => $u, 'cards' => $cards];
+}
+
+/** Common handle variations (shared with the self-search page). */
+function scan_username_variants(string $u): array {
+    $u = trim($u);
+    $stripped = preg_replace('/[._\-]/', '', $u);
+    $set = [$u, $stripped, str_replace(['.', '_', '-'], '_', $u), str_replace(['.', '_', '-'], '.', $u), 'the' . $u, 'real' . $u, 'official' . $u, 'its' . $u];
+    foreach (['1', '01', '123', '2024', '2025', '_', 'official', 'hq', 'tv', 'yt'] as $s) $set[] = $u . $s;
+    return array_slice(array_values(array_unique(array_filter($set, fn($x) => $x !== ''))), 0, 16);
+}
+
+/** Does a username exist on a platform, from a raw response? */
+function scan_social_exists(string $platform, array $r): bool {
+    if ((int) $r['code'] !== 200) return false;
+    $j = json_decode($r['body'], true);
+    switch ($platform) {
+        case 'GitHub':     return is_array($j) && !empty($j['login']);
+        case 'Keybase':    return is_array($j) && !empty($j['them']['basics']['username']);
+        case 'Chess.com':  return is_array($j) && !empty($j['username']);
+        case 'Lichess':    return is_array($j) && !empty($j['username']);
+        case 'HackerNews': return is_array($j) && !empty($j['id']);
+    }
+    return false;
+}
+
+/** Check ~12 handle variations against key platforms to surface possible impersonators. */
+function scan_impersonation(string $username): array {
+    $variants = array_slice(scan_username_variants($username), 0, 12);
+    $ua = ['User-Agent: ' . OSINT_UA];
+    $platforms = [
+        'GitHub'     => fn($v) => 'https://api.github.com/users/' . rawurlencode($v),
+        'Keybase'    => fn($v) => 'https://keybase.io/_/api/1.0/user/lookup.json?username=' . rawurlencode($v),
+        'Chess.com'  => fn($v) => 'https://api.chess.com/pub/player/' . rawurlencode(strtolower($v)),
+        'Lichess'    => fn($v) => 'https://lichess.org/api/user/' . rawurlencode($v),
+        'HackerNews' => fn($v) => 'https://hacker-news.firebaseio.com/v0/user/' . rawurlencode($v) . '.json',
+    ];
+    $tasks = [];
+    foreach ($variants as $vi => $v) foreach ($platforms as $pn => $b) $tasks[$vi . '|' . $pn] = ['url' => $b($v), 'headers' => $ua, 'follow' => true];
+    $res = scan_multi_get($tasks, 65536);
+    $rows = [];
+    foreach ($variants as $vi => $v) {
+        $hits = [];
+        foreach ($platforms as $pn => $b) { $r = $res[$vi . '|' . $pn] ?? null; if ($r && !$r['err'] && scan_social_exists($pn, $r)) $hits[] = $pn; }
+        if ($hits) $rows[] = ['variant' => $v, 'is_you' => ($v === $username), 'hits' => $hits];
+    }
+    return ['ok' => true, 'username' => $username, 'checked' => count($variants), 'rows' => $rows];
+}
+
+/** Resolve a Fediverse handle (user@instance) via WebFinger. */
+function scan_fediverse(string $handle): array {
+    $handle = trim($handle, '@ ');
+    if (!preg_match('/^([A-Za-z0-9_.\-]+)@([A-Za-z0-9.\-]+\.[A-Za-z]{2,})$/', $handle, $m)) return ['error' => 'Enter a handle like user@mastodon.social'];
+    $instance = $m[2];
+    $r = scan_multi_get(['w' => ['url' => 'https://' . $instance . '/.well-known/webfinger?resource=' . rawurlencode('acct:' . $handle), 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/jrd+json'], 'follow' => true, 'timeout' => 10]])['w'] ?? null;
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return ['ok' => true, 'handle' => $handle, 'exists' => false, 'instance' => $instance];
+    $j = json_decode($r['body'], true);
+    if (!is_array($j) || empty($j['subject'])) return ['ok' => true, 'handle' => $handle, 'exists' => false, 'instance' => $instance];
+    $profile = '';
+    foreach (($j['links'] ?? []) as $l) if (($l['rel'] ?? '') === 'http://webfinger.net/rel/profile-page' && !empty($l['href'])) { $profile = $l['href']; break; }
+    if ($profile === '') foreach (($j['aliases'] ?? []) as $a) if (preg_match('#^https?://#', $a)) { $profile = $a; break; }
+    return ['ok' => true, 'handle' => $handle, 'exists' => true, 'instance' => $instance, 'subject' => (string) $j['subject'], 'profile' => $profile, 'aliases' => array_slice((array) ($j['aliases'] ?? []), 0, 5)];
+}
+
+/** Fetch a URL's Open Graph / title metadata (works for most social profile/post links). */
+function scan_og_meta(string $url): array {
+    $url = trim($url);
+    if (!preg_match('#^https?://#i', $url)) $url = 'https://' . $url;
+    if (!filter_var($url, FILTER_VALIDATE_URL)) return ['error' => 'Not a valid URL.'];
+    $r = scan_multi_get(['p' => ['url' => $url, 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 10]])['p'] ?? null;
+    if (!$r || $r['err']) return ['error' => 'Could not fetch that URL.'];
+    $head = substr($r['body'], 0, 40000);
+    $og = function ($prop) use ($head) {
+        $q = preg_quote($prop, '#');
+        if (preg_match('#<meta[^>]+(?:property|name)=["\']' . $q . '["\'][^>]+content=["\']([^"\']*)["\']#i', $head, $m)
+         || preg_match('#<meta[^>]+content=["\']([^"\']*)["\'][^>]+(?:property|name)=["\']' . $q . '["\']#i', $head, $m)) return trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5));
+        return '';
+    };
+    $title = '';
+    if (preg_match('#<title[^>]*>(.*?)</title>#is', $head, $m)) $title = trim(html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5));
+    return ['ok' => true, 'url' => $url, 'code' => (int) $r['code'],
+        'title' => $og('og:title') ?: $title, 'description' => $og('og:description'), 'image' => $og('og:image'), 'site' => $og('og:site_name'), 'type' => $og('og:type')];
+}
+
 // ---- read side ----
 function scan_get(int $uid, int $scanId): ?array {
     $db = scan_db(); if (!$db) return null;
