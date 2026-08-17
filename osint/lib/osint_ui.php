@@ -13,7 +13,7 @@ function osint_nav(): array {
         'removal'   => ['/osint/brokers.php',  'Removal'],
         'takedowns' => ['/osint/takedowns.php', 'Takedowns'],
         'search'    => ['/osint/search.php',   'Self-search'],
-        'metadata'  => ['/osint/metadata.php', 'Photo EXIF'],
+        'metadata'  => ['/osint/metadata.php', 'File metadata'],
         'domains'   => ['/osint/domain.php',   'Domains'],
         'password'  => ['/osint/password.php', 'Passwords'],
         'network'   => ['/osint/network.php',  'Network'],
