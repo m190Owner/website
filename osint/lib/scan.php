@@ -1430,6 +1430,58 @@ function scan_social_og_card(?array $r, string $platform, string $url): array {
     return $c;
 }
 
+function scan_social_vimeo(?array $r, string $u): array {
+    $c = scan_social_card('Vimeo', 'https://vimeo.com/' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    $j = json_decode($r['body'], true);
+    $v = (is_array($j) && isset($j['display_name'])) ? $j : (is_array($j) ? ($j[0] ?? null) : null);
+    if (!is_array($v) || empty($v['display_name'])) { $c['exists'] = ((int) $r['code'] === 200) ? false : null; return $c; }
+    $c['exists'] = true;
+    $c['name'] = (string) $v['display_name'];
+    $c['bio'] = trim((string) ($v['bio'] ?? ''));
+    $c['location'] = (string) ($v['location'] ?? '');
+    $c['avatar'] = (string) ($v['portrait_huge'] ?? $v['portrait_large'] ?? '');
+    $c['url'] = (string) ($v['profile_url'] ?? $c['url']);
+    $c['joined'] = isset($v['created_on']) ? substr((string) $v['created_on'], 0, 10) : '';
+    if (isset($v['total_videos_uploaded'])) $c['stats'] = (int) $v['total_videos_uploaded'] . ' videos';
+    return $c;
+}
+function scan_social_tiktok(?array $r, string $u): array {
+    $c = scan_social_card('TikTok', 'https://www.tiktok.com/@' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    $desc = scan_og_tag($r['body'], 'og:description'); $title = scan_og_tag($r['body'], 'og:title'); $img = scan_og_tag($r['body'], 'og:image');
+    if (stripos($desc, 'Followers') === false) { $c['exists'] = false; return $c; }   // generic "Visit TikTok…" fallback = no such profile
+    $c['exists'] = true;
+    $name = preg_replace('/\s*\(@.*$/', '', $title);
+    $name = preg_replace('/\s*\|\s*TikTok.*$/i', '', $name);
+    $name = preg_replace('/\s+on TikTok$/i', '', $name);
+    $c['name'] = trim($name);
+    $stats = [];
+    if (preg_match('/([\d.,KMB]+)\s+Followers/i', $desc, $m)) $stats[] = $m[1] . ' followers';
+    if (preg_match('/([\d.,KMB]+)\s+Likes/i', $desc, $m)) $stats[] = $m[1] . ' likes';
+    $c['stats'] = implode(' · ', $stats);
+    if (preg_match('#^https?://#', $img)) $c['avatar'] = $img;
+    return $c;
+}
+function scan_social_gravatar_un(?array $r, string $u): array {
+    $c = scan_social_card('Gravatar', 'https://gravatar.com/' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    if ((int) $r['code'] !== 200) return $c;
+    $prof = scan_gravatar_profile($r['body']);
+    if (!$prof) { $c['exists'] = false; return $c; }
+    $c['exists'] = true;
+    $c['name'] = $prof['name']; $c['bio'] = $prof['about']; $c['location'] = $prof['location'];
+    $j = json_decode($r['body'], true);
+    $hash = (string) ($j['entry'][0]['hash'] ?? '');
+    if ($hash !== '') $c['avatar'] = 'https://gravatar.com/avatar/' . $hash . '?s=200';
+    foreach ($prof['accounts'] as $a) $c['linked'][] = ['service' => $a['label'], 'name' => $a['label'], 'url' => $a['url']];
+    $c['linked'] = array_slice($c['linked'], 0, 8);
+    return $c;
+}
+
 /** Aggregate public profiles for one username across keyless-API platforms. */
 function scan_social_lookup(string $username): array {
     $u = trim($username);
@@ -1452,6 +1504,12 @@ function scan_social_lookup(string $username): array {
         'soundcloud'=>['url' => 'https://soundcloud.com/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
         'deviantart'=>['url' => 'https://www.deviantart.com/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
         'twitch'   => ['url' => 'https://www.twitch.tv/' . rawurlencode(strtolower($u)), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'vimeo'    => ['url' => 'https://vimeo.com/api/v2/' . rawurlencode(strtolower($u)) . '/info.json', 'headers' => $ua, 'follow' => true, 'timeout' => 10],
+        'tiktok'   => ['url' => 'https://www.tiktok.com/@' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'codepen'  => ['url' => 'https://codepen.io/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'behance'  => ['url' => 'https://www.behance.net/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'aboutme'  => ['url' => 'https://about.me/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'gravatar' => ['url' => 'https://gravatar.com/' . rawurlencode(strtolower($u)) . '.json', 'headers' => $ua, 'follow' => true, 'timeout' => 10],
     ], 400000);
     $cards = [
         scan_social_github($res['github'] ?? null, $u),
@@ -1469,6 +1527,12 @@ function scan_social_lookup(string $username): array {
         scan_social_chess($res['chess'] ?? null, $u),
         scan_social_lichess($res['lichess'] ?? null, $u),
         scan_social_reddit($res['reddit'] ?? null, $u),
+        scan_social_vimeo($res['vimeo'] ?? null, $u),
+        scan_social_tiktok($res['tiktok'] ?? null, $u),
+        scan_social_og_card($res['codepen'] ?? null, 'CodePen', 'https://codepen.io/' . $u),
+        scan_social_og_card($res['behance'] ?? null, 'Behance', 'https://www.behance.net/' . $u),
+        scan_social_og_card($res['aboutme'] ?? null, 'about.me', 'https://about.me/' . $u),
+        scan_social_gravatar_un($res['gravatar'] ?? null, $u),
     ];
     return ['ok' => true, 'username' => $u, 'cards' => $cards];
 }
