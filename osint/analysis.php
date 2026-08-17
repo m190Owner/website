@@ -14,6 +14,36 @@ $findings = $scan ? scan_findings((int) $u['id'], (int) $scan['id']) : [];
 $profile  = scan_profile_get((int) $u['id']);
 $correlations = $findings ? scan_correlations($findings) : [];
 $graph = $findings ? scan_graph_data($findings, $profile) : ['nodes' => [], 'edges' => []];
+$timeline = scan_timeline((int) $u['id']);
+
+/** A compact SVG line chart of exposure score across scans (oldest→newest). */
+function os_timeline_svg(array $tl): string {
+    $n = count($tl);
+    if ($n < 2) return '';
+    $W = 680; $H = 190; $pl = 30; $pr = 14; $pt = 14; $pb = 26;
+    $iw = $W - $pl - $pr; $ih = $H - $pt - $pb;
+    $x = fn($i) => $pl + ($n > 1 ? $i * ($iw / ($n - 1)) : $iw / 2);
+    $y = fn($s) => $pt + $ih - ($s / 100) * $ih;
+    $svg = '<svg viewBox="0 0 ' . $W . ' ' . $H . '" class="os-tlsvg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Exposure score over time">';
+    foreach ([0, 25, 50, 75, 100] as $g) {
+        $gy = round($y($g), 1);
+        $svg .= '<line x1="' . $pl . '" y1="' . $gy . '" x2="' . ($W - $pr) . '" y2="' . $gy . '" class="os-tl-grid"/>';
+        $svg .= '<text x="' . ($pl - 6) . '" y="' . ($gy + 3) . '" class="os-tl-ylab">' . $g . '</text>';
+    }
+    $pts = [];
+    foreach ($tl as $i => $p) $pts[] = [round($x($i), 1), round($y($p['score']), 1)];
+    $line = implode(' ', array_map(fn($pt) => $pt[0] . ',' . $pt[1], $pts));
+    $base = $pt + $ih;
+    $area = 'M ' . $pts[0][0] . ',' . $base . ' L ' . implode(' L ', array_map(fn($pt) => $pt[0] . ',' . $pt[1], $pts)) . ' L ' . $pts[$n - 1][0] . ',' . $base . ' Z';
+    $svg .= '<path d="' . $area . '" class="os-tl-area"/><polyline points="' . $line . '" class="os-tl-line"/>';
+    foreach ($tl as $i => $p) {
+        $px = round($x($i), 1); $py = round($y($p['score']), 1);
+        $cls = $p['level'] === 'high' ? 'os-tl-hi' : ($p['level'] === 'mid' ? 'os-tl-mid' : 'os-tl-lo');
+        $svg .= '<circle cx="' . $px . '" cy="' . $py . '" r="4" class="' . $cls . '"><title>' . ose($p['date'] . ' — exposure ' . $p['score'] . ' · ' . $p['accounts'] . ' accounts · ' . $p['breaches'] . ' breaches') . '</title></circle>';
+        if ($n <= 7 || $i === 0 || $i === $n - 1) $svg .= '<text x="' . $px . '" y="' . ($H - 8) . '" class="os-tl-xlab">' . ose(substr($p['date'], 5)) . '</text>';
+    }
+    return $svg . '</svg>';
+}
 
 osint_head('Analysis · m190 finder', 'analysis');
 ?>
@@ -23,6 +53,21 @@ osint_head('Analysis · m190 finder', 'analysis');
     <div class="os-panel">
       <h2>Analysis</h2>
       <p class="os-dim">Derived from your scan of <?= ose(date('Y-m-d H:i', (int) $scan['started_at'])) ?>. Correlations link related findings into insights; the graph shows how your identifiers connect to what was found.</p>
+    </div>
+
+    <div class="os-panel">
+      <h3 class="os-h3">Exposure over time</h3>
+      <?php if (count($timeline) < 2): ?>
+        <p class="os-dim">Your exposure trend appears here once you've run <b>two or more</b> scans. Re-scan periodically — this line is the number to watch drop as you work through removals and hardening.</p>
+      <?php else:
+        $first = $timeline[0]; $last = $timeline[count($timeline) - 1];
+        $delta = $last['score'] - $first['score']; ?>
+        <p class="os-dim os-mb">Your exposure score across <b><?= count($timeline) ?></b> scans.
+          <?php if ($delta < 0): ?><b style="color:var(--os-accent-l)">Down <?= abs($delta) ?></b> since your first — keep going.<?php elseif ($delta > 0): ?><b style="color:var(--os-danger)">Up <?= $delta ?></b> since your first — new exposure has appeared.<?php else: ?>Flat since your first scan.<?php endif; ?>
+        </p>
+        <div class="os-tlwrap"><?= os_timeline_svg($timeline) ?></div>
+        <p class="os-fineprint">Hover a point for that scan's numbers. Lower is better — the score blends accounts, email identity, breaches, and whether a password leaked.</p>
+      <?php endif; ?>
     </div>
 
     <div class="os-panel">

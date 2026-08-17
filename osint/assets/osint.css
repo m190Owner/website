@@ -372,3 +372,15 @@ a.os-top-l:hover{text-decoration:none}
 .os-phish-k{display:inline-block;min-width:56px;color:var(--os-faint);text-transform:uppercase;font-size:.66rem;letter-spacing:.5px}
 .os-phish-body{margin:0;padding:14px;font-family:var(--os-mono);font-size:.82rem;line-height:1.6;color:var(--os-ink);white-space:pre-wrap;word-break:break-word;overflow-x:auto}
 @media (max-width:560px){.os-doss{grid-template-columns:1fr;gap:4px}}
+
+/* Exposure timeline chart */
+.os-tlwrap{overflow-x:auto}
+.os-tlsvg{display:block;width:100%;min-width:320px;height:auto}
+.os-tl-grid{stroke:var(--os-border);stroke-width:1}
+.os-tl-ylab{fill:var(--os-faint);font-size:9px;text-anchor:end;font-family:var(--os-sans)}
+.os-tl-xlab{fill:var(--os-dim);font-size:9px;text-anchor:middle;font-family:var(--os-sans)}
+.os-tl-area{fill:rgba(55,201,139,.10)}
+.os-tl-line{fill:none;stroke:var(--os-accent);stroke-width:2;stroke-linejoin:round;stroke-linecap:round}
+.os-tl-hi{fill:var(--os-danger);stroke:var(--os-bg);stroke-width:1.5}
+.os-tl-mid{fill:var(--os-warn);stroke:var(--os-bg);stroke-width:1.5}
+.os-tl-lo{fill:var(--os-accent);stroke:var(--os-bg);stroke-width:1.5}

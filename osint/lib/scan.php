@@ -2304,3 +2304,18 @@ function scan_attacker_dossier(int $uid): array {
         'kba'         => $kba,
     ];
 }
+
+/** Exposure score + account/breach counts for each of the user's scans, oldest→newest,
+ *  for the exposure-over-time chart. */
+function scan_timeline(int $uid, int $limit = 20): array {
+    $out = [];
+    foreach (array_reverse(scan_history($uid, $limit)) as $h) {
+        $ex = scan_exposure(scan_findings($uid, (int) $h['id']));
+        $out[] = [
+            'ts' => (int) $h['started_at'], 'date' => date('Y-m-d', (int) $h['started_at']),
+            'score' => (int) $ex['score'], 'level' => $ex['level'],
+            'accounts' => (int) $ex['accounts'] + (int) $ex['identity'], 'breaches' => (int) $ex['breaches'],
+        ];
+    }
+    return $out;
+}
