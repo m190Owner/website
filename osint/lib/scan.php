@@ -268,7 +268,7 @@ function osint_deep_modules(): array {
 
 /** Per-email checks in order. $deep adds the no-email modules, $probe adds emailing ones. */
 function scan_email_checks(bool $deep, bool $probe): array {
-    $c = ['breach', 'gravatar', 'duolingo', 'ghemail'];
+    $c = ['breach', 'gravatar', 'duolingo', 'ghemail', 'leakcheck'];
     foreach (osint_deep_modules() as $id => $m) {
         $emailing = !empty($m['emails']);
         if (($emailing && $probe) || (!$emailing && $deep)) $c[] = 'deep:' . $id;
@@ -375,6 +375,8 @@ function scan_chunk(int $uid, int $scanId): array {
             $tasks[$i] = ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } elseif ($t['kind'] === 'ghemail') { // GitHub user whose PUBLIC email matches (no email sent)
             $tasks[$i] = ['url' => 'https://api.github.com/search/users?q=' . rawurlencode($t['email']) . '+in:email', 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/vnd.github+json'], 'follow' => true];
+        } elseif ($t['kind'] === 'leakcheck') { // second breach corpus (names/dates/fields), no email sent
+            $tasks[$i] = ['url' => 'https://leakcheck.io/api/public?check=' . rawurlencode($t['email']), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true];
         } else { // deep:<module>
             $id  = substr($t['kind'], 5);
             $mod = osint_deep_modules()[$id] ?? null;
@@ -419,6 +421,9 @@ function scan_chunk(int $uid, int $scanId): array {
                 $detail = trim(($b['date'] ?: '') . ($b['data'] ? ' · ' . $b['data'] : ''), ' ·');
                 $emit('breach', $t['email'] . ' in the ' . $b['name'] . ' breach', 'https://xposedornot.com/', 'email,breach', $b['logo'], $detail);
             }
+            $pj = json_decode($r['body'], true);   // pastes come in the same response we already fetched
+            $pc = is_array($pj) ? (int) ($pj['PastesSummary']['cnt'] ?? 0) : 0;
+            if ($pc > 0) $emit('breach', $t['email'] . ' — in ' . $pc . ' public paste(s)', 'https://xposedornot.com/', 'email,breach', '', 'This address appeared in ' . $pc . ' public paste(s) (Pastebin and similar).');
         } elseif ($t['kind'] === 'gravatar') {
             if (!$r || $r['err']) { $unreachInc++; continue; }
             if ($r['code'] === 404) continue;                     // no Gravatar for this email
@@ -452,6 +457,15 @@ function scan_chunk(int $uid, int $scanId): array {
                 $emit('account', $t['email'] . ' — GitHub @' . $login, (string) ($it['html_url'] ?? 'https://github.com/' . $login),
                       'email,account', (string) ($it['avatar_url'] ?? ''), 'A GitHub user has this email public on their commits or profile.');
             }
+        } elseif ($t['kind'] === 'leakcheck') {
+            if (!$r || $r['err'] || $r['code'] !== 200) { $unreachInc++; continue; }
+            $j = json_decode($r['body'], true);
+            if (!is_array($j) || empty($j['success']) || (int) ($j['found'] ?? 0) === 0) continue;   // clean
+            $src = [];
+            foreach (($j['sources'] ?? []) as $s) { $n = (string) ($s['name'] ?? ''); if ($n !== '') $src[] = $n . (!empty($s['date']) ? ' (' . substr((string) $s['date'], 0, 4) . ')' : ''); }
+            $fields = array_slice(array_map(fn($x) => ucfirst(str_replace('_', ' ', (string) $x)), (array) ($j['fields'] ?? [])), 0, 12);
+            $detail = trim(($src ? implode(', ', array_slice($src, 0, 12)) : ((int) $j['found'] . ' records')) . ($fields ? ' · exposes ' . implode(', ', $fields) : ''), ' ·');
+            $emit('breach', $t['email'] . ' — ' . (int) $j['found'] . ' record(s) found (LeakCheck)', 'https://leakcheck.io/', 'email,breach', '', mb_substr($detail, 0, 250));
         } else { // deep:<module>
             $mod = osint_deep_modules()[substr($t['kind'], 5)] ?? null;
             if (!$mod || !$r || $r['err']) { $unreachInc++; continue; }
@@ -1603,13 +1617,16 @@ function scan_exposure(array $findings): array {
             $detail = (string) ($f['detail'] ?? '');
             if (stripos($detail, 'password') !== false) $pwExposed = true;
             if (preg_match('/\b(19|20)\d\d\b/', $detail, $m)) $years[] = (int) $m[0];
-            // Aggregate the exposed data classes ("Passwords, Physical addresses, ...").
-            $rest = preg_replace('/^\s*(19|20)\d\d\s*·?\s*/', '', $detail);
-            foreach (explode(',', $rest) as $c) {
-                $c = trim($c);
-                if ($c !== '' && !preg_match('/^(19|20)\d\d$/', $c)) {
-                    $k = mb_strtolower($c);
-                    if (!isset($classes[$k])) $classes[$k] = $c;
+            // Aggregate the exposed data classes — only from the XposedOrNot per-breach findings,
+            // whose detail is "YEAR · Classes" (LeakCheck / paste summaries have a different shape).
+            if (strpos((string) ($f['title'] ?? ''), ' in the ') !== false) {
+                $rest = preg_replace('/^\s*(19|20)\d\d\s*·?\s*/', '', $detail);
+                foreach (explode(',', $rest) as $c) {
+                    $c = trim($c);
+                    if ($c !== '' && !preg_match('/^(19|20)\d\d$/', $c)) {
+                        $k = mb_strtolower($c);
+                        if (!isset($classes[$k])) $classes[$k] = $c;
+                    }
                 }
             }
         } elseif ($cat === 'account') {
