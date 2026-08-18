@@ -10,9 +10,13 @@ $u = osint_current_user();
 $data = json_decode((string) @file_get_contents(__DIR__ . '/assets/brokers.json'), true);
 $brokers = $data['brokers'] ?? [];
 $state = scan_checklist_get((int) $u['id'], 'brokers');
+$full  = scan_checklist_get_full((int) $u['id'], 'brokers');
 $verify = scan_checklist_get((int) $u['id'], 'brokerverify');
 $doneCount = count(array_filter($state, fn($s) => $s === 'done'));
 $verifiedCount = count(array_filter($verify, fn($s) => $s === 'done'));
+// Opt-outs sent but not yet confirmed removed (status 'started') — the active campaign.
+$pending = [];
+foreach ($brokers as $b) { $s = $full[$b['id']] ?? null; if ($s && $s['status'] === 'started') $pending[] = $b + ['sent' => $s['updated_at']]; }
 /** Registrable base domain from a broker URL, for a `site:` listing search. */
 $baseDomain = function (string $url): string {
     $h = strtolower((string) parse_url($url, PHP_URL_HOST));
@@ -64,6 +68,33 @@ osint_head('Removal center · m190 finder', 'removal');
     <p class="os-fineprint" id="os-vf-hint">Brokers block automated checks, so this opens each search in your own browser — look for your profile, then mark it <b>still listed</b> or <b>removed</b> below.</p>
   </div>
 
+  <div class="os-panel" id="os-rc-panel"<?= $pending ? '' : ' hidden' ?>>
+    <div class="os-sec-head">
+      <h3 class="os-h3">&#9200; Removal campaign</h3>
+      <div class="os-inrow" style="gap:6px;align-items:center">
+        <span class="os-dim" style="font-size:.8rem">deadline law</span>
+        <select id="os-rc-horizon" class="os-select" style="min-width:0">
+          <option value="45">CCPA · 45 days</option>
+          <option value="30">GDPR · 30 days</option>
+        </select>
+      </div>
+    </div>
+    <p class="os-dim os-mb">Opt-outs you've marked <b>pending</b>, with the legal clock running — brokers must delete within the statutory window. Sent dates come from when you marked each one pending; when one lapses, escalate.</p>
+    <div id="os-rc-summary" class="os-riskrow" style="margin-bottom:10px"></div>
+    <div class="os-list" id="os-rc-list">
+      <?php foreach ($pending as $b): ?>
+        <div class="os-row" data-rc data-sent="<?= (int) $b['sent'] ?>" data-name="<?= ose($b['name']) ?>" data-region="<?= ose($b['region'] ?? '') ?>">
+          <div class="os-row-main">
+            <div class="os-row-t"><a href="<?= ose($b['optout']) ?>" target="_blank" rel="noopener nofollow"><?= ose($b['name']) ?></a> <span class="os-rc-badge"></span></div>
+            <div class="os-row-d os-rc-meta"></div>
+            <div class="os-rc-esc" hidden style="margin-top:8px"></div>
+          </div>
+          <div class="os-row-side"><button type="button" class="os-pendbtn os-rc-escbtn" hidden>Escalate</button></div>
+        </div>
+      <?php endforeach; ?>
+    </div>
+  </div>
+
   <div data-checklist="brokers">
   <?php foreach ($tiers as $tk => $tlabel): if (empty($grouped[$tk])) continue; ?>
     <div class="os-panel">
@@ -104,4 +135,4 @@ osint_head('Removal center · m190 finder', 'removal');
 
   <p class="os-fineprint"><?= ose($data['note'] ?? '') ?> Opt-outs can take days to weeks to process, and some brokers re-list after a while — mark those <b>pending</b> and recheck in a few months.</p>
 <?php
-osint_foot(['checklist.js', 'brokerverify.js']);
+osint_foot(['checklist.js', 'brokerverify.js', 'removal-campaign.js']);

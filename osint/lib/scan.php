@@ -1931,6 +1931,19 @@ function scan_checklist_get(int $uid, string $list): array {
     } catch (\Throwable $e) { return []; }
 }
 
+/** Checklist state with timestamps as [item => ['status','updated_at']] — powers the
+ *  removal-campaign deadline tracking (updated_at of a 'started' item ≈ when it was sent). */
+function scan_checklist_get_full(int $uid, string $list): array {
+    $db = scan_db(); if (!$db) return [];
+    try {
+        $st = $db->prepare("SELECT item, status, updated_at FROM osint_checklist WHERE user_id = ? AND list = ?");
+        $st->execute([$uid, $list]);
+        $out = [];
+        foreach ($st->fetchAll() as $r) $out[$r['item']] = ['status' => $r['status'], 'updated_at' => (int) $r['updated_at']];
+        return $out;
+    } catch (\Throwable $e) { return []; }
+}
+
 /** Set (or clear, when 'todo') one checklist item's status for the user. */
 function scan_checklist_set(int $uid, string $list, string $item, string $status): bool {
     if (!in_array($status, OSINT_CHECK_STATUSES, true)) return false;
