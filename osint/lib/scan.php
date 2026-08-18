@@ -79,6 +79,11 @@ function scan_db(): ?PDO {
         // domains for newly-issued certs (early warning for phishing infra / takeover).
         try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN ct_enabled INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
         try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN ct_pending TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
+        // Handle-takeover monitoring: watch the user's handle-variations for NEW look-alike
+        // accounts appearing across platforms (impersonation early warning).
+        try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN handle_enabled INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
+        try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN handle_known TEXT NOT NULL DEFAULT '{}'"); } catch (\Throwable $e) {}
+        try { $db->exec("ALTER TABLE osint_monitor ADD COLUMN handle_pending TEXT NOT NULL DEFAULT '[]'"); } catch (\Throwable $e) {}
         // Per-domain CT baseline (the highest Cert Spotter issuance id seen so far).
         $db->exec("CREATE TABLE IF NOT EXISTS osint_ct_state (
             user_id INTEGER NOT NULL, domain TEXT NOT NULL, last_id TEXT NOT NULL DEFAULT '',
@@ -2002,6 +2007,68 @@ function scan_ct_enabled_users(): array {
     $db = scan_db(); if (!$db) return [];
     try { return array_map('intval', $db->query("SELECT user_id FROM osint_monitor WHERE ct_enabled = 1")->fetchAll(PDO::FETCH_COLUMN)); }
     catch (\Throwable $e) { return []; }
+}
+
+// ---- handle-takeover monitoring (opt-in; watches for NEW look-alike accounts) ----
+/** Handle-monitoring state: [enabled, pending[]]. */
+function scan_handle_get(int $uid): array {
+    $db = scan_db(); if (!$db) return ['enabled' => false, 'pending' => []];
+    try {
+        $st = $db->prepare("SELECT handle_enabled, handle_pending FROM osint_monitor WHERE user_id = ?");
+        $st->execute([$uid]);
+        $r = $st->fetch();
+        return ['enabled' => $r ? (bool) $r['handle_enabled'] : false, 'pending' => $r ? (array) json_decode($r['handle_pending'] ?: '[]', true) : []];
+    } catch (\Throwable $e) { return ['enabled' => false, 'pending' => []]; }
+}
+function scan_handle_set_enabled(int $uid, bool $on): void {
+    $db = scan_db(); if (!$db) return;
+    try {
+        $db->prepare("INSERT INTO osint_monitor (user_id, handle_enabled, known, pending) VALUES (?,?,'{}','[]')
+                      ON CONFLICT(user_id) DO UPDATE SET handle_enabled = excluded.handle_enabled")->execute([$uid, $on ? 1 : 0]);
+    } catch (\Throwable $e) {}
+}
+function scan_handle_clear_pending(int $uid): void {
+    $db = scan_db(); if (!$db) return;
+    try { $db->prepare("UPDATE osint_monitor SET handle_pending = '[]' WHERE user_id = ?")->execute([$uid]); } catch (\Throwable $e) {}
+}
+function scan_handle_enabled_users(): array {
+    $db = scan_db(); if (!$db) return [];
+    try { return array_map('intval', $db->query("SELECT user_id FROM osint_monitor WHERE handle_enabled = 1")->fetchAll(PDO::FETCH_COLUMN)); }
+    catch (\Throwable $e) { return []; }
+}
+
+/** Re-check the user's handle-variations for NEW look-alike accounts vs the stored
+ *  baseline (first sight is baselined silently). Returns the count of new look-alikes. */
+function scan_handle_run(int $uid): int {
+    $db = scan_db(); if (!$db) return 0;
+    $p = scan_profile_get($uid);
+    $st = $db->prepare("SELECT handle_known, handle_pending FROM osint_monitor WHERE user_id = ?");
+    $st->execute([$uid]);
+    $row = $st->fetch();
+    $known = $row ? (array) json_decode($row['handle_known'] ?: '{}', true) : [];
+    $pending = $row ? (array) json_decode($row['handle_pending'] ?: '[]', true) : [];
+
+    $newCount = 0;
+    foreach ($p['usernames'] as $un) {
+        $res = scan_impersonation($un);
+        if (empty($res['ok'])) continue;   // couldn't check — don't disturb baseline
+        $cur = [];
+        foreach ($res['rows'] as $r) {
+            if (!empty($r['is_you'])) continue;
+            foreach ($r['hits'] as $plat) $cur[$r['variant'] . '|' . $plat] = ['variant' => (string) $r['variant'], 'platform' => (string) $plat];
+        }
+        $prev = $known[$un] ?? null;
+        if ($prev === null) { $known[$un] = array_keys($cur); continue; }   // baseline silently
+        foreach ($cur as $key => $info) if (!in_array($key, $prev, true)) { $pending[] = ['username' => $un, 'variant' => $info['variant'], 'platform' => $info['platform'], 'at' => time()]; $newCount++; }
+        $known[$un] = array_values(array_unique(array_merge($prev, array_keys($cur))));
+    }
+    $pending = array_slice($pending, -50);
+    try {
+        $db->prepare("INSERT INTO osint_monitor (user_id, handle_known, handle_pending, known, pending) VALUES (?,?,?,'{}','[]')
+                      ON CONFLICT(user_id) DO UPDATE SET handle_known = excluded.handle_known, handle_pending = excluded.handle_pending")
+           ->execute([$uid, json_encode($known), json_encode($pending)]);
+    } catch (\Throwable $e) {}
+    return $newCount;
 }
 
 // ---- canary / decoy identifiers (leak attribution) ----

@@ -21,6 +21,8 @@
   wireDismiss(document.getElementById('os-mon-dismiss'), document.getElementById('os-mon-alert'));
   var ctDismiss = document.getElementById('os-ct-dismiss');
   if (ctDismiss) ctDismiss.addEventListener('click', function () { post({ action: 'dismiss_ct' }); var b = document.getElementById('os-ct-alert'); if (b) b.style.display = 'none'; });
+  var hnDismiss = document.getElementById('os-hn-dismiss');
+  if (hnDismiss) hnDismiss.addEventListener('click', function () { post({ action: 'dismiss_handle' }); var b = document.getElementById('os-hn-alert'); if (b) b.style.display = 'none'; });
 
   function wireToggle(id, action, statusId, onText) {
     var tog = document.getElementById(id);
@@ -36,6 +38,7 @@
   }
   wireToggle('os-mon-toggle', 'toggle', 'os-mon-status', 'On — we’ll re-check automatically when you visit and flag new breaches here.');
   wireToggle('os-ct-toggle', 'toggle_ct', 'os-ct-status', 'On — we’ll watch the certificate-transparency logs for your domains and flag new certificates here.');
+  wireToggle('os-hn-toggle', 'toggle_handle', 'os-hn-status', 'On — we’ll re-check your handle variations and flag new look-alike accounts here.');
 
   function showAlert(pending) {
     if (document.getElementById('os-mon-alert') || !pending || !pending.length) return;
@@ -72,13 +75,32 @@
     if (b) b.addEventListener('click', function () { post({ action: 'dismiss_ct' }); div.style.display = 'none'; });
   }
 
+  function showHandleAlert(pending) {
+    if (document.getElementById('os-hn-alert') || !pending || !pending.length) return;
+    var items = pending.slice().reverse().map(function (hi) {
+      return '<li><span class="os-code">' + esc(hi.variant) + '</span> on <b>' + esc(hi.platform) + '</b></li>';
+    }).join('');
+    var div = document.createElement('div');
+    div.className = 'os-panel os-alertbox'; div.id = 'os-hn-alert';
+    div.innerHTML = '<h3 class="os-h3">&#9888; New look-alike account of your handle</h3>'
+      + '<p class="os-dim os-mb"><b>' + pending.length + '</b> new account(s) matching a variation of your handle appeared:</p>'
+      + '<ul class="os-rlist">' + items + '</ul>'
+      + '<div class="os-inrow" style="margin-top:12px"><a class="os-btn os-btn-sm" href="/osint/social.php">Review on Social</a>'
+      + '<button type="button" class="os-btn os-btn-sm" id="os-hn-dismiss">Got it, dismiss</button></div>';
+    var main = document.querySelector('.os-main');
+    if (main) main.insertBefore(div, main.firstChild);
+    var b = document.getElementById('os-hn-dismiss');
+    if (b) b.addEventListener('click', function () { post({ action: 'dismiss_handle' }); div.style.display = 'none'; });
+  }
+
   // Self-driving check: only present when the server says a re-check is due. One sweep
-  // covers both breach monitoring and certificate-transparency monitoring.
+  // covers breach, certificate-transparency, and handle-takeover monitoring.
   if (document.getElementById('os-mon-auto')) {
     post({ action: 'check' }).then(function (r) {
       if (!r || !r.ran) return;
       if (r.new > 0) showAlert(r.pending);
       if (r.ct_new > 0) showCtAlert(r.ct_pending);
+      if (r.handle_new > 0) showHandleAlert(r.handle_pending);
     }).catch(function () {});
   }
 })();

@@ -23,7 +23,8 @@ $threatBrief = scan_threat_brief($threat, $latest ? scan_findings((int) $u['id']
 $siteCount = count(scan_sites());
 $mon = scan_monitor_get((int) $u['id']);
 $ct = scan_ct_get((int) $u['id']);
-$monDue = ($mon['enabled'] || $ct['enabled']) && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
+$handle = scan_handle_get((int) $u['id']);
+$monDue = ($mon['enabled'] || $ct['enabled'] || $handle['enabled']) && (time() - (int) $mon['last_check'] >= OSINT_MONITOR_INTERVAL);
 $expiryWarn = scan_expiry_warnings((int) $u['id']);
 
 // Tool cards for the hub grid: [icon, title, href, description].
@@ -77,6 +78,21 @@ osint_head('m190 finder', 'dashboard');
       <div class="os-inrow" style="margin-top:12px">
         <a class="os-btn os-btn-sm" href="/osint/domain.php">Review domains</a>
         <button type="button" class="os-btn os-btn-sm" id="os-ct-dismiss">Got it, dismiss</button>
+      </div>
+    </div>
+  <?php endif; ?>
+  <?php if ($handle['pending']): ?>
+    <div class="os-panel os-alertbox" id="os-hn-alert">
+      <h3 class="os-h3">&#9888; New look-alike account of your handle</h3>
+      <p class="os-dim os-mb"><b><?= count($handle['pending']) ?></b> new account(s) matching a variation of your handle appeared — verify they aren't impersonating you:</p>
+      <ul class="os-rlist">
+        <?php foreach (array_reverse($handle['pending']) as $hi): ?>
+          <li><span class="os-code"><?= ose($hi['variant']) ?></span> on <b><?= ose($hi['platform']) ?></b></li>
+        <?php endforeach; ?>
+      </ul>
+      <div class="os-inrow" style="margin-top:12px">
+        <a class="os-btn os-btn-sm" href="/osint/social.php">Review on Social</a>
+        <button type="button" class="os-btn os-btn-sm" id="os-hn-dismiss">Got it, dismiss</button>
       </div>
     </div>
   <?php endif; ?>
@@ -177,6 +193,16 @@ osint_head('m190 finder', 'dashboard');
         <label class="os-switch"><input type="checkbox" id="os-ct-toggle" <?= $ct['enabled'] ? 'checked' : '' ?>><span class="os-switch-t"></span></label>
       </div>
       <p class="os-dim" id="os-ct-status"><?php if ($ct['enabled']): ?>On — we watch the public certificate-transparency logs for your domains and flag any <b>newly-issued</b> certificate here. An unexpected one is an early warning for phishing infrastructure or a subdomain takeover.<?php else: ?>Off — turn it on to be alerted the moment a certificate is issued for any name under your domains (early warning for impersonation or takeover), checked automatically when you visit.<?php endif; ?></p>
+    </div>
+  <?php endif; ?>
+
+  <?php if ($p['usernames']): ?>
+    <div class="os-panel">
+      <div class="os-sec-head">
+        <h3 class="os-h3">Handle-takeover monitoring</h3>
+        <label class="os-switch"><input type="checkbox" id="os-hn-toggle" <?= $handle['enabled'] ? 'checked' : '' ?>><span class="os-switch-t"></span></label>
+      </div>
+      <p class="os-dim" id="os-hn-status"><?php if ($handle['enabled']): ?>On — we re-check variations of your handle across platforms when you visit and flag any <b>new</b> look-alike account, so you catch impersonators early.<?php else: ?>Off — turn it on to be alerted when a <b>new</b> account resembling your handle appears on the checked platforms (impersonation early warning).<?php endif; ?></p>
     </div>
   <?php endif; ?>
 

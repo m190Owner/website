@@ -24,5 +24,10 @@ $ctUsers = scan_ct_enabled_users();
 $ctNew = 0;
 foreach ($ctUsers as $uid) $ctNew += scan_ct_run((int) $uid);
 
+$hnUsers = scan_handle_enabled_users();
+$hnNew = 0;
+foreach ($hnUsers as $uid) $hnNew += scan_handle_run((int) $uid);
+
 echo 'ok: breach — checked ' . count($users) . ' user(s), ' . $new . " new exposure(s); "
-   . 'CT — checked ' . count($ctUsers) . ' user(s), ' . $ctNew . " new cert(s)\n";
+   . 'CT — checked ' . count($ctUsers) . ' user(s), ' . $ctNew . " new cert(s); "
+   . 'handles — checked ' . count($hnUsers) . ' user(s), ' . $hnNew . " new look-alike(s)\n";
