@@ -219,7 +219,7 @@
         banner.querySelector('.wbn-title').textContent = '⏳ Waiting for players';
         banner.querySelector('.wbn-sub').textContent = 'The arena starts when 2+ are online';
         banner.style.display = 'block'; banner.style.opacity = '1';
-        bannerFade = setTimeout(() => { banner.style.opacity = '0'; }, 5000);
+        bannerFade = setTimeout(() => { banner.style.opacity = '0'; }, 2000);
       }
     } else {
       clearTimeout(bannerFade);
