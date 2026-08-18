@@ -421,3 +421,11 @@ a.os-top-l:hover{text-decoration:none}
 /* Canaries */
 .os-cn-tripped{box-shadow:inset 3px 0 0 var(--os-danger)}
 .os-cn-deploy{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:2px}
+
+/* Spot-the-phish quiz */
+.os-quiz-item{border:1px solid var(--os-border);border-radius:10px;padding:12px;margin-bottom:12px}
+.os-quiz-actions{display:flex;gap:8px;margin-top:10px}
+.os-quiz-reveal{margin-top:10px}
+.os-q-btn:disabled{opacity:.55;cursor:default}
+.os-q-answer{border-color:var(--os-accent)!important;color:var(--os-accent-l)!important}
+.os-quiz-score{margin-top:4px}

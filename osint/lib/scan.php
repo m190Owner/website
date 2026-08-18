@@ -2745,6 +2745,43 @@ function scan_exposure_receipt(int $uid, string $subject = '', bool $verifyDomai
     return ['payload' => $payload, 'hash' => hash('sha256', (string) $canonical), 'ts' => $ts];
 }
 
+/** A "spot the phish" training quiz personalised from the user's own exposure: a mix of
+ *  phishing messages (built with their real name/email/breach, like the spear-phish sim)
+ *  and legitimate ones, each with the tells revealed after answering. */
+function scan_phish_quiz(int $uid): array {
+    $d = scan_attacker_dossier($uid);
+    $name = $d['identity']['names'][0] ?? '';
+    $greet = $name !== '' ? $name : 'there';
+    $email = $d['contact']['emails'][0] ?? 'you@example.com';
+    $edom = strpos($email, '@') !== false ? substr($email, strpos($email, '@') + 1) : 'example.com';
+    $svc = $d['credentials']['breaches'][0] ?? ($d['handles'][0]['platform'] ?? 'your bank');
+    $sdom = preg_replace('/[^a-z0-9]/', '', strtolower($svc)) ?: 'account';
+
+    $items = [
+        // The personalised spear-phish from the dossier.
+        ['from' => $d['phish']['from'], 'subject' => $d['phish']['subject'], 'body' => $d['phish']['body'], 'phish' => true,
+         'reasons' => ['Sender is a look-alike domain, not the real service.', 'Manufactured urgency (24-hour lock).',
+                       ($name !== '' ? 'Uses your real name to feel legitimate — that data is public.' : 'Generic greeting with a scary hook.'), 'A "verify" link that would harvest your login.']],
+        // Package-delivery lure.
+        ['from' => '"Delivery Notice" <tracking@parcel-redelivery' . '.com>', 'subject' => 'Your package is on hold — small fee required', 'phish' => true,
+         'body' => "Hi " . $greet . ",\n\nWe attempted delivery but a $2.99 redelivery fee is outstanding. Confirm your address and pay to release your parcel:\n\n   https://parcel-redelivery.com/pay\n\nUndelivered items are returned after 48 hours.",
+         'reasons' => ['A tiny "fee" to capture your card details.', 'You weren\'t expecting a package from them.', 'Look-alike courier domain.', 'Deadline pressure (48 hours).']],
+        // Direct-deposit / BEC lure.
+        ['from' => '"HR Payroll" <payroll@' . $edom . '.hr-portal' . '.net>', 'subject' => 'Action required: confirm your direct-deposit details', 'phish' => true,
+         'body' => "Hello " . $greet . ",\n\nOur payroll system is migrating. To receive your next paycheck, re-confirm your bank account and routing number using the secure form below by end of day.\n\n   https://" . $sdom . "-hrportal.net/deposit\n\nPayroll Team",
+         'reasons' => ['Internal request coming from an external look-alike domain.', 'Direct-deposit changes are the classic payroll-diversion scam.', 'Asks for bank details via a link.', 'End-of-day urgency.']],
+        // Legit newsletter.
+        ['from' => '"' . ucfirst($sdom) . ' Digest" <news@' . $sdom . '.com>', 'subject' => 'Your weekly digest', 'phish' => false,
+         'body' => "Hi " . $greet . ",\n\nHere are this week's top stories and updates from your account. No action needed.\n\nManage preferences or unsubscribe any time using the links at the bottom of this email.",
+         'reasons' => ['No urgency and nothing to "verify".', 'Doesn\'t ask for credentials, payment, or personal data.', 'Offers a genuine unsubscribe/preferences link.', 'Still — hover links before clicking; brands do get spoofed.']],
+        // Legit receipt.
+        ['from' => '"Receipts" <receipt@' . $sdom . '.com>', 'subject' => 'Your receipt (#' . random_int(10000, 99999) . ')', 'phish' => false,
+         'body' => "Hi " . $greet . ",\n\nThanks for your order. Your receipt is attached to your account — nothing further is required.\n\nIf you didn't make this purchase, contact support through the app (not a link in this email).",
+         'reasons' => ['Confirms an expected action rather than demanding one.', 'Points you to the app, not a link, for problems.', 'No credential or payment request.', 'Verify by logging in directly if unsure.']],
+    ];
+    return ['items' => $items, 'phish_count' => count(array_filter($items, fn($i) => $i['phish']))];
+}
+
 /** Exposure score + account/breach counts for each of the user's scans, oldest→newest,
  *  for the exposure-over-time chart. */
 function scan_timeline(int $uid, int $limit = 20): array {

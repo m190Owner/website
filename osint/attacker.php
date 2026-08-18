@@ -9,6 +9,7 @@ require __DIR__ . '/lib/osint_ui.php';
 osint_require();
 $u = osint_current_user();
 $d = scan_attacker_dossier((int) $u['id']);
+$quiz = $d['has_scan'] ? scan_phish_quiz((int) $u['id']) : null;
 
 /** A labelled dossier group; $items already HTML-escaped tags. */
 function os_doss(string $label, string $body): string {
@@ -86,6 +87,15 @@ osint_head('Attacker view · m190 finder', 'attacker');
       <?php endif; ?>
     </div>
 
+    <?php if ($quiz): ?>
+      <div class="os-panel">
+        <h3 class="os-h3">🎣 Spot the phish <span class="os-dim">— train your eye</span></h3>
+        <p class="os-dim os-mb">Some of these messages are phishing (a few built from your own exposed data), some are legit. Judge each, then see the tells. This is how a targeted attack will actually reach you — practice catching it.</p>
+        <div id="os-quiz"></div>
+        <script type="application/json" id="os-quiz-data"><?= json_encode($quiz, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?></script>
+      </div>
+    <?php endif; ?>
+
     <div class="os-panel">
       <h3 class="os-h3">🔐 Security-question exposure</h3>
       <p class="os-dim os-mb">Account-recovery / "prove it's you" questions, and whether your public data already answers them. This is how accounts get taken over without ever cracking a password.</p>
@@ -104,4 +114,4 @@ osint_head('Attacker view · m190 finder', 'attacker');
 
   <?php endif; ?>
 <?php
-osint_foot();
+osint_foot(['quiz.js']);
