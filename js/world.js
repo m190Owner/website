@@ -61,7 +61,7 @@
     .wb-nuke>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#faa61a,#ff5555)}
     .wb-pow{color:#ffd27b;font-weight:700;font-size:.82rem}
     .wb-status{font-size:.72rem;color:#8a96b8}
-    #world-banner{position:fixed;left:50%;top:32%;transform:translate(-50%,-50%);z-index:70;pointer-events:none;display:none;
+    #world-banner{position:fixed;left:50%;top:32%;transform:translate(-50%,-50%);z-index:70;pointer-events:none;display:none;transition:opacity .6s ease;
       text-align:center;background:rgba(12,12,16,.86);border:1px solid rgba(122,162,255,.35);border-radius:16px;padding:20px 34px;
       box-shadow:0 10px 40px rgba(0,0,0,.6)}
     #world-banner .wbn-title{font:800 28px 'Segoe UI';color:#ffd27b}
@@ -171,7 +171,7 @@
     applyState(await send('attack', { target: targetId }));
   }
 
-  let lastRound = 1, lastPhase = 'active', prevHp = {};
+  let lastRound = 1, lastPhase = 'active', prevHp = {}, bannerFade = 0;
   function applyState(data) {
     if (!data) return;
     const players = data.players || {}, round = data.round || {};
@@ -208,14 +208,21 @@
     // round / nuke / waiting banner
     if (round.phase === 'inter') {
       if (lastPhase !== 'inter') { flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go'); } // nuke flash on the transition
-      banner.style.display = 'block';
+      clearTimeout(bannerFade);
+      banner.style.display = 'block'; banner.style.opacity = '1';
       banner.querySelector('.wbn-title').textContent = '🏆 ' + (round.winner || 'someone') + ' won!';
       banner.querySelector('.wbn-sub').textContent = 'New round in ' + Math.ceil((round.interMs || 0) / 1000) + 's';
     } else if (round.phase === 'wait') {
-      banner.style.display = 'block';
-      banner.querySelector('.wbn-title').textContent = '⏳ Waiting for players';
-      banner.querySelector('.wbn-sub').textContent = 'The arena starts when 2+ are online';
+      // Show once when the wait phase begins, then fade out — don't sit on screen the whole time you're alone.
+      if (lastPhase !== 'wait') {
+        clearTimeout(bannerFade);
+        banner.querySelector('.wbn-title').textContent = '⏳ Waiting for players';
+        banner.querySelector('.wbn-sub').textContent = 'The arena starts when 2+ are online';
+        banner.style.display = 'block'; banner.style.opacity = '1';
+        bannerFade = setTimeout(() => { banner.style.opacity = '0'; }, 5000);
+      }
     } else {
+      clearTimeout(bannerFade);
       banner.style.display = 'none';
     }
     lastPhase = round.phase; lastRound = round.id;
