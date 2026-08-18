@@ -30,5 +30,17 @@ osint_head('File metadata · m190 finder', 'metadata', ['narrow' => true]);
     </div>
     <div id="os-pout" hidden style="margin-top:4px"></div>
   </div>
+
+  <div class="os-panel">
+    <h2>🔗 Link documents</h2>
+    <p>Drop <b>several</b> documents (PDF / Word / Excel / PowerPoint). Even with your name stripped from the visible text, files carry an <b>author</b>, the software and company that made them, and template fingerprints. This finds the metadata your documents <b>share</b> — the thread that ties "anonymous" files back to the same person. All read in your browser.</p>
+    <div class="os-drop" id="os-ddrop" style="margin-top:14px">
+      <div style="font-size:1.6rem">📎</div>
+      <div style="margin-top:6px"><b>Drop multiple documents</b> or click to choose</div>
+      <div class="os-dim" style="font-size:.78rem;margin-top:4px">PDF, docx, xlsx, pptx · correlated entirely in your browser</div>
+      <input type="file" id="os-df" accept=".pdf,.docx,.xlsx,.pptx,application/pdf" multiple hidden>
+    </div>
+    <div id="os-dout" hidden style="margin-top:4px"></div>
+  </div>
 <?php
-osint_foot(['metadata.js', 'photomap.js']);
+osint_foot(['metadata.js', 'photomap.js', 'docmeta.js']);
