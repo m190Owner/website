@@ -19,7 +19,7 @@ if ($action === 'ip') {
     $ip = trim($q);
     if (!filter_var($ip, FILTER_VALIDATE_IP)) { echo json_encode(['error' => 'Not a valid IP address.']); exit; }
     $info = scan_ip_footprint($ip);
-    if (empty($info['private'])) $info['ptr'] = scan_ptr($ip);
+    if (empty($info['private'])) { $info['ptr'] = scan_ptr($ip); $info['services'] = scan_internetdb($ip); }
     $info['ok'] = !isset($info['error']);
     echo json_encode($info); exit;
 }

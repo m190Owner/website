@@ -9,6 +9,7 @@ osint_require();
 $ip = os_client_ip();
 $info = scan_ip_footprint($ip);
 $priv = !empty($info['private']);
+$services = $priv ? null : scan_internetdb($ip);
 
 $repLinks = [
     ['AbuseIPDB', 'https://www.abuseipdb.com/check/' . rawurlencode($ip), '🛑'],
@@ -80,6 +81,32 @@ osint_head('Network footprint · m190 finder', 'network');
         <?php endforeach; ?>
       </div>
     </div>
+
+    <?php if ($services !== null): ?>
+      <div class="os-panel">
+        <h3 class="os-h3">Exposed services <span class="os-dim">(Shodan InternetDB)</span></h3>
+        <?php if (empty($services['found'])): ?>
+          <p class="os-dim">No internet-facing services are recorded for your IP — nothing is listening publicly, which is the safe state for a home connection.</p>
+        <?php else: ?>
+          <p class="os-dim os-mb">Ports and known vulnerabilities Shodan sees on your public IP. On a home connection this should be empty; anything here is reachable from the whole internet — close it or put it behind a firewall/VPN.</p>
+          <?php if (!empty($services['ports'])): ?>
+            <div class="os-subhead" style="margin-top:0">Open ports</div>
+            <div class="os-taglist">
+              <?php foreach ($services['ports'] as $p): $lbl = scan_port_label((int) $p); $risky = in_array((int) $p, [23, 135, 139, 445, 3389, 3306, 5432, 6379, 27017, 9200, 11211, 5900], true); ?>
+                <span class="os-tag<?= $risky ? ' os-tag-hi' : '' ?>"><?= (int) $p ?><?= $lbl ? ' ' . ose($lbl) : '' ?></span>
+              <?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+          <?php if (!empty($services['vulns'])): ?>
+            <div class="os-warn-box"><b><?= count($services['vulns']) ?> known CVE(s)</b> on services exposed by your IP — patch the affected software or take it off the public internet.</div>
+            <div class="os-taglist" style="margin-top:8px">
+              <?php foreach (array_slice($services['vulns'], 0, 24) as $v): ?><a class="os-tag os-tag-hi" href="https://nvd.nist.gov/vuln/detail/<?= ose($v) ?>" target="_blank" rel="noopener nofollow"><?= ose($v) ?></a><?php endforeach; ?>
+            </div>
+          <?php endif; ?>
+          <?php if (!empty($services['tags'])): ?><div class="os-taglist" style="margin-top:8px"><?php foreach ($services['tags'] as $t): ?><span class="os-tag"><?= ose($t) ?></span><?php endforeach; ?></div><?php endif; ?>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
   <?php endif; ?>
 
   <div class="os-panel">

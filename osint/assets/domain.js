@@ -101,6 +101,50 @@
     try { s.parentNode.innerHTML = renderSubs(JSON.parse(s.textContent)); } catch (e) {}
   });
 
+  // --- exposed services / attack surface (Shodan InternetDB) ---
+  var SURF_PORTS = { 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS', 80: 'HTTP', 110: 'POP3', 143: 'IMAP', 389: 'LDAP', 443: 'HTTPS', 445: 'SMB', 587: 'SMTP', 993: 'IMAPS', 1433: 'MSSQL', 2082: 'cPanel', 2083: 'cPanel', 3306: 'MySQL', 3389: 'RDP', 5432: 'PostgreSQL', 5900: 'VNC', 5985: 'WinRM', 6379: 'Redis', 8080: 'HTTP-alt', 8443: 'HTTPS-alt', 9200: 'Elasticsearch', 11211: 'Memcached', 27017: 'MongoDB' };
+  var SURF_RISKY = [23, 135, 139, 445, 3389, 3306, 5432, 6379, 27017, 9200, 11211, 5900];
+  function renderSurface(d) {
+    if (d.error) return '<p class="os-dim">' + esc(d.error) + '</p>';
+    if (!d.hosts || !d.hosts.length) return '<p class="os-dim">Couldn\'t resolve this domain to any public IP to scan.</p>';
+    var head = '<p class="os-dim os-mb">Scanned <b>' + d.ip_count + '</b> host(s) · <b>' + (d.total_ports || 0) + '</b> distinct open port(s) · '
+      + (d.total_vulns ? '<b style="color:var(--os-danger)">' + d.total_vulns + '</b> known CVE(s)' : '<b>0</b> known CVEs') + '.</p>';
+    var rows = d.hosts.map(function (h) {
+      var names = (h.names || []).map(function (n) { return esc(n); }).join(', ');
+      if (h.unreachable) return '<div class="os-row"><div class="os-row-main"><div class="os-row-t"><span class="os-code">' + esc(h.ip) + '</span> <span class="os-dim">' + names + '</span></div><div class="os-row-d os-dim">Shodan had no data for this host.</div></div></div>';
+      var ports = (h.ports || []).map(function (p) { var risky = SURF_RISKY.indexOf(p) >= 0; return '<span class="os-tag' + (risky ? ' os-tag-hi' : '') + '">' + p + (SURF_PORTS[p] ? ' ' + SURF_PORTS[p] : '') + '</span>'; }).join('');
+      var vulns = (h.vulns && h.vulns.length) ? '<div class="os-row-d"><b style="color:#ff9a92">' + h.vulns.length + ' CVE(s):</b> ' + h.vulns.slice(0, 12).map(function (v) { return '<a class="os-vuln" href="https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(v) + '" target="_blank" rel="noopener nofollow">' + esc(v) + '</a>'; }).join(' ') + '</div>' : '';
+      var tags = (h.tags && h.tags.length) ? ' ' + h.tags.map(function (t) { return '<span class="os-tag">' + esc(t) + '</span>'; }).join('') : '';
+      var body = ports ? '<div class="os-row-d" style="margin-top:4px">' + ports + tags + '</div>' : '<div class="os-row-d os-dim">No open ports recorded — good.</div>';
+      return '<div class="os-row"><div class="os-row-main"><div class="os-row-t"><span class="os-code">' + esc(h.ip) + '</span> <span class="os-dim">' + names + '</span></div>' + body + vulns + '</div></div>';
+    }).join('');
+    return head + '<div class="os-list">' + rows + '</div>'
+      + '<p class="os-fineprint">Every open port is something an attacker can probe. Databases (MySQL/Redis/Mongo), remote access (RDP/VNC/SSH), and admin panels should never face the open internet — put them behind a VPN or firewall. CVEs link to the NVD detail.</p>';
+  }
+  document.querySelectorAll('.os-surfaceout .os-surface-data').forEach(function (s) {
+    try { s.parentNode.innerHTML = renderSurface(JSON.parse(s.textContent)); } catch (e) {}
+  });
+  document.querySelectorAll('[data-surface]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var domain = btn.getAttribute('data-surface');
+      var out = document.getElementById('os-surface-' + btn.getAttribute('data-fidx'));
+      btn.disabled = true; var old = btn.textContent;
+      btn.innerHTML = '<span class="os-spinner"></span> Scanning…';
+      if (out) { out.hidden = false; out.innerHTML = '<p class="os-dim"><span class="os-spinner"></span> Resolving hosts and querying Shodan InternetDB…</p>'; }
+      fetch('/osint/surface.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
+        body: new URLSearchParams({ csrf: csrf, domain: domain })
+      }).then(function (r) { return r.json(); }).then(function (j) {
+        btn.disabled = false; btn.textContent = 'Re-scan';
+        if (out) out.innerHTML = renderSurface(j);
+      }).catch(function () {
+        btn.disabled = false; btn.textContent = old;
+        if (out) out.innerHTML = '<p class="os-dim">Scan failed — try again.</p>';
+      });
+    });
+  });
+
   document.querySelectorAll('[data-subs]').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var domain = btn.getAttribute('data-subs');

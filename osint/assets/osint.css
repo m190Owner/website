@@ -413,3 +413,7 @@ a.os-top-l:hover{text-decoration:none}
 .os-pmbar-n{font-size:.7rem;color:var(--os-dim);margin-top:3px}
 .os-pmbar-l{font-size:.62rem;color:var(--os-faint);position:absolute;bottom:-16px;white-space:nowrap}
 .os-pmhist+*{margin-top:22px}
+
+/* Exposed services: CVE chips */
+.os-vuln{display:inline-block;font-family:var(--os-mono);font-size:.72rem;color:#ff9a92;text-decoration:none;border:1px solid rgba(229,105,95,.4);border-radius:5px;padding:0 5px;margin:1px 2px}
+.os-vuln:hover{border-color:var(--os-danger);text-decoration:underline}

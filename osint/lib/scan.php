@@ -1148,6 +1148,72 @@ function scan_ip_footprint(string $ip): array {
     return $out;
 }
 
+// ---- exposed services / attack surface (Shodan InternetDB; keyless) ----
+/** Open ports, known CVEs, service CPEs, hostnames, and tags for a public IP, from
+ *  Shodan's free InternetDB. null = unreachable; found=false = IP has no exposed data
+ *  (nothing internet-facing seen — the good state). */
+function scan_internetdb(string $ip): ?array {
+    if (!filter_var($ip, FILTER_VALIDATE_IP)) return null;
+    if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE)) return null;
+    $r = scan_multi_get(['x' => ['url' => 'https://internetdb.shodan.io/' . rawurlencode($ip), 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/json'], 'follow' => true, 'timeout' => 10]])['x'] ?? null;
+    if (!$r || $r['err']) return null;
+    if ((int) $r['code'] === 404) return ['ip' => $ip, 'found' => false, 'ports' => [], 'vulns' => [], 'cpes' => [], 'hostnames' => [], 'tags' => []];
+    if ((int) $r['code'] !== 200) return null;
+    $j = json_decode($r['body'], true);
+    if (!is_array($j)) return null;
+    $vulns = array_values(array_filter((array) ($j['vulns'] ?? []), fn($v) => is_string($v) && preg_match('/^CVE-/i', $v)));
+    return [
+        'ip' => $ip, 'found' => true,
+        'ports'     => array_slice(array_values(array_unique(array_map('intval', (array) ($j['ports'] ?? [])))), 0, 40),
+        'vulns'     => array_slice($vulns, 0, 30),
+        'cpes'      => array_slice(array_map('strval', (array) ($j['cpes'] ?? [])), 0, 20),
+        'hostnames' => array_slice(array_map('strval', (array) ($j['hostnames'] ?? [])), 0, 10),
+        'tags'      => array_slice(array_map('strval', (array) ($j['tags'] ?? [])), 0, 15),
+    ];
+}
+
+/** Well-known port → service label, for readable output. */
+function scan_port_label(int $p): string {
+    static $m = [21 => 'FTP', 22 => 'SSH', 23 => 'Telnet', 25 => 'SMTP', 53 => 'DNS', 80 => 'HTTP', 110 => 'POP3',
+        111 => 'RPC', 135 => 'MSRPC', 139 => 'NetBIOS', 143 => 'IMAP', 161 => 'SNMP', 389 => 'LDAP', 443 => 'HTTPS',
+        445 => 'SMB', 465 => 'SMTPS', 587 => 'SMTP', 993 => 'IMAPS', 995 => 'POP3S', 1433 => 'MSSQL', 1521 => 'Oracle',
+        2049 => 'NFS', 2082 => 'cPanel', 2083 => 'cPanel', 3306 => 'MySQL', 3389 => 'RDP', 5432 => 'PostgreSQL',
+        5900 => 'VNC', 5985 => 'WinRM', 6379 => 'Redis', 8080 => 'HTTP-alt', 8443 => 'HTTPS-alt', 9200 => 'Elasticsearch',
+        11211 => 'Memcached', 27017 => 'MongoDB'];
+    return $m[$p] ?? '';
+}
+
+/** Map a domain's whole internet-facing attack surface: resolve the apex + any cached
+ *  live subdomains to IPs, then pull open ports / CVEs for each host from InternetDB.
+ *  Own-domain scoped (validated by the caller). */
+function scan_attack_surface(int $uid, string $domainRaw): array {
+    $domain = scan_domain_normalize($domainRaw);
+    if ($domain === null) return ['error' => 'Not a valid domain.'];
+    $doh = fn($n, $t) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($n) . '&type=' . $t, 'headers' => ['User-Agent: ' . OSINT_UA, 'Accept: application/dns-json'], 'follow' => true, 'timeout' => 8];
+    $res = scan_multi_get(['a' => $doh($domain, 'A'), 'aaaa' => $doh($domain, 'AAAA')]);
+    $ipmap = [];   // ip => [hostname => true]
+    foreach (scan_doh_answers($res['a'] ?? null, 1) as $ip) $ipmap[$ip][$domain] = true;
+    foreach (scan_doh_answers($res['aaaa'] ?? null, 28) as $ip) $ipmap[$ip][$domain] = true;
+    // Fold in the live subdomains discovered by a prior enumeration, if cached.
+    $subs = scan_domain_cache_get($uid, 'subs:' . $domain);
+    if ($subs && !empty($subs['rows'])) {
+        foreach ($subs['rows'] as $row) if (!empty($row['resolves'])) foreach ((array) ($row['a'] ?? []) as $ip) $ipmap[$ip][$row['name']] = true;
+    }
+    $ips = array_slice(array_keys($ipmap), 0, 15);
+    $hosts = []; $totVulns = 0; $portSet = [];
+    foreach ($ips as $ip) {
+        $idb = scan_internetdb($ip);
+        $names = array_slice(array_keys($ipmap[$ip]), 0, 4);
+        if ($idb === null) { $hosts[] = ['ip' => $ip, 'names' => $names, 'unreachable' => true, 'ports' => [], 'vulns' => [], 'tags' => []]; continue; }
+        $totVulns += count($idb['vulns']);
+        foreach ($idb['ports'] as $p) $portSet[$p] = true;
+        $hosts[] = ['ip' => $ip, 'names' => $names, 'found' => $idb['found'], 'ports' => $idb['ports'], 'vulns' => $idb['vulns'], 'tags' => $idb['tags'], 'cpes' => $idb['cpes']];
+    }
+    usort($hosts, fn($a, $b) => [count($b['vulns']), count($b['ports'])] <=> [count($a['vulns']), count($a['ports'])]);
+    return ['ok' => true, 'domain' => $domain, 'hosts' => $hosts, 'ip_count' => count($ips),
+            'total_vulns' => $totVulns, 'total_ports' => count($portSet), 'ts' => time()];
+}
+
 // ---- investigation lookups (arbitrary URL / IP / domain / cert — public infra data) ----
 /** Resolve a (possibly relative) Location against a base URL. */
 function scan_abs_url(string $loc, string $base): string {

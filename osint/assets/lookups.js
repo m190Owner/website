@@ -3,6 +3,24 @@
   var csrf = (document.querySelector('meta[name=osint-csrf]') || {}).content || '';
   function esc(s) { return String(s).replace(/[<>&]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]; }); }
   function prow(cls, k, v) { return '<div class="os-prow"><span class="os-pdot os-pdot-' + cls + '"></span><span class="os-pk">' + k + '</span><span>' + v + '</span></div>'; }
+  var PORTS = { 21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS', 80: 'HTTP', 110: 'POP3', 135: 'MSRPC', 139: 'NetBIOS', 143: 'IMAP', 161: 'SNMP', 389: 'LDAP', 443: 'HTTPS', 445: 'SMB', 465: 'SMTPS', 587: 'SMTP', 993: 'IMAPS', 995: 'POP3S', 1433: 'MSSQL', 2082: 'cPanel', 2083: 'cPanel', 3306: 'MySQL', 3389: 'RDP', 5432: 'PostgreSQL', 5900: 'VNC', 5985: 'WinRM', 6379: 'Redis', 8080: 'HTTP-alt', 8443: 'HTTPS-alt', 9200: 'Elasticsearch', 11211: 'Memcached', 27017: 'MongoDB' };
+  function renderServices(s) {
+    if (!s) return '';   // unreachable / not applicable
+    if (!s.found) return '<div class="os-subhead">Exposed services <span class="os-dim">(Shodan InternetDB)</span></div><p class="os-dim">No internet-facing services recorded for this IP — the good state.</p>';
+    var html = '<div class="os-subhead">Exposed services <span class="os-dim">(Shodan InternetDB)</span></div>';
+    if (s.ports && s.ports.length) {
+      html += '<div class="os-taglist" style="margin-bottom:8px">';
+      s.ports.forEach(function (p) { var risky = [23, 3389, 445, 3306, 5432, 6379, 27017, 9200, 11211, 5900, 135, 139].indexOf(p) >= 0; html += '<span class="os-tag' + (risky ? ' os-tag-hi' : '') + '">' + p + (PORTS[p] ? ' ' + PORTS[p] : '') + '</span>'; });
+      html += '</div>';
+    }
+    if (s.vulns && s.vulns.length) {
+      html += '<div class="os-warn-box" style="margin-top:0"><b>' + s.vulns.length + ' known CVE(s)</b> associated with services on this host — patch or restrict them:</div><div class="os-taglist" style="margin-top:8px">';
+      s.vulns.slice(0, 24).forEach(function (v) { html += '<a class="os-tag os-tag-hi" href="https://nvd.nist.gov/vuln/detail/' + encodeURIComponent(v) + '" target="_blank" rel="noopener nofollow">' + esc(v) + '</a>'; });
+      html += '</div>';
+    }
+    if (s.tags && s.tags.length) { html += '<div class="os-taglist" style="margin-top:8px">'; s.tags.forEach(function (t) { html += '<span class="os-tag">' + esc(t) + '</span>'; }); html += '</div>'; }
+    return html;
+  }
   function post(action, q) {
     return fetch('/osint/lookup.php', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' }, body: new URLSearchParams({ csrf: csrf, action: action, q: q }) }).then(function (r) { return r.json(); });
   }
@@ -54,6 +72,7 @@
       html += prow(atk ? 'bad' : 'ok', 'DShield', atk ? 'Reported as an attack source (' + (d.ds_attacks | 0) + ' targets)' : 'No attack activity reported');
     } else html += prow('warn', 'DShield', 'No response');
     html += '</div>';
+    html += renderServices(d.services);
     var e = encodeURIComponent(d.ip);
     html += '<div class="os-subhead">Check further</div><div class="os-srch">'
       + '<a href="https://www.abuseipdb.com/check/' + e + '" target="_blank" rel="noopener nofollow">AbuseIPDB</a>'

@@ -133,9 +133,10 @@ osint_head('Domain footprint · m190 finder', 'domains');
   </div>
 
   <?php foreach ($p['domains'] as $i => $domain):
-    $cached = scan_domain_cache_get((int) $u['id'], $domain);
-    $subs   = scan_domain_cache_get((int) $u['id'], 'subs:' . $domain);
-    $twist  = scan_domain_cache_get((int) $u['id'], 'twist:' . $domain); ?>
+    $cached  = scan_domain_cache_get((int) $u['id'], $domain);
+    $subs    = scan_domain_cache_get((int) $u['id'], 'subs:' . $domain);
+    $surface = scan_domain_cache_get((int) $u['id'], 'surface:' . $domain);
+    $twist   = scan_domain_cache_get((int) $u['id'], 'twist:' . $domain); ?>
     <div class="os-panel">
       <div class="os-sec-head">
         <h3 class="os-h3">🌐 <?= ose($domain) ?></h3>
@@ -154,6 +155,17 @@ osint_head('Domain footprint · m190 finder', 'domains');
         <p class="os-fineprint">Goes beyond certificate transparency: merges cert SANs and brute-forces ~100 common labels (dev, vpn, admin, mail, staging…), then resolves each so you see which subdomains are <b>live right now</b> vs historical. Public DNS only.</p>
         <div id="os-subs-<?= $i ?>" class="os-subsout"<?= $subs ? '' : ' hidden' ?>><?php
           if ($subs) echo '<script type="application/json" class="os-subs-data">' . json_encode($subs, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) . '</script>';
+        ?></div>
+      </div>
+
+      <div class="os-surface-sec">
+        <div class="os-sec-head" style="margin-top:20px">
+          <div class="os-subhead" style="margin:0">🔓 Exposed services <span class="os-dim">(open ports &amp; CVEs)</span></div>
+          <button type="button" class="os-btn os-btn-sm" data-surface="<?= ose($domain) ?>" data-fidx="<?= $i ?>"><?= $surface ? 'Re-scan' : 'Scan' ?></button>
+        </div>
+        <p class="os-fineprint">Resolves this domain (and any live subdomains you've enumerated) to IPs, then pulls the <b>open ports and known CVEs</b> each host exposes to the whole internet, via Shodan's keyless InternetDB. Run <b>Enumerate</b> above first for the fullest picture. Public data only.</p>
+        <div id="os-surface-<?= $i ?>" class="os-surfaceout"<?= $surface ? '' : ' hidden' ?>><?php
+          if ($surface) echo '<script type="application/json" class="os-surface-data">' . json_encode($surface, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) . '</script>';
         ?></div>
       </div>
 
