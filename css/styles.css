@@ -939,6 +939,10 @@ section {
     letter-spacing: 0.3px;
     color: var(--color-text);
 }
+/* when the announcement banner is showing (ui.js sets display:flex), drop the badge below it */
+body:has(#announce-banner[style*="flex"]) .avp-badge {
+    top: 96px;
+}
 /* don't overlap the mobile menu while it's open */
 body:has(#mobile-nav.open) .avp-badge {
     opacity: 0;
@@ -948,6 +952,9 @@ body:has(#mobile-nav.open) .avp-badge {
     .avp-badge {
         left: 16px;
         top: 56px;
+    }
+    body:has(#announce-banner[style*="flex"]) .avp-badge {
+        top: 88px;
     }
     .avp-badge img {
         width: 42px;
