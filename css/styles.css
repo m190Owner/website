@@ -908,3 +908,52 @@ section {
         display: none;
     }
 }
+
+/* avp.life badge — fixed top-left, just under the "Logan Sandivar | ServerLagger" brand */
+.avp-badge {
+    position: fixed;
+    left: 40px;
+    top: 58px;
+    z-index: 55; /* above the roaming world avatars (z-index 50) so it stays visible/clickable */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    text-decoration: none;
+    opacity: 0.92;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+}
+.avp-badge:hover {
+    transform: translateY(-2px);
+    opacity: 1;
+}
+.avp-badge img {
+    width: 52px;
+    height: 52px;
+    display: block;
+    filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
+}
+.avp-badge span {
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    color: var(--color-text);
+}
+/* don't overlap the mobile menu while it's open */
+body:has(#mobile-nav.open) .avp-badge {
+    opacity: 0;
+    pointer-events: none;
+}
+@media (max-width: 768px) {
+    .avp-badge {
+        left: 16px;
+        top: 56px;
+    }
+    .avp-badge img {
+        width: 42px;
+        height: 42px;
+    }
+    .avp-badge span {
+        font-size: 0.72rem;
+    }
+}
