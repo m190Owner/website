@@ -1711,6 +1711,108 @@ function scan_og_meta(string $url): array {
         'title' => $og('og:title') ?: $title, 'description' => $og('og:description'), 'image' => $og('og:image'), 'site' => $og('og:site_name'), 'type' => $og('og:type')];
 }
 
+// ---- GitHub secret-leak scan (keyless; the user's OWN public repos) ----
+/** Mask a secret so the tool never displays a live credential in full. */
+function scan_mask_secret(string $s): string {
+    $s = trim($s); $n = strlen($s);
+    if ($n <= 8) return substr($s, 0, 2) . str_repeat('•', max(1, $n - 2));
+    return substr($s, 0, 4) . str_repeat('•', 6) . substr($s, -3);
+}
+
+/** Scan text for high-signal committed-secret patterns → [ ['type','sample'(masked)], ... ]. */
+function scan_secret_patterns(string $text): array {
+    $text = substr($text, 0, 262144);
+    $strong = [
+        'AWS access key ID'     => '/\bAKIA[0-9A-Z]{16}\b/',
+        'Private key block'     => '/-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/',
+        'Google API key'        => '/\bAIza[0-9A-Za-z\-_]{35}\b/',
+        'GitHub token'          => '/\bgh[pousr]_[0-9A-Za-z]{36,}\b/',
+        'Slack token'           => '/\bxox[baprs]-[0-9A-Za-z-]{10,48}\b/',
+        'Slack webhook'         => '#https://hooks\.slack\.com/services/[A-Za-z0-9/]{20,}#',
+        'Stripe live key'       => '/\bsk_live_[0-9A-Za-z]{20,}\b/',
+        'Twilio SID'            => '/\bAC[0-9a-f]{32}\b/',
+        'JWT'                   => '/\beyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{6,}\b/',
+        'RSA/DSA key (ssh-*)'   => '/\bssh-rsa AAAA[0-9A-Za-z+\/]{100,}/',
+    ];
+    $out = [];
+    foreach ($strong as $type => $re) if (preg_match($re, $text, $m)) $out[] = ['type' => $type, 'sample' => scan_mask_secret($m[0])];
+    // Generic key/secret assignment — guarded against obvious placeholders.
+    if (preg_match_all('/\b(api[_-]?key|secret|token|password|passwd|client[_-]?secret|access[_-]?key)\s*[=:]\s*["\']([^"\'\s]{12,})["\']/i', $text, $mm, PREG_SET_ORDER)) {
+        foreach (array_slice($mm, 0, 3) as $m) {
+            $val = $m[2];
+            if (preg_match('/^(your|xxx+|placeholder|example|changeme|change_me|redacted|dummy|sample|test|none|null|undefined|\$\{|\{\{|<)/i', $val)) continue;
+            if (!preg_match('/[A-Za-z]/', $val) || !preg_match('/[0-9\W]/', $val)) continue;   // require mixed classes
+            $out[] = ['type' => 'Hard-coded ' . strtolower($m[1]), 'sample' => scan_mask_secret($val)];
+        }
+    }
+    // De-dup by type.
+    $seen = []; $ded = [];
+    foreach ($out as $h) { if (isset($seen[$h['type']])) continue; $seen[$h['type']] = true; $ded[] = $h; }
+    return array_slice($ded, 0, 6);
+}
+
+/** Scan the user's OWN public GitHub repos for committed secrets, risky files, and
+ *  their exposed commit email. Keyless (api.github.com + raw.githubusercontent.com);
+ *  unauth-rate-limited, so it caps repos and degrades gracefully. */
+function scan_github_secrets(string $username): array {
+    $u = trim($username);
+    if ($u === '' || !preg_match('/^[A-Za-z0-9\-]{1,39}$/', $u)) return ['error' => 'Not a valid GitHub username.'];
+    $gh = ['User-Agent: ' . OSINT_UA, 'Accept: application/vnd.github+json'];
+    $r = scan_multi_get(['x' => ['url' => 'https://api.github.com/users/' . rawurlencode($u) . '/repos?per_page=30&sort=pushed&type=owner', 'headers' => $gh, 'follow' => true, 'timeout' => 12]])['x'] ?? null;
+    if (!$r || $r['err']) return ['error' => 'Could not reach the GitHub API.'];
+    if ((int) $r['code'] === 404) return ['ok' => true, 'username' => $u, 'exists' => false, 'repos' => []];
+    if ((int) $r['code'] === 403) return ['error' => 'GitHub rate-limited this server (60 requests/hour, unauthenticated). Try again in a while.'];
+    if ((int) $r['code'] !== 200) return ['error' => 'Unexpected GitHub response (' . (int) $r['code'] . ').'];
+    $repos = json_decode($r['body'], true);
+    if (!is_array($repos)) return ['error' => 'Could not parse the GitHub response.'];
+    $repos = array_values(array_filter($repos, fn($x) => empty($x['fork']) && empty($x['archived'])));
+    $repos = array_slice($repos, 0, 8);
+    if (!$repos) return ['ok' => true, 'username' => $u, 'exists' => true, 'repo_count' => 0, 'flagged' => 0, 'secrets' => 0, 'repos' => []];
+
+    $treeTasks = [];
+    foreach ($repos as $i => $rp) {
+        $br = (string) ($rp['default_branch'] ?? 'main');
+        $treeTasks[$i] = ['url' => 'https://api.github.com/repos/' . rawurlencode($u) . '/' . rawurlencode((string) $rp['name']) . '/git/trees/' . rawurlencode($br) . '?recursive=1', 'headers' => $gh, 'follow' => true, 'timeout' => 12];
+    }
+    $trees = scan_multi_get($treeTasks, 6291456);
+    $riskyRe = '#(^|/)(\.env($|\.[a-z]+$)|id_rsa$|id_dsa$|id_ed25519$|.*\.pem$|.*\.ppk$|.*\.pfx$|.*\.p12$|.*\.keystore$|.*\.jks$|\.htpasswd$|\.netrc$|\.npmrc$|\.pypirc$|\.dockercfg$|credentials$|secrets?\.(json|ya?ml|txt|env|ini)$|wp-config\.php$|.*service[-_]?account.*\.json$)#i';
+
+    $out = []; $rawTasks = []; $rawMeta = [];
+    foreach ($repos as $i => $rp) {
+        $tj = json_decode($trees[$i]['body'] ?? '', true);
+        $flagged = [];
+        if (is_array($tj) && !empty($tj['tree'])) {
+            foreach ($tj['tree'] as $node) {
+                if (($node['type'] ?? '') !== 'blob') continue;
+                $path = (string) ($node['path'] ?? '');
+                if ($path !== '' && preg_match($riskyRe, $path)) {
+                    $sz = (int) ($node['size'] ?? 0);
+                    $flagged[] = ['path' => $path, 'size' => $sz];
+                    if ($sz > 0 && $sz < 60000 && count($rawTasks) < 14) {
+                        $key = $i . '|' . count($rawMeta);
+                        $rawTasks[$key] = ['url' => 'https://raw.githubusercontent.com/' . rawurlencode($u) . '/' . rawurlencode((string) $rp['name']) . '/' . rawurlencode((string) ($rp['default_branch'] ?? 'main')) . '/' . implode('/', array_map('rawurlencode', explode('/', $path))), 'headers' => ['User-Agent: ' . OSINT_UA], 'follow' => true, 'timeout' => 10];
+                        $rawMeta[$key] = ['repo' => $i, 'path' => $path];
+                    }
+                }
+            }
+        }
+        $out[$i] = ['name' => (string) $rp['name'], 'url' => (string) ($rp['html_url'] ?? ''), 'pushed' => substr((string) ($rp['pushed_at'] ?? ''), 0, 10),
+                    'flagged' => array_slice($flagged, 0, 20), 'secrets' => [], 'truncated' => is_array($tj) ? !empty($tj['truncated']) : false];
+    }
+    if ($rawTasks) {
+        $raws = scan_multi_get($rawTasks, 262144);
+        foreach ($rawMeta as $key => $m) {
+            $rr = $raws[$key] ?? null;
+            if (!$rr || $rr['err'] || (int) $rr['code'] !== 200) continue;
+            foreach (scan_secret_patterns($rr['body']) as $hit) $out[$m['repo']]['secrets'][] = ['path' => $m['path'], 'type' => $hit['type'], 'sample' => $hit['sample']];
+        }
+    }
+    $totFlag = 0; $totSecret = 0;
+    foreach ($out as $o) { $totFlag += count($o['flagged']); $totSecret += count($o['secrets']); }
+    return ['ok' => true, 'username' => $u, 'exists' => true, 'repo_count' => count($repos),
+            'flagged' => $totFlag, 'secrets' => $totSecret, 'repos' => array_values($out), 'ts' => time()];
+}
+
 // ---- read side ----
 function scan_get(int $uid, int $scanId): ?array {
     $db = scan_db(); if (!$db) return null;

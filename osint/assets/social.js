@@ -59,6 +59,40 @@
     });
   });
 
+  // GitHub secret scan (on demand, scoped to your own handle ∈ profile)
+  function renderGh(d) {
+    if (d.error) return '<p class="os-dim">' + esc(d.error) + '</p>';
+    if (!d.exists) return '<p class="os-dim">No GitHub account found for this handle.</p>';
+    if (!d.repo_count) return '<p class="os-dim">No public, non-fork repositories to scan.</p>';
+    var clean = !d.flagged && !d.secrets;
+    var head;
+    if (clean) head = '<div class="os-warn-box" style="border-color:rgba(55,201,139,.4);background:rgba(55,201,139,.07);color:var(--os-accent-l)">Scanned <b>' + d.repo_count + '</b> repo(s) — no risky files or committed secrets found. Good.</div>';
+    else head = '<div class="os-warn-box">Scanned <b>' + d.repo_count + '</b> repo(s): <b>' + d.secrets + '</b> likely secret(s) and <b>' + d.flagged + '</b> risky file(s). Rotate anything real immediately — commit history keeps it even after deletion.</div>';
+    var body = '';
+    d.repos.forEach(function (r) {
+      if (!r.flagged.length && !r.secrets.length) return;
+      body += '<div class="os-row"><div class="os-row-main"><div class="os-row-t"><a href="' + esc(r.url) + '" target="_blank" rel="noopener nofollow">' + esc(r.name) + '</a>' + (r.pushed ? ' <span class="os-dim">· pushed ' + esc(r.pushed) + '</span>' : '') + '</div>';
+      r.secrets.forEach(function (s) { body += '<div class="os-row-d"><span class="os-tag os-tag-hi">' + esc(s.type) + '</span> <span class="os-code">' + esc(s.sample) + '</span> in <span class="os-code">' + esc(s.path) + '</span></div>'; });
+      var onlyFiles = r.flagged.filter(function (f) { return !r.secrets.some(function (s) { return s.path === f.path; }); });
+      if (onlyFiles.length) body += '<div class="os-row-d os-dim">Sensitive file(s): ' + onlyFiles.slice(0, 8).map(function (f) { return '<span class="os-code">' + esc(f.path) + '</span>'; }).join(' ') + '</div>';
+      body += '</div></div>';
+    });
+    return head + (body ? '<div class="os-list" style="margin-top:10px">' + body + '</div>' : '')
+      + '<p class="os-fineprint">Detected values are masked here. This checks up to 8 recent non-fork repos for known secret formats + sensitive filenames — treat it as a first pass, then run a full scanner (gitleaks/trufflehog) and rotate anything exposed.</p>';
+  }
+  document.querySelectorAll('[data-ghsecrets]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var un = btn.getAttribute('data-ghsecrets'), out = btn.closest('[data-social]').querySelector('.os-gh-out');
+      out.hidden = false; btn.disabled = true; var t = btn.textContent;
+      btn.innerHTML = '<span class="os-spinner"></span> Scanning…';
+      out.innerHTML = '<p class="os-dim"><span class="os-spinner"></span> Listing repos and scanning files via the GitHub API…</p>';
+      post('ghsecrets', un).then(function (d) {
+        btn.disabled = false; btn.textContent = t;
+        out.innerHTML = renderGh(d);
+      }).catch(function () { btn.disabled = false; btn.textContent = t; out.innerHTML = '<p class="os-dim">Scan failed — try again.</p>'; });
+    });
+  });
+
   // Fediverse resolver
   function wire(btnId, inId, outId, action, render) {
     var btn = document.getElementById(btnId), inp = document.getElementById(inId), out = document.getElementById(outId);

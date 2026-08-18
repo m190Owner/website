@@ -22,9 +22,13 @@ osint_head('Social · m190 finder', 'social');
     <div class="os-panel" data-social="<?= ose($un) ?>">
       <div class="os-sec-head">
         <h3 class="os-h3">@<?= ose($un) ?></h3>
-        <button type="button" class="os-btn os-btn-sm" data-impersonate="<?= ose($un) ?>">Find impersonators</button>
+        <div class="os-inrow" style="gap:8px">
+          <button type="button" class="os-btn os-btn-sm" data-ghsecrets="<?= ose($un) ?>">Scan GitHub for secrets</button>
+          <button type="button" class="os-btn os-btn-sm" data-impersonate="<?= ose($un) ?>">Find impersonators</button>
+        </div>
       </div>
       <div class="os-social-cards"><p class="os-dim"><span class="os-spinner"></span> Looking up profiles…</p></div>
+      <div class="os-gh-out" hidden style="margin-top:12px"></div>
       <div class="os-imp-out" hidden style="margin-top:12px"></div>
     </div>
   <?php endforeach; ?>

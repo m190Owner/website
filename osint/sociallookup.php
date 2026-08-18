@@ -13,9 +13,10 @@ enforceRateLimit('osint_social', 30, 60);
 $action = (string) ($_POST['action'] ?? '');
 $q = (string) ($_POST['q'] ?? '');
 
-if ($action === 'profile' || $action === 'impersonate') {
+if ($action === 'profile' || $action === 'impersonate' || $action === 'ghsecrets') {
     $p = scan_profile_get((int) $u['id']);
     if (!in_array($q, $p['usernames'], true)) { echo json_encode(['error' => 'That username is not on your profile.']); exit; }
+    if ($action === 'ghsecrets') { @set_time_limit(60); echo json_encode(scan_github_secrets($q)); exit; }
     echo json_encode($action === 'profile' ? scan_social_lookup($q) : scan_impersonation($q));
     exit;
 }
