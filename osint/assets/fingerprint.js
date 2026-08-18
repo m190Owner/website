@@ -38,40 +38,50 @@
     }
   }
 
+  // Read one signal defensively — a hardened browser can make some getters throw.
+  function g(fn, dflt) { try { var v = fn(); return (v === undefined || v === null || v === '') ? dflt : v; } catch (e) { return dflt; } }
+
   btn.addEventListener('click', async function () {
     btn.disabled = true; btn.innerHTML = '<span class="os-spinner"></span> Analyzing…';
     out.hidden = false; out.innerHTML = '';
-    var gl = webgl(), tz = '';
-    try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
-    var dnt = (navigator.doNotTrack === '1' || window.doNotTrack === '1') ? 'on' : 'off';
-    var gpc = navigator.globalPrivacyControl ? 'on' : 'off';
-    var sig = {
-      'User agent': navigator.userAgent,
-      'Platform': navigator.platform || '',
-      'Languages': (navigator.languages || [navigator.language]).join(', '),
-      'Screen': screen.width + '×' + screen.height + ' @' + (window.devicePixelRatio || 1) + 'x, ' + screen.colorDepth + '-bit',
-      'Timezone': tz + ' (UTC' + (-new Date().getTimezoneOffset() / 60) + ')',
-      'CPU cores': navigator.hardwareConcurrency || '?',
-      'Device memory': navigator.deviceMemory ? navigator.deviceMemory + ' GB' : '?',
-      'Touch points': navigator.maxTouchPoints || 0,
-      'GPU': gl.renderer || 'hidden',
-      'Cookies': navigator.cookieEnabled ? 'enabled' : 'disabled',
-      'Do Not Track': dnt,
-      'Global Privacy Control': gpc
-    };
-    var canvas = canvasFp();
-    var id = await hash(Object.keys(sig).map(function (k) { return sig[k]; }).join('|') + '|' + canvas + '|' + (gl.vendor || ''));
+    try {
+      var gl = webgl();
+      var tz = g(function () { return Intl.DateTimeFormat().resolvedOptions().timeZone; }, '');
+      var dnt = (navigator.doNotTrack === '1' || window.doNotTrack === '1') ? 'on' : 'off';
+      var gpc = navigator.globalPrivacyControl ? 'on' : 'off';
+      var sig = {
+        'User agent': g(function () { return navigator.userAgent; }, '?'),
+        'Platform': g(function () { return navigator.platform; }, ''),
+        'Languages': g(function () { return (navigator.languages || [navigator.language]).join(', '); }, ''),
+        'Screen': g(function () { return screen.width + '×' + screen.height + ' @' + (window.devicePixelRatio || 1) + 'x, ' + screen.colorDepth + '-bit'; }, '?'),
+        'Timezone': tz + g(function () { return ' (UTC' + (-new Date().getTimezoneOffset() / 60) + ')'; }, ''),
+        'CPU cores': g(function () { return navigator.hardwareConcurrency; }, '?'),
+        'Device memory': g(function () { return navigator.deviceMemory ? navigator.deviceMemory + ' GB' : ''; }, '?'),
+        'Touch points': g(function () { return navigator.maxTouchPoints; }, 0),
+        'GPU': gl.renderer || 'hidden',
+        'Cookies': g(function () { return navigator.cookieEnabled ? 'enabled' : 'disabled'; }, '?'),
+        'Do Not Track': dnt,
+        'Global Privacy Control': gpc
+      };
+      var canvas = canvasFp();
+      var id = await hash(Object.keys(sig).map(function (k) { return sig[k]; }).join('|') + '|' + canvas + '|' + (gl.vendor || ''));
 
-    var html = '<div class="os-idbox"><span class="os-dim">Your fingerprint ID</span><div class="os-code os-idhash">' + id + '</div>'
-      + '<span class="os-dim" style="font-size:.78rem">A stable ID built from the values below — sites can use it to recognise you across visits without any cookie.</span></div>';
-    html += '<dl class="os-kv" style="margin-top:12px">';
-    Object.keys(sig).forEach(function (k) { html += '<dt>' + k + '</dt><dd>' + esc(String(sig[k]).slice(0, 140)) + '</dd>'; });
-    html += '<dt>Canvas</dt><dd>' + (canvas ? 'unique rendering (' + canvas.length + ' bytes) — a strong tracking signal' : 'blocked (good)') + '</dd>';
-    html += '</dl>';
-    var priv = dnt === 'on' || gpc === 'on';
-    html += '<p class="os-note" style="margin-top:12px">' + (priv ? 'You have a privacy signal enabled — but most trackers ignore it. ' : 'No Do-Not-Track / GPC signal is set. ')
-      + 'To resist fingerprinting: use a browser with anti-fingerprinting (Firefox on strict, Brave, or Tor) plus uBlock Origin. The <a href="/osint/harden.php">hardening checklist</a> covers browser lockdown.</p>';
-    out.innerHTML = html;
-    btn.disabled = false; btn.textContent = 'Re-analyze';
+      var html = '<div class="os-idbox"><span class="os-dim">Your fingerprint ID</span><div class="os-code os-idhash">' + esc(id) + '</div>'
+        + '<span class="os-dim" style="font-size:.78rem">A stable ID built from the values below — sites can use it to recognise you across visits without any cookie.</span></div>';
+      html += '<dl class="os-kv" style="margin-top:12px">';
+      Object.keys(sig).forEach(function (k) { html += '<dt>' + k + '</dt><dd>' + esc(String(sig[k]).slice(0, 140)) + '</dd>'; });
+      html += '<dt>Canvas</dt><dd>' + (canvas ? 'unique rendering (' + canvas.length + ' bytes) — a strong tracking signal' : 'blocked (good)') + '</dd>';
+      html += '</dl>';
+      var priv = dnt === 'on' || gpc === 'on';
+      html += '<p class="os-note" style="margin-top:12px">' + (priv ? 'You have a privacy signal enabled — but most trackers ignore it. ' : 'No Do-Not-Track / GPC signal is set. ')
+        + 'To resist fingerprinting: use a browser with anti-fingerprinting (Firefox on strict, Brave, or Tor) plus uBlock Origin. The <a href="/osint/harden.php">hardening checklist</a> covers browser lockdown.</p>';
+      out.innerHTML = html;
+    } catch (e) {
+      out.innerHTML = '<p class="os-dim">Couldn\'t complete the fingerprint in this browser'
+        + (e && e.message ? ' (' + esc(String(e.message)) + ')' : '')
+        + '. Your browser may be blocking fingerprinting APIs — which is good for privacy. Reload and try again, or open this in a Chromium-based browser to see the full breakdown.</p>';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Re-analyze';
+    }
   });
 })();
