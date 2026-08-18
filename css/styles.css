@@ -909,12 +909,12 @@ section {
     }
 }
 
-/* avp.life badge — fixed top-left, just under the "Logan Sandivar | ServerLagger" brand */
-.avp-badge {
+/* site badges — avp.life (top-left) + reflex.software (top-right), under the nav */
+.avp-badge,
+.reflex-badge {
     position: fixed;
-    left: 40px;
     top: 58px;
-    z-index: 55; /* above the roaming world avatars (z-index 50) so it stays visible/clickable */
+    z-index: 55; /* above the roaming world avatars (z-index 50) so they stay visible/clickable */
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -923,44 +923,52 @@ section {
     opacity: 0.92;
     transition: transform 0.18s ease, opacity 0.18s ease;
 }
-.avp-badge:hover {
+.avp-badge { left: 40px; }
+.reflex-badge { right: 40px; }
+.avp-badge:hover,
+.reflex-badge:hover {
     transform: translateY(-2px);
     opacity: 1;
 }
-.avp-badge img {
+.avp-badge img,
+.reflex-badge img {
     width: 52px;
     height: 52px;
     display: block;
     filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.5));
 }
-.avp-badge span {
+.avp-badge span,
+.reflex-badge span {
     font-size: 0.8rem;
     font-weight: 700;
     letter-spacing: 0.3px;
     color: var(--color-text);
 }
-/* when the announcement banner is showing (ui.js sets display:flex), drop the badge below it */
-body:has(#announce-banner[style*="flex"]) .avp-badge {
+/* when the announcement banner is showing (ui.js sets display:flex), drop the badges below it */
+body:has(#announce-banner[style*="flex"]) .avp-badge,
+body:has(#announce-banner[style*="flex"]) .reflex-badge {
     top: 96px;
 }
 /* don't overlap the mobile menu while it's open */
-body:has(#mobile-nav.open) .avp-badge {
+body:has(#mobile-nav.open) .avp-badge,
+body:has(#mobile-nav.open) .reflex-badge {
     opacity: 0;
     pointer-events: none;
 }
 @media (max-width: 768px) {
-    .avp-badge {
-        left: 16px;
-        top: 56px;
-    }
-    body:has(#announce-banner[style*="flex"]) .avp-badge {
+    .avp-badge { left: 16px; top: 56px; }
+    .reflex-badge { right: 16px; top: 56px; }
+    body:has(#announce-banner[style*="flex"]) .avp-badge,
+    body:has(#announce-banner[style*="flex"]) .reflex-badge {
         top: 88px;
     }
-    .avp-badge img {
+    .avp-badge img,
+    .reflex-badge img {
         width: 42px;
         height: 42px;
     }
-    .avp-badge span {
+    .avp-badge span,
+    .reflex-badge span {
         font-size: 0.72rem;
     }
 }
