@@ -14,6 +14,7 @@ function osint_nav(): array {
         'attacker'  => ['/osint/attacker.php', 'Attacker view'],
         'removal'   => ['/osint/brokers.php',  'Removal'],
         'takedowns' => ['/osint/takedowns.php', 'Takedowns'],
+        'canaries'  => ['/osint/canaries.php', 'Canaries'],
         'search'    => ['/osint/search.php',   'Self-search'],
         'social'    => ['/osint/social.php',   'Social'],
         'email'     => ['/osint/email.php',    'Email intel'],

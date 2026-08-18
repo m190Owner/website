@@ -88,6 +88,12 @@ function scan_db(): ?PDO {
         $db->exec("CREATE TABLE IF NOT EXISTS osint_dismissed (
             user_id INTEGER NOT NULL, key_hash TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL, PRIMARY KEY (user_id, key_hash))");
+        // Canary / decoy identifiers: unique tokens the user seeds into specific sites so a
+        // later leak/spam can be traced back to whoever they gave that exact token to.
+        $db->exec("CREATE TABLE IF NOT EXISTS osint_canaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT NOT NULL,
+            label TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL,
+            tripped INTEGER NOT NULL DEFAULT 0, tripped_at INTEGER, tripped_note TEXT NOT NULL DEFAULT '')");
     }
     return $db;
 }
@@ -1983,6 +1989,51 @@ function scan_ct_enabled_users(): array {
     $db = scan_db(); if (!$db) return [];
     try { return array_map('intval', $db->query("SELECT user_id FROM osint_monitor WHERE ct_enabled = 1")->fetchAll(PDO::FETCH_COLUMN)); }
     catch (\Throwable $e) { return []; }
+}
+
+// ---- canary / decoy identifiers (leak attribution) ----
+/** Mint a new canary token tied to a where-used label. Returns the row, or null. */
+function scan_canary_create(int $uid, string $label, string $note = ''): ?array {
+    $db = scan_db(); if (!$db) return null;
+    try {
+        if ((int) $db->query("SELECT COUNT(*) FROM osint_canaries WHERE user_id = " . (int) $uid)->fetchColumn() >= 200) return null;
+        $token = 'm190x' . bin2hex(random_bytes(4));
+        $db->prepare("INSERT INTO osint_canaries (user_id,token,label,note,created_at,tripped) VALUES (?,?,?,?,?,0)")
+           ->execute([$uid, $token, mb_substr(trim($label), 0, 80), mb_substr(trim($note), 0, 200), time()]);
+        return ['id' => (int) $db->lastInsertId(), 'token' => $token, 'label' => trim($label)];
+    } catch (\Throwable $e) { return null; }
+}
+
+/** The user's canaries, newest first. */
+function scan_canary_list(int $uid): array {
+    $db = scan_db(); if (!$db) return [];
+    try {
+        $st = $db->prepare("SELECT id,token,label,note,created_at,tripped,tripped_at,tripped_note FROM osint_canaries WHERE user_id = ? ORDER BY id DESC");
+        $st->execute([$uid]);
+        return $st->fetchAll();
+    } catch (\Throwable $e) { return []; }
+}
+
+/** Trip (mark leaked), untrip, or delete one of the user's canaries. */
+function scan_canary_update(int $uid, int $id, string $op, string $note = ''): bool {
+    $db = scan_db(); if (!$db) return false;
+    try {
+        if ($op === 'delete') { $db->prepare("DELETE FROM osint_canaries WHERE id = ? AND user_id = ?")->execute([$id, $uid]); return true; }
+        if ($op === 'trip')   { $db->prepare("UPDATE osint_canaries SET tripped = 1, tripped_at = ?, tripped_note = ? WHERE id = ? AND user_id = ?")->execute([time(), mb_substr(trim($note), 0, 200), $id, $uid]); return true; }
+        if ($op === 'untrip') { $db->prepare("UPDATE osint_canaries SET tripped = 0, tripped_at = NULL, tripped_note = '' WHERE id = ? AND user_id = ?")->execute([$id, $uid]); return true; }
+        return false;
+    } catch (\Throwable $e) { return false; }
+}
+
+/** Reverse-lookup: which of the user's canary tokens appear in a pasted string
+ *  (a spam email, a broker listing) → attributes the leak to where it was seeded. */
+function scan_canary_match(int $uid, string $text): array {
+    $text = mb_strtolower($text);
+    $hits = [];
+    foreach (scan_canary_list($uid) as $c) {
+        if (strpos($text, mb_strtolower((string) $c['token'])) !== false) $hits[] = $c;
+    }
+    return $hits;
 }
 
 /** Re-check one user's emails against XposedOrNot, recording NEW breaches vs the stored

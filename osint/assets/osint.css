@@ -417,3 +417,7 @@ a.os-top-l:hover{text-decoration:none}
 /* Exposed services: CVE chips */
 .os-vuln{display:inline-block;font-family:var(--os-mono);font-size:.72rem;color:#ff9a92;text-decoration:none;border:1px solid rgba(229,105,95,.4);border-radius:5px;padding:0 5px;margin:1px 2px}
 .os-vuln:hover{border-color:var(--os-danger);text-decoration:underline}
+
+/* Canaries */
+.os-cn-tripped{box-shadow:inset 3px 0 0 var(--os-danger)}
+.os-cn-deploy{display:flex;flex-wrap:wrap;gap:4px 10px;margin-top:2px}
