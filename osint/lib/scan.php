@@ -26,6 +26,21 @@ const OSINT_GRAVATAR      = 'https://www.gravatar.com/';
 const OSINT_BREACH_CAP    = 60;    // most-recent breaches kept per email
 const OSINT_MONITOR_INTERVAL = 43200;   // 12h — min gap between automatic monitor re-checks
 
+/** Optional API keys/tokens live in a gitignored osint/config.local.php that `return`s an
+ *  array, e.g. ['emailrep' => '...', 'hibp' => '...', 'intelx' => '...']. A missing file or
+ *  key just leaves that one source dark — everything else keeps working keyless. */
+function osint_config(): array {
+    static $cfg = null;
+    if ($cfg === null) {
+        $f = __DIR__ . '/../config.local.php';
+        $cfg = is_file($f) ? (array) (include $f) : [];
+    }
+    return $cfg;
+}
+function osint_key(string $name): string {
+    return trim((string) (osint_config()[$name] ?? ''));
+}
+
 function scan_db(): ?PDO {
     static $ready = false;
     $db = osint_db();
@@ -1568,6 +1583,33 @@ function scan_social_gravatar_un(?array $r, string $u): array {
     $c['linked'] = array_slice($c['linked'], 0, 8);
     return $c;
 }
+/** Medium — its @handle page is indistinguishable for missing users (200 either way), but
+ *  the RSS feed is clean: 200 XML = exists, 404 = not. Channel title carries the name. */
+function scan_social_medium(?array $r, string $u): array {
+    $c = scan_social_card('Medium', 'https://medium.com/@' . $u);
+    if (!$r || $r['err']) return $c;
+    if ((int) $r['code'] === 404) { $c['exists'] = false; return $c; }
+    if ((int) $r['code'] !== 200 || stripos($r['body'], '<rss') === false) { $c['exists'] = ((int) $r['code'] === 200) ? null : false; return $c; }
+    $c['exists'] = true;
+    if (preg_match('#<title>\s*(?:<!\[CDATA\[)?\s*(.*?)\s*(?:\]\]>)?\s*</title>#is', $r['body'], $m)) {
+        $c['name'] = trim(preg_replace('/^Stories by\s+|\s+(?:on|–|-)\s*Medium$/i', '', html_entity_decode($m[1], ENT_QUOTES | ENT_HTML5)));
+    }
+    return $c;
+}
+/** Wikipedia — the User: page 403s crawlers, so use the MediaWiki users API: a `missing`
+ *  key means no such account, an `editcount` means it exists. */
+function scan_social_wikipedia(?array $r, string $u): array {
+    $c = scan_social_card('Wikipedia', 'https://en.wikipedia.org/wiki/User:' . $u);
+    if (!$r || $r['err'] || (int) $r['code'] !== 200) return $c;
+    $j = json_decode((string) $r['body'], true);
+    $usr = $j['query']['users'][0] ?? null;
+    if (!is_array($usr) || isset($usr['missing']) || isset($usr['invalid'])) { $c['exists'] = false; return $c; }
+    $c['exists'] = true;
+    $c['name'] = (string) ($usr['name'] ?? $u);
+    if (isset($usr['editcount'])) $c['stats'] = number_format((int) $usr['editcount']) . ' edits';
+    if (!empty($usr['registration'])) $c['joined'] = substr((string) $usr['registration'], 0, 10);
+    return $c;
+}
 
 /** Aggregate public profiles for one username across keyless-API platforms. */
 function scan_social_lookup(string $username): array {
@@ -1597,6 +1639,11 @@ function scan_social_lookup(string $username): array {
         'behance'  => ['url' => 'https://www.behance.net/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
         'aboutme'  => ['url' => 'https://about.me/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
         'gravatar' => ['url' => 'https://gravatar.com/' . rawurlencode(strtolower($u)) . '.json', 'headers' => $ua, 'follow' => true, 'timeout' => 10],
+        'medium'   => ['url' => 'https://medium.com/feed/@' . rawurlencode($u), 'headers' => $ua, 'follow' => true, 'timeout' => 12],
+        'mastodon' => ['url' => 'https://mastodon.social/@' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'patreon'  => ['url' => 'https://www.patreon.com/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'spotifyu' => ['url' => 'https://open.spotify.com/user/' . rawurlencode($u), 'headers' => $crawl, 'follow' => true, 'timeout' => 12],
+        'wikipedia'=> ['url' => 'https://en.wikipedia.org/w/api.php?action=query&list=users&ususers=' . rawurlencode($u) . '&usprop=editcount|registration&format=json', 'headers' => $ua, 'follow' => true, 'timeout' => 10],
     ], 400000);
     $cards = [
         scan_social_github($res['github'] ?? null, $u),
@@ -1620,6 +1667,11 @@ function scan_social_lookup(string $username): array {
         scan_social_og_card($res['behance'] ?? null, 'Behance', 'https://www.behance.net/' . $u),
         scan_social_og_card($res['aboutme'] ?? null, 'about.me', 'https://about.me/' . $u),
         scan_social_gravatar_un($res['gravatar'] ?? null, $u),
+        scan_social_medium($res['medium'] ?? null, $u),
+        scan_social_og_card($res['mastodon'] ?? null, 'Mastodon', 'https://mastodon.social/@' . $u),
+        scan_social_og_card($res['patreon'] ?? null, 'Patreon', 'https://www.patreon.com/' . $u),
+        scan_social_og_card($res['spotifyu'] ?? null, 'Spotify', 'https://open.spotify.com/user/' . $u),
+        scan_social_wikipedia($res['wikipedia'] ?? null, $u),
     ];
     return ['ok' => true, 'username' => $u, 'cards' => $cards];
 }
@@ -2395,10 +2447,108 @@ function scan_email_free_providers(): array {
             'mail.com','yandex.com','yandex.ru','zoho.com','tutanota.com','tuta.io','hey.com','fastmail.com'];
 }
 
+/** The GitHub identity behind an email. Commit-search finds the account that authored
+ *  commits with this address even when the profile email is hidden — a strong de-anon
+ *  pivot. Keyless (60 req/hr shared). Returns up to 5 unique {login,name,url}. */
+function scan_email_github_commits(?array $r): array {
+    if (!$r || !empty($r['err']) || (int) $r['code'] !== 200) return [];
+    $j = json_decode((string) $r['body'], true);
+    if (!is_array($j) || empty($j['items'])) return [];
+    $seen = []; $out = [];
+    foreach ($j['items'] as $it) {
+        $login = (string) ($it['author']['login'] ?? '');
+        if ($login === '' || isset($seen[strtolower($login)])) continue;
+        $seen[strtolower($login)] = true;
+        $out[] = ['login' => $login,
+                  'name'  => (string) ($it['commit']['author']['name'] ?? ''),
+                  'url'   => (string) ($it['author']['html_url'] ?? 'https://github.com/' . $login)];
+        if (count($out) >= 5) break;
+    }
+    return $out;
+}
+
+/** Spotify account-existence via the signup email-validate endpoint (a GET; no email is
+ *  ever sent). status 20 (or an email error) => the address already has an account;
+ *  status 1 => available, so no account; anything else => couldn't tell. */
+function scan_email_spotify(?array $r): ?bool {
+    if (!$r || !empty($r['err']) || (int) $r['code'] !== 200) return null;
+    $j = json_decode((string) $r['body'], true);
+    if (!is_array($j) || !isset($j['status'])) return null;
+    if ((int) $j['status'] === 20 || !empty($j['errors']['email'])) return true;
+    if ((int) $j['status'] === 1) return false;
+    return null;
+}
+
+/** EmailRep.io reputation + which public services the address is seen on. Requires a
+ *  (free) key in config.local.php['emailrep']; dark without one. */
+function scan_email_emailrep(?array $r): ?array {
+    if (!$r || !empty($r['err']) || (int) $r['code'] !== 200) return null;
+    $j = json_decode((string) $r['body'], true);
+    if (!is_array($j) || !isset($j['reputation'])) return null;
+    $d = is_array($j['details'] ?? null) ? $j['details'] : [];
+    return [
+        'reputation'        => (string) $j['reputation'],
+        'suspicious'        => !empty($j['suspicious']),
+        'references'        => (int) ($j['references'] ?? 0),
+        'profiles'          => array_values(array_filter(array_map('strval', (array) ($d['profiles'] ?? [])))),
+        'data_breach'       => !empty($d['data_breach']),
+        'credentials_leaked'=> !empty($d['credentials_leaked']),
+        'first_seen'        => (string) ($d['first_seen'] ?? ''),
+        'last_seen'         => (string) ($d['last_seen'] ?? ''),
+    ];
+}
+
+/** Have I Been Pwned breached-account lookup. Requires config.local.php['hibp'] (paid
+ *  key). 404 = clean, 200 = breaches. Returns [{name,date,data}]. */
+function scan_email_hibp(?array $r): array {
+    if (!$r || !empty($r['err']) || (int) $r['code'] === 404 || (int) $r['code'] !== 200) return [];
+    $j = json_decode((string) $r['body'], true);
+    if (!is_array($j)) return [];
+    $out = [];
+    foreach ($j as $b) {
+        if (!is_array($b)) continue;
+        $out[] = ['name' => (string) ($b['Name'] ?? $b['Title'] ?? ''),
+                  'date' => (string) ($b['BreachDate'] ?? ''),
+                  'data' => implode(', ', array_slice(array_map('strval', (array) ($b['DataClasses'] ?? [])), 0, 8))];
+    }
+    return $out;
+}
+
+/** Intelligence X leak/paste search for the address (2-step: start search, poll results).
+ *  Requires config.local.php['intelx'] (free-tier key); dark without one. Returns record
+ *  metadata only (selector/source/date) — never the leaked contents. */
+function scan_email_intelx(string $email): ?array {
+    $key = osint_key('intelx');
+    if ($key === '') return null;
+    $base = 'https://2.intelx.io';
+    $hdr  = ['x-key: ' . $key, 'User-Agent: ' . OSINT_UA, 'Content-Type: application/json', 'Accept: application/json'];
+    $s = scan_multi_get(['s' => ['url' => $base . '/intelligent/search', 'headers' => $hdr,
+        'post' => json_encode(['term' => $email, 'maxresults' => 20, 'media' => 0, 'sort' => 2, 'terminate' => []]),
+        'follow' => true, 'timeout' => 14]])['s'] ?? null;
+    if (!$s || !empty($s['err']) || (int) $s['code'] !== 200) return null;
+    $sj = json_decode((string) $s['body'], true);
+    $id = is_array($sj) ? ($sj['id'] ?? null) : null;
+    if (!$id) return null;
+    $rr = scan_multi_get(['r' => ['url' => $base . '/intelligent/search/result?id=' . rawurlencode((string) $id) . '&limit=20',
+        'headers' => $hdr, 'follow' => true, 'timeout' => 14]])['r'] ?? null;
+    if (!$rr || !empty($rr['err'])) return null;
+    $rj = json_decode((string) $rr['body'], true);
+    $recs = is_array($rj) ? (array) ($rj['records'] ?? []) : [];
+    $out = [];
+    foreach (array_slice($recs, 0, 15) as $rec) {
+        if (!is_array($rec)) continue;
+        $out[] = ['name'   => (string) ($rec['name'] ?? '(unnamed)'),
+                  'date'   => substr((string) ($rec['date'] ?? ''), 0, 10),
+                  'bucket' => (string) ($rec['bucketh'] ?? $rec['bucket'] ?? '')];
+    }
+    return ['count' => count($recs), 'records' => $out];
+}
+
 /** Everything public a single email address reveals, in one report: deliverability +
  *  disposable/role/free classification, domain spoofability (SPF/DMARC), Gravatar
- *  profile, breach corpora (XposedOrNot + LeakCheck + pastes), and where it's a known
- *  registered account (Duolingo / GitHub-by-email). All keyless; nothing is emailed. */
+ *  profile, breach corpora (XposedOrNot + LeakCheck + HIBP + pastes), the GitHub identity
+ *  behind it, account-existence signals (Spotify / Duolingo), and — when keys are present
+ *  — EmailRep reputation and Intelligence X leak hits. All on-demand; nothing is emailed. */
 function scan_email_intel(string $emailRaw): array {
     $email = strtolower(trim($emailRaw));
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) return ['error' => 'Not a valid email address.'];
@@ -2409,15 +2559,23 @@ function scan_email_intel(string $emailRaw): array {
         if ($c !== $email) $canonical = $c;
     }
     $ua  = ['User-Agent: ' . OSINT_UA];
+    $ghh = array_merge($ua, ['Accept: application/vnd.github+json']);
     $doh = fn($n, $t) => ['url' => 'https://dns.google/resolve?name=' . rawurlencode($n) . '&type=' . $t, 'headers' => array_merge($ua, ['Accept: application/dns-json']), 'follow' => true, 'timeout' => 8];
-    $res = scan_multi_get([
+    $tasks = [
         'breach' => ['url' => OSINT_XPOSED . rawurlencode($email), 'headers' => $ua, 'follow' => true],
         'leak'   => ['url' => 'https://leakcheck.io/api/public?check=' . rawurlencode($email), 'headers' => $ua, 'follow' => true],
         'grav'   => ['url' => 'https://gravatar.com/' . md5($email) . '.json', 'headers' => $ua, 'follow' => true],
         'duo'    => ['url' => 'https://www.duolingo.com/2017-06-30/users?email=' . rawurlencode($email), 'headers' => $ua, 'follow' => true],
-        'gh'     => ['url' => 'https://api.github.com/search/users?q=' . rawurlencode($email) . '+in:email', 'headers' => array_merge($ua, ['Accept: application/vnd.github+json']), 'follow' => true],
+        'gh'     => ['url' => 'https://api.github.com/search/users?q=' . rawurlencode($email) . '+in:email', 'headers' => $ghh, 'follow' => true],
+        'ghc'    => ['url' => 'https://api.github.com/search/commits?q=' . rawurlencode('author-email:' . $email) . '&per_page=10', 'headers' => $ghh, 'follow' => true, 'timeout' => 12],
+        'spot'   => ['url' => 'https://spclient.wg.spotify.com/signup/public/v1/account?validate=1&email=' . rawurlencode($email), 'headers' => $ua, 'follow' => true, 'timeout' => 10],
         'mx'     => $doh($domain, 'MX'), 'txt' => $doh($domain, 'TXT'), 'dmarc' => $doh('_dmarc.' . $domain, 'TXT'),
-    ]);
+    ];
+    if (($erKey = osint_key('emailrep')) !== '')
+        $tasks['emailrep'] = ['url' => 'https://emailrep.io/' . $email, 'headers' => array_merge($ua, ['Key: ' . $erKey, 'Accept: application/json']), 'follow' => true, 'timeout' => 12];
+    if (($hibpKey = osint_key('hibp')) !== '')
+        $tasks['hibp'] = ['url' => 'https://haveibeenpwned.com/api/v3/breachedaccount/' . rawurlencode($email) . '?truncateResponse=false', 'headers' => ['User-Agent: m190-osint', 'hibp-api-key: ' . $hibpKey, 'Accept: application/json'], 'follow' => true, 'timeout' => 12];
+    $res = scan_multi_get($tasks);
 
     // Domain deliverability + classification.
     $mxHosts = array_values(array_filter(array_map(function ($m) { $p = preg_split('/\s+/', trim($m)); return rtrim((string) end($p), '.'); }, scan_doh_answers($res['mx'] ?? null, 15))));
@@ -2451,6 +2609,15 @@ function scan_email_intel(string $emailRaw): array {
         }
     }
 
+    // HIBP (key-gated) — fold into the same breach list, tagged by source, deduped by name.
+    foreach (scan_email_hibp($res['hibp'] ?? null) as $b) {
+        foreach ($breaches as $ex) if (strcasecmp($ex['name'], $b['name']) === 0) continue 2;
+        $breaches[] = ['name' => $b['name'], 'date' => $b['date'], 'data' => $b['data'], 'src' => 'HIBP'];
+        if ($b['date'] && preg_match('/(19|20)\d\d/', $b['date'], $mm)) $years[] = (int) $mm[0];
+        if (stripos($b['data'], 'password') !== false) $pw = true;
+        foreach (explode(',', $b['data']) as $c) { $c = trim($c); if ($c !== '') $classes[mb_strtolower($c)] = $c; }
+    }
+
     // Gravatar profile + registered-account signals.
     $grav = null;
     if (($res['grav']['code'] ?? 0) === 200 && empty($res['grav']['err'])) {
@@ -2462,6 +2629,12 @@ function scan_email_intel(string $emailRaw): array {
     if (!empty($res['duo']) && empty($res['duo']['err'])) { $pic = scan_duolingo_pic($res['duo']['body']); if ($pic !== null) $accounts[] = ['label' => 'Duolingo', 'url' => 'https://www.duolingo.com/']; }
     if (($res['gh']['code'] ?? 0) === 200) { $gj = json_decode($res['gh']['body'], true); foreach (array_slice(is_array($gj) ? ($gj['items'] ?? []) : [], 0, 3) as $it) { $lg = (string) ($it['login'] ?? ''); if ($lg !== '') $accounts[] = ['label' => 'GitHub @' . $lg, 'url' => (string) ($it['html_url'] ?? 'https://github.com/' . $lg)]; } }
 
+    // Identity & account-existence add-ons (keyless), plus key-gated intelligence sources.
+    $ghCommits = scan_email_github_commits($res['ghc'] ?? null);
+    $spotify   = scan_email_spotify($res['spot'] ?? null);
+    $emailrep  = isset($res['emailrep']) ? scan_email_emailrep($res['emailrep']) : null;
+    $intelx    = scan_email_intelx($email);
+
     sort($years);
     return [
         'ok' => true, 'email' => $email, 'local' => $local, 'domain' => $domain, 'canonical' => $canonical,
@@ -2471,6 +2644,7 @@ function scan_email_intel(string $emailRaw): array {
         'free' => in_array($domain, scan_email_free_providers(), true),
         'spf' => $spf, 'dmarc' => $dmarc,
         'gravatar' => $grav, 'accounts' => $accounts,
+        'gh_commits' => $ghCommits, 'spotify' => $spotify, 'emailrep' => $emailrep, 'intelx' => $intelx,
         'breaches' => $breaches, 'breach_count' => count($breaches),
         'span' => $years ? (reset($years) === end($years) ? (string) reset($years) : reset($years) . '–' . end($years)) : '',
         'pw_exposed' => $pw, 'dataclasses' => array_slice(array_values($classes), 0, 12),

@@ -59,6 +59,8 @@ threatmap/data/*
 # OSINT tool user store (accounts + invite codes) — keep the deny .htaccess
 osint/data/*
 !osint/data/.htaccess
+# OSINT optional API keys (EmailRep / HIBP / Intelligence X) — never commit; example is tracked
+osint/config.local.php
 
 # Owner console secrets (password hash + #security webhook) — never commit
 owner/config.php

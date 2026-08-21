@@ -75,6 +75,51 @@
       d.accounts.forEach(function (a) { h += '<div class="os-row"><div class="os-row-main"><div class="os-row-t"><a href="' + esc(a.url) + '" target="_blank" rel="noopener nofollow">' + esc(a.label) + '</a></div><div class="os-row-d">This address is registered here.</div></div></div>'; });
       h += '</div>';
     }
+
+    // Accounts & identity — de-anon pivots and account-existence signals (Epieos-style)
+    var er = d.emailrep, ix = d.intelx;
+    var hasIdentity = (d.gh_commits && d.gh_commits.length) || d.spotify != null || er || (ix && ix.count);
+    if (hasIdentity) {
+      h += sub('Accounts & identity');
+
+      if (d.gh_commits && d.gh_commits.length) {
+        h += '<p class="os-dim os-mb">GitHub account(s) that authored public commits with this address — this unmasks the identity even when the profile email is hidden:</p><div class="os-list">';
+        d.gh_commits.forEach(function (g) {
+          h += '<div class="os-row"><div class="os-row-main"><div class="os-row-t"><a href="' + esc(g.url) + '" target="_blank" rel="noopener nofollow">@' + esc(g.login) + '</a>' + (g.name ? ' <span class="os-dim">' + esc(g.name) + '</span>' : '') + '</div><div class="os-row-d">Authored public commits with this email on GitHub.</div></div></div>';
+        });
+        h += '</div>';
+      }
+
+      var rows = '';
+      if (d.spotify != null) rows += prow(d.spotify ? 'warn' : 'ok', 'Spotify', d.spotify ? 'An account is registered to this address' : 'No account registered to this address');
+      if (er) {
+        var repCls = er.suspicious ? 'warn' : (er.reputation === 'low' ? 'warn' : 'ok');
+        rows += prow(repCls, 'EmailRep reputation', esc(er.reputation) + (er.suspicious ? ' · flagged suspicious' : '') + (er.references ? ' · ' + er.references + ' public reference(s)' : ''));
+        if (er.credentials_leaked) rows += prow('bad', 'Credentials', 'Leaked in a known corpus (per EmailRep)');
+        else if (er.data_breach) rows += prow('warn', 'Breach', 'Address appears in a data breach (per EmailRep)');
+      }
+      if (rows) h += '<div class="os-posture">' + rows + '</div>';
+
+      if (er && (er.first_seen || er.last_seen)) h += '<p class="os-fineprint">EmailRep first/last seen: ' + esc([er.first_seen, er.last_seen].filter(Boolean).join(' → ')) + '</p>';
+
+      if (er && er.profiles && er.profiles.length) {
+        h += '<div class="os-subhead">Seen on these services (EmailRep)</div><div class="os-taglist">';
+        er.profiles.forEach(function (p) { h += '<span class="os-tag">' + esc(p) + '</span>'; });
+        h += '</div>';
+      }
+
+      if (ix && ix.count) {
+        h += '<div class="os-subhead">Intelligence X — ' + ix.count + ' leak/paste record(s)</div>';
+        if (ix.records && ix.records.length) {
+          h += '<div class="os-list">';
+          ix.records.forEach(function (r) {
+            h += '<div class="os-row"><div class="os-row-main"><div class="os-row-t"><b>' + esc(r.name || '(unnamed)') + '</b>' + (r.date ? ' <span class="os-dim">' + esc(r.date) + '</span>' : '') + '</div>' + (r.bucket ? '<div class="os-row-d">' + esc(r.bucket) + '</div>' : '') + '</div></div>';
+          });
+          h += '</div>';
+        }
+        h += '<p class="os-fineprint">Record metadata only (source + date) — leaked contents are never fetched or shown.</p>';
+      }
+    }
     return h;
   }
 
