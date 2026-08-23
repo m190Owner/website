@@ -1,8 +1,5 @@
 # Server environment — contains secrets, never commit
 .htaccess
-# Allow lab access-control .htaccess files (no secrets, just headers/Require rules)
-!lab/.htaccess
-!lab/*/.htaccess
 # Honeytoken routing .htaccess (no secrets, just rewrite rules for /c/ and /t/)
 !c/.htaccess
 !t/.htaccess
@@ -21,16 +18,6 @@ cursor_data.json
 place_data/
 world_data.json
 activity_feed.json
-
-# Pwn lab runtime data
-lab/data/sessions.json
-lab/data/leaderboard.json
-# Pwn lab VM build throwaways — build page + Alpine ISO are local-only, never deploy them
-lab/_build_vm.html
-lab/*.iso
-# VM image itself is too big for git — deployed out-of-band to the host
-lab/vm/alpine.img
-lab/vm/state.bin
 
 # Game leaderboard runtime data
 game/data/
