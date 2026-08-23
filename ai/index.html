@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>m190 AI · runs in your browser</title>
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <meta property="og:title" content="m190 AI — an LLM running in your browser">
+  <meta property="og:description" content="A real AI chat running 100% on your own GPU via WebGPU. No server. Nothing you type ever leaves your machine.">
+  <meta name="theme-color" content="#05070d">
+  <link rel="stylesheet" href="ai.css">
+</head>
+<body>
+  <div class="top">
+    <span class="brand"><b>m190</b> · ai</span>
+    <span class="badge" id="badge" hidden><span class="dot"></span> running in your browser · on your GPU · nothing sent to a server</span>
+    <span class="spacer"></span>
+    <div class="picker" id="picker" hidden>
+      <button data-m="fast" class="on">Fast · 1B</button>
+      <button data-m="smart">Smart · 3B</button>
+    </div>
+    <a class="back" href="/">← logansandivar.com</a>
+  </div>
+
+  <div class="wrap">
+    <div class="inner" id="inner">
+      <!-- JS injects the WebGPU gate, model loader, and chat log here -->
+    </div>
+  </div>
+
+  <div class="composer" id="composer" hidden>
+    <div class="row">
+      <textarea id="input" rows="1" placeholder="Ask m190 AI anything… (runs entirely on your machine)"></textarea>
+      <button id="send">Send</button>
+    </div>
+    <div class="hint">Small local model · it can be wrong · your prompts never leave this device.</div>
+  </div>
+
+  <script type="module" src="ai.js"></script>
+</body>
+</html>
