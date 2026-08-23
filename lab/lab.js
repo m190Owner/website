@@ -70,9 +70,14 @@ let emulator = null;
 let vmAvailable = false;
 
 async function isVmImageAvailable() {
+    // Both the disk image AND the boot snapshot must be present — bootVm() resumes from
+    // state.bin, so alpine.img alone would hang the emulator. Missing either → download mode.
     try {
-        const r = await fetch('/lab/vm/alpine.img', { method: 'HEAD' });
-        return r.ok;
+        const [img, state] = await Promise.all([
+            fetch('/lab/vm/alpine.img', { method: 'HEAD' }),
+            fetch('/lab/vm/state.bin', { method: 'HEAD' }),
+        ]);
+        return img.ok && state.ok;
     } catch {
         return false;
     }

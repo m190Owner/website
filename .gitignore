@@ -25,6 +25,12 @@ activity_feed.json
 # Pwn lab runtime data
 lab/data/sessions.json
 lab/data/leaderboard.json
+# Pwn lab VM build throwaways — build page + Alpine ISO are local-only, never deploy them
+lab/_build_vm.html
+lab/*.iso
+# VM image itself is too big for git — deployed out-of-band to the host
+lab/vm/alpine.img
+lab/vm/state.bin
 
 # Game leaderboard runtime data
 game/data/
