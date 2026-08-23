@@ -1,0 +1,2 @@
+# Runtime store — never serve the SQLite DB or anything here over the web
+Require all denied
