@@ -11,6 +11,7 @@
       var gl = document.createElement('canvas').getContext('webgl'); if (!gl) return '';
       var dbg = gl.getExtension('WEBGL_debug_renderer_info'); if (!dbg) return '';
       var r = gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) || '';
+      if (/,\s*or similar/i.test(r) || /SwiftShader|llvmpipe|software/i.test(r)) return '';  // browser faked it — don't claim a wrong GPU
       r = r.replace(/^ANGLE \(/, '').replace(/\)$/, '');       // unwrap ANGLE(...)
       r = r.replace(/\s*\(0x[0-9a-f]+\)/i, '');                // drop device id
       r = r.replace(/\s*(Direct3D|vs_\d|OpenGL|Metal|D3D).*$/i, ''); // drop driver suffix

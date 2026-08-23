@@ -221,10 +221,16 @@
     // --- STAGE 2: device ---
     var bat = await batP, lan = await lanP;
     var conn = g(function () { return navigator.connection || navigator.webkitConnection; }, null);
+    // Firefox / privacy tools hand out a DECOY GPU (a common card + ", or similar"), or a
+    // software renderer — don't present that as the real card; flag it as browser masking.
+    var gpuRaw = gl.renderer || '';
+    var gpuMasked = !gpuRaw || /,\s*or similar/i.test(gpuRaw) || /SwiftShader|llvmpipe|software|Microsoft Basic/i.test(gpuRaw);
+    var gpuCard = (gpuRaw.match(/(GeForce[^,)]*|Radeon[^,)]*|Apple M\d[^,)]*|Arc[^,)]*|Iris[^,)]*|UHD[^,)]*)/i) || [])[1];
+    if (gpuCard) gpuCard = gpuCard.replace(/\s*(Direct3D|vs_\d|OpenGL|Metal|D3D).*$/i, '').trim();
     var devRows = [
       ['operating system', uap.os],
       ['browser', uap.br],
-      ['GPU', gl.renderer || 'hidden (good)', gl.renderer ? 'hot' : 'good'],
+      ['GPU', gpuMasked ? (gpuCard ? 'decoy — your browser fakes this (reports “' + gpuCard.trim() + '”) to resist fingerprinting. Nice.' : 'hidden by your browser (good)') : gpuRaw, gpuMasked ? 'good' : 'hot'],
       ['screen', g(function () { return screen.width + '×' + screen.height + ' @' + (window.devicePixelRatio || 1) + 'x, ' + screen.colorDepth + '-bit'; }, '?')],
       ['CPU cores', g(function () { return navigator.hardwareConcurrency; }, '?')],
       ['device memory', g(function () { return navigator.deviceMemory ? navigator.deviceMemory + ' GB' : 'hidden'; }, '?')],
