@@ -24,32 +24,48 @@ cp crackme-easy crackme-medium crackme-hard ../lab/binaries/
 # flag hashes are unchanged as long as flags.txt is unchanged (they match LAB_HASH_* in api.php)
 ```
 
+## ⚠️ Use the STANDARD ISO, not virt (verified 2026-08-23)
+
+Driving a test build revealed the original plan's ISO choice is **wrong**: the
+`alpine-virt` kernel is minimal (virtio only) and has **no driver for v86's emulated NIC**
+(an NE2000-compatible RTL8029). Inside a virt guest `/sys/class/net/` shows only `lo`, so
+`setup-alpine` fails with `ioctl ... No such device` and `apk` can't install the toolkit.
+Use the **`alpine-standard`** ISO — its `linux-lts` kernel ships `ne2k-pci`/`8390`, so
+networking (and `apk`) work. (Runtime doesn't need networking; only the build does.)
+
+Also verified: v86 boots this fine **without SharedArrayBuffer**, so a plain `php -S`
+(no COOP/COEP) is enough to run the build page — it's just slower than a cross-origin-isolated
+context.
+
 ## Prerequisites
 
-- A real desktop **Chrome/Chromium** (the build needs `apk add` over v86's network relay;
-  a sandboxed/embedded browser may block the relay WebSocket).
+- A real desktop **Chrome/Chromium**. (No SAB needed, but a real browser handles the ~400 MB
+  disk buffer + `save_state` comfortably.)
 - The build page `lab/_build_vm.html` (gitignored; recreate from the appendix if missing).
 - ~1 GB free disk for the ISO + image downloads.
 
-## Phase 1 — download the Alpine **x86 (32-bit)** virt ISO into `lab/`
+## Phase 1 — download the Alpine **standard x86 (32-bit)** ISO into `lab/`
 
 ```bash
 cd lab
-# Grab the latest 3.19 x86 (32-bit!) virt ISO — check the dir for the current patch level:
-#   https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86/
-curl -L -o alpine-virt-x86.iso \
-  https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86/alpine-virt-3.19.8-x86.iso
+# STANDARD, not virt (virt has no NIC driver for v86). x86 = 32-bit. Check the dir for the
+# current patch level: https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86/
+curl -L -o alpine-standard-x86.iso \
+  https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86/alpine-standard-3.19.9-x86.iso
 cd ..
 ```
 
-The build page expects the file named exactly `lab/alpine-virt-x86.iso` (`ISO` const).
+The build page expects the file named exactly `lab/alpine-standard-x86.iso` (`ISO` const).
 
 ## Phase 2 — install Alpine to disk (build page, **install mode**)
 
 1. Serve the repo root: `php -S localhost:8000` (or any static server).
 2. Open `http://localhost:8000/lab/_build_vm.html` in Chrome. Leave the file picker **empty**.
-3. Click **Start VM** → it boots the ISO onto a fresh 400 MB disk.
-4. In the console: log in as `root` (no password). Run `setup-alpine`:
+3. Click **Start VM**, then **click the black screen** to give it keyboard focus. At the Alpine
+   syslinux boot menu press **Enter** (boots the LTS kernel onto the fresh 400 MB disk).
+4. Log in as `root` (no password). Confirm networking came up (this is the whole reason for
+   the standard ISO): `ip addr` should show `eth0` with a DHCP address. If `eth0` is missing,
+   `modprobe ne2k-pci` (or `8390`) then `ifup eth0`. Then run `setup-alpine`:
    - keymap `us` / `us`, hostname `m190lab`, iface `eth0`, IP `dhcp`, no manual net, no proxy
    - **root password** `lab`, timezone `UTC`, no NTP, mirror `1` (or `f` for fastest)
    - user: `no` (we create it by hand below), no SSH
@@ -117,7 +133,7 @@ at `/lab/crackme`, and `file /lab/crackme` in-guest should say **ELF 32-bit**. S
 ## Cleanup
 
 ```bash
-rm lab/_build_vm.html lab/alpine-virt-x86.iso   # both gitignored; safe to delete
+rm lab/_build_vm.html lab/alpine-standard-x86.iso   # both gitignored; safe to delete
 ```
 
 ## Appendix — the build page
