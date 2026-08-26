@@ -122,7 +122,8 @@
       '<div class="muted" style="margin-bottom:8px">Players · first to ' + s.target + '</div><ul class="scores">' +
       s.players.map(function (p) {
         return '<li class="' + (p.id === s.me.id ? 'me' : '') + '"><span class="dot ' + (p.connected ? '' : 'off') + '"></span>' +
-          '<span class="nm">' + esc(p.name) + (p.host ? ' <span class="muted">host</span>' : '') + '</span>' +
+          '<span class="nm">' + esc(p.name) + (p.bot ? ' 🤖' : '') + (p.host ? ' <span class="muted">host</span>' : '') + '</span>' +
+          (s.phase === 'lobby' && s.me.host && p.bot ? '<button data-rmbot="' + p.id + '" title="remove bot" style="background:none;border:none;color:var(--dim);cursor:pointer;padding:0 4px;font-size:.8rem">✕</button>' : '') +
           (p.czar ? '<span class="crown" title="Card Czar">👑</span>' : (p.submitted && (s.phase === 'playing') ? '<span title="locked in">✓</span>' : '')) +
           '<span class="sc">' + p.score + '</span></li>';
       }).join('') + '</ul></div></div><div class="main">';
@@ -145,6 +146,9 @@
     });
     var lv = document.getElementById('leaveBtn');
     if (lv) lv.addEventListener('click', function () { api('leave', { code: s.code, token: s.token || session.token }); clearSession(); stopPolling(); history.replaceState(null, '', '/cards/'); lastSig = ''; renderLanding(); });
+    [].forEach.call(app.querySelectorAll('[data-rmbot]'), function (el) {
+      el.addEventListener('click', function () { api('removebot', { code: s.code, token: session.token, bot: el.getAttribute('data-rmbot') }).then(function (r) { if (!r.ok) alert(r.error); else { lastSig = ''; poll(); } }); });
+    });
     wirePhase(s);
   }
 
@@ -154,7 +158,8 @@
       '<p class="muted">Deck: <b>' + (s.nsfw ? 'Uncut 🔞' : 'Squeaky Clean') + '</b> · playing to <b>' + s.target + '</b>. Share the room code so friends can join.</p>' +
       '<div class="row" style="margin-top:16px">' +
       (host ? '<button class="btn grn" id="startBtn"' + (enough ? '' : ' disabled') + '>Start game</button>' +
-              (enough ? '' : '<span class="muted">need 3+ players</span>')
+              (s.players.length < 12 ? '<button class="btn ghost" id="addBotBtn">＋ Add bot</button>' : '') +
+              (enough ? '' : '<span class="muted">need 3+ players — or add bots</span>')
             : '<span class="muted">Waiting for the host to start…</span>') +
       '</div></div>';
   }
@@ -220,6 +225,8 @@
   function wirePhase(s) {
     var startBtn = document.getElementById('startBtn');
     if (startBtn) startBtn.addEventListener('click', function () { startBtn.disabled = true; api('start', { code: s.code, token: session.token }).then(function (r) { if (!r.ok) { startBtn.disabled = false; alert(r.error); } }); });
+    var addBotBtn = document.getElementById('addBotBtn');
+    if (addBotBtn) addBotBtn.addEventListener('click', function () { addBotBtn.disabled = true; api('addbot', { code: s.code, token: session.token }).then(function (r) { addBotBtn.disabled = false; if (!r.ok) alert(r.error); else { lastSig = ''; poll(); } }); });
     var againBtn = document.getElementById('againBtn');
     if (againBtn) againBtn.addEventListener('click', function () { againBtn.disabled = true; api('again', { code: s.code, token: session.token }); });
 

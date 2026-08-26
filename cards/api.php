@@ -21,6 +21,8 @@ switch ($action) {
     case 'pick':   echo json_encode(cah_pick((string) ($P['code'] ?? ''), (string) ($P['token'] ?? ''), (int) ($P['winner'] ?? 0))); break;
     case 'leave':  echo json_encode(cah_leave((string) ($P['code'] ?? ''), (string) ($P['token'] ?? ''))); break;
     case 'again':  echo json_encode(cah_again((string) ($P['code'] ?? ''), (string) ($P['token'] ?? ''))); break;
+    case 'addbot': echo json_encode(cah_addbot((string) ($P['code'] ?? ''), (string) ($P['token'] ?? ''))); break;
+    case 'removebot': echo json_encode(cah_removebot((string) ($P['code'] ?? ''), (string) ($P['token'] ?? ''), (int) ($P['bot'] ?? 0))); break;
     case 'state':  echo json_encode(cah_state((string) ($_REQUEST['code'] ?? ''), (string) ($_REQUEST['token'] ?? ''))); break;
     default:       echo json_encode(['ok' => false, 'error' => 'unknown action']);
 }

@@ -28,8 +28,10 @@ function cah_db(): ?PDO {
             judge_order TEXT, winner_id INTEGER, win_sub TEXT, created_at INTEGER, updated_at INTEGER )");
         $pdo->exec("CREATE TABLE IF NOT EXISTS players (
             id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, name TEXT NOT NULL, token TEXT NOT NULL,
-            score INTEGER NOT NULL DEFAULT 0, hand TEXT NOT NULL DEFAULT '[]', last_seen INTEGER, joined_at INTEGER )");
+            score INTEGER NOT NULL DEFAULT 0, hand TEXT NOT NULL DEFAULT '[]', last_seen INTEGER, joined_at INTEGER,
+            is_bot INTEGER NOT NULL DEFAULT 0 )");
         $pdo->exec("CREATE INDEX IF NOT EXISTS idx_p_code ON players(code)");
+        try { $pdo->exec("ALTER TABLE players ADD COLUMN is_bot INTEGER NOT NULL DEFAULT 0"); } catch (\Throwable $e) {}
         $pdo->exec("CREATE TABLE IF NOT EXISTS submissions (
             code TEXT NOT NULL, round_no INTEGER NOT NULL, player_id INTEGER NOT NULL, cards TEXT NOT NULL,
             PRIMARY KEY (code, round_no, player_id) )");
@@ -62,7 +64,7 @@ function cah_players(PDO $db, string $code): array {
     return $st->fetchAll();
 }
 function cah_active(array $players, int $now): array {
-    return array_values(array_filter($players, fn($p) => ($now - (int) $p['last_seen']) <= CAH_DISCONNECT));
+    return array_values(array_filter($players, fn($p) => (int) ($p['is_bot'] ?? 0) === 1 || ($now - (int) $p['last_seen']) <= CAH_DISCONNECT));
 }
 function cah_by_token(array $players, string $token): ?array {
     foreach ($players as $p) if (hash_equals($p['token'], $token)) return $p;
@@ -112,12 +114,67 @@ function cah_persist(PDO $db, array $room): void {
         $room['black_deck'], $room['judge_order'], $room['winner_id'], $room['win_sub'], $room['host_id'], cah_now(), $room['code']]);
 }
 
+function cah_bot_names(): array {
+    return ['Clanka', 'GLaDOS-lite', 'Bit', 'Byte', 'Roomba', 'HAL 9001', 'Deep Fold', 'Circuit', 'Nibbles', 'Cortex', 'Ada'];
+}
+/** Per-bot, per-round "thinking" delay (1–4s) so bots don't all answer in the same instant. */
+function cah_bot_delay(int $botId, int $round): int { return 1 + (int) (crc32($botId . ':' . $round) % 4); }
+
+/** Bots have no client to poll — they act here, driven by the humans' ticks. Runs inside the
+ *  caller's transaction. Bots answer (playing) and judge (when a bot is czar) after a short stagger. */
+function cah_bots_act(PDO $db, array $room, array $players): void {
+    $bots = array_values(array_filter($players, fn($p) => (int) ($p['is_bot'] ?? 0) === 1));
+    if (!$bots) return;
+    $now = cah_now();
+    foreach ($bots as $b) $db->prepare("UPDATE players SET last_seen = ? WHERE id = ?")->execute([$now, $b['id']]);  // never "disconnect"
+    $since = $now - (int) $room['updated_at'];
+
+    if ($room['phase'] === 'playing') {
+        $black = json_decode($room['black'], true) ?: ['pick' => 1];
+        $pick = max(1, (int) ($black['pick'] ?? 1));
+        $done = $db->prepare("SELECT player_id FROM submissions WHERE code=? AND round_no=?");
+        $done->execute([$room['code'], $room['round_no']]);
+        $submitted = array_map('intval', array_column($done->fetchAll(), 'player_id'));
+        foreach ($bots as $b) {
+            if ((int) $b['id'] === (int) $room['czar_id'] || in_array((int) $b['id'], $submitted, true)) continue;
+            if ($since < cah_bot_delay((int) $b['id'], (int) $room['round_no'])) continue;   // still thinking
+            $hand = json_decode($b['hand'], true) ?: [];
+            if (count($hand) < $pick) continue;
+            shuffle($hand);
+            $play = array_slice($hand, 0, $pick);
+            $rest = array_slice($hand, $pick);
+            $db->prepare("INSERT OR IGNORE INTO submissions (code, round_no, player_id, cards) VALUES (?,?,?,?)")
+               ->execute([$room['code'], $room['round_no'], $b['id'], json_encode(array_values($play))]);
+            $db->prepare("UPDATE players SET hand = ? WHERE id = ?")->execute([json_encode(array_values($rest)), $b['id']]);
+        }
+    } elseif ($room['phase'] === 'judging') {
+        $czar = null; foreach ($bots as $b) if ((int) $b['id'] === (int) $room['czar_id']) $czar = $b;
+        if ($czar && $since >= cah_bot_delay((int) $czar['id'], (int) $room['round_no']) + 1) {
+            $subs = $db->prepare("SELECT player_id, cards FROM submissions WHERE code=? AND round_no=?");
+            $subs->execute([$room['code'], $room['round_no']]);
+            $rows = $subs->fetchAll();
+            if ($rows) {
+                $win = $rows[random_int(0, count($rows) - 1)];
+                $db->prepare("UPDATE players SET score = score + 1 WHERE id = ?")->execute([$win['player_id']]);
+                $phase = 'roundover';
+                $sc = $db->prepare("SELECT score FROM players WHERE id = ?"); $sc->execute([$win['player_id']]);
+                if ((int) $sc->fetchColumn() >= (int) $room['target']) $phase = 'gameover';
+                $db->prepare("UPDATE rooms SET phase=?, winner_id=?, win_sub=?, updated_at=? WHERE code=?")
+                   ->execute([$phase, $win['player_id'], $win['cards'], cah_now(), $room['code']]);
+            }
+        }
+    }
+}
+
 /** The heartbeat: advance server-authoritative state. Serialized per DB by an immediate tx. */
 function cah_tick(PDO $db, string $code): void {
     try { $db->beginTransaction(); $db->exec('SELECT 1'); } catch (\Throwable $e) {}
     try {
         $room = cah_room($db, $code); if (!$room) { if ($db->inTransaction()) $db->commit(); return; }
         $now = cah_now();
+        $players = cah_players($db, $code);
+        cah_bots_act($db, $room, $players);          // bots take their turn (submit / judge)
+        $room = cah_room($db, $code); if (!$room) { if ($db->inTransaction()) $db->commit(); return; }
         $players = cah_players($db, $code);
         $active  = cah_active($players, $now);
 
@@ -263,6 +320,36 @@ function cah_leave(string $code, string $token): array {
 
 function cah_again(string $code, string $token): array { return cah_start($code, $token); }
 
+function cah_addbot(string $code, string $token): array {
+    $db = cah_db(); if (!$db) return cah_err('unavailable');
+    $room = cah_room($db, $code); if (!$room) return cah_err('gone');
+    $players = cah_players($db, $code); $me = cah_by_token($players, $token);
+    if (!$me || (int) $me['id'] !== (int) $room['host_id']) return cah_err('Only the host can add bots.');
+    if (count($players) >= 12) return cah_err('Room is full (12 max).');
+    $used = array_map(fn($p) => $p['name'], $players);
+    $pick = null;
+    foreach (cah_bot_names() as $n) if (!in_array($n, $used, true)) { $pick = $n; break; }
+    if ($pick === null) $pick = 'Bot ' . random_int(10, 99);
+    $now = cah_now();
+    $db->prepare("INSERT INTO players (code, name, token, last_seen, joined_at, is_bot) VALUES (?,?,?,?,?,1)")
+       ->execute([$code, $pick, 'bot-' . bin2hex(random_bytes(6)), $now, $now]);
+    $pid = (int) $db->lastInsertId();
+    if ($room['phase'] !== 'lobby' && $room['phase'] !== 'gameover') { $p = ['id' => $pid, 'hand' => '[]']; cah_refill($db, $room, $p); cah_persist($db, $room); }
+    return ['ok' => true];
+}
+function cah_removebot(string $code, string $token, int $botId): array {
+    $db = cah_db(); if (!$db) return cah_err('unavailable');
+    $room = cah_room($db, $code); if (!$room) return cah_err('gone');
+    $players = cah_players($db, $code); $me = cah_by_token($players, $token);
+    if (!$me || (int) $me['id'] !== (int) $room['host_id']) return cah_err('Only the host can remove bots.');
+    $isBot = false; foreach ($players as $p) if ((int) $p['id'] === $botId && (int) ($p['is_bot'] ?? 0) === 1) $isBot = true;
+    if (!$isBot) return cah_err('not a bot');
+    $db->prepare("DELETE FROM players WHERE id = ?")->execute([$botId]);
+    $db->prepare("DELETE FROM submissions WHERE code=? AND player_id=?")->execute([$code, $botId]);
+    cah_tick($db, $code);
+    return ['ok' => true];
+}
+
 /** The poll: touch presence, advance state, return this player's tailored view. */
 function cah_state(string $code, string $token): array {
     $db = cah_db(); if (!$db) return cah_err('unavailable');
@@ -282,7 +369,8 @@ function cah_state(string $code, string $token): array {
 
     $plist = array_map(function ($p) use ($room, $now, $done) {
         return ['id' => (int) $p['id'], 'name' => $p['name'], 'score' => (int) $p['score'],
-                'connected' => ($now - (int) $p['last_seen']) <= CAH_DISCONNECT,
+                'bot' => (int) ($p['is_bot'] ?? 0) === 1,
+                'connected' => (int) ($p['is_bot'] ?? 0) === 1 || ($now - (int) $p['last_seen']) <= CAH_DISCONNECT,
                 'czar' => (int) $p['id'] === (int) $room['czar_id'],
                 'host' => (int) $p['id'] === (int) $room['host_id'],
                 'submitted' => in_array((int) $p['id'], $done, true)];
