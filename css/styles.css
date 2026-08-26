@@ -93,6 +93,10 @@ body.loaded #home {
     filter: brightness(0.15);
 }
 
+/* Opt-in WebGPU cyber background — above the video, below particles/content */
+#hero-gpu { position: fixed; inset: 0; width: 100vw; height: 100vh; z-index: -2; display: none; pointer-events: none; }
+#hero-gpu.on { display: block; }
+
 /* Custom Cursor */
 .cursor {
     position: fixed;

@@ -63,6 +63,9 @@
         <source src="bg-video.mp4" type="video/mp4">
     </video>
 
+    <!-- Opt-in WebGPU cyber-field background (hidden until enabled via the ▦ toggle) -->
+    <canvas id="hero-gpu"></canvas>
+
     <!-- Loader -->
     <div id="loader">
         <div class="loader-ring"></div>
@@ -102,6 +105,7 @@
             </a>
             <button class="btn btn-primary btn-sm" id="feedbackButton">Feedback</button>
             <button class="btn btn-primary btn-sm music-toggle" id="music-toggle" title="Music controls">&#9835;</button>
+            <button class="btn btn-primary btn-sm" id="fx-toggle" title="Background effects" hidden>&#9638;</button>
             <button class="hamburger" id="hamburger" aria-label="Menu">
                 <span></span><span></span><span></span>
             </button>
@@ -208,5 +212,6 @@
     <script src="js/world.js"></script>
     <script src="js/activity.js"></script>
     <script src="js/unmask-teaser.js"></script>
+    <script src="js/hero-gpu.js"></script>
 </body>
 </html>
