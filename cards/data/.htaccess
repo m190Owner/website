@@ -1,0 +1,2 @@
+# Runtime game store — never serve the SQLite DB over the web
+Require all denied

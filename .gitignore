@@ -53,6 +53,10 @@ threatmap/data/*
 unmask/data/*
 !unmask/data/.htaccess
 
+# Cards Against Lag runtime store (rooms/players) — keep the deny .htaccess
+cards/data/*
+!cards/data/.htaccess
+
 # OSINT tool user store (accounts + invite codes) — keep the deny .htaccess
 osint/data/*
 !osint/data/.htaccess
