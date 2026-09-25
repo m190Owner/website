@@ -44,6 +44,7 @@ function ow_qs(array $over): string {
     <span class="ow-dim"><?= number_format($total) ?> events</span>
     <a class="ow-btn" href="/jellyfin/">🎬 Dashboard</a>
     <a class="ow-btn" href="/owner/media.php">🎛 Controls</a>
+    <a class="ow-btn" href="/owner/broadcast.php">📡 Broadcast</a>
     <a class="ow-btn" href="/owner/tokens.php">🎣 Tokens</a>
     <a class="ow-btn" href="/owner/osint.php">🔎 OSINT</a>
     <a class="ow-btn" href="/owner/2fa.php">&#128274; 2FA<?= owner_2fa_enabled() ? '' : ' <span class="ow-dot-warn" title="not enabled"></span>' ?></a>

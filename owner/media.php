@@ -63,7 +63,7 @@ $statusCls = ['done' => 'ok', 'failed' => 'crit', 'queued' => 'pend', 'claimed' 
 <body>
 <nav class="ow-nav">
   <div class="ow-brand"><a href="/owner/" style="text-decoration:none;color:inherit"><span class="ow-lock-sm" aria-hidden="true">&#128274;</span> Owner Console</a> <span class="ow-sep">/</span> Media Control</div>
-  <div class="ow-nav-right"><a class="ow-btn" href="/jellyfin/">&larr; Dashboard</a><a class="ow-btn" href="/owner/">Security log</a><a class="ow-btn" href="/owner/logout.php">Sign out</a></div>
+  <div class="ow-nav-right"><a class="ow-btn" href="/jellyfin/">&larr; Dashboard</a><a class="ow-btn" href="/owner/broadcast.php">📡 Broadcast</a><a class="ow-btn" href="/owner/">Security log</a><a class="ow-btn" href="/owner/logout.php">Sign out</a></div>
 </nav>
 
 <main class="ow-main">
