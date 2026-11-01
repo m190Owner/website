@@ -1,0 +1,9 @@
+Options -Indexes
+DirectoryIndex disabled
+<FilesMatch "^(schema\.sql|lib\.php|config.*|.*\.(sqlite|db|log))$">
+  Require all denied
+</FilesMatch>
+<IfModule mod_headers.c>
+  Header always set X-Robots-Tag "noindex, nofollow, noarchive"
+  Header always set X-Content-Type-Options "nosniff"
+</IfModule>

@@ -3,6 +3,7 @@
 # Honeytoken routing .htaccess (no secrets, just rewrite rules for /c/ and /t/)
 !c/.htaccess
 !t/.htaccess
+!gather/.htaccess
 
 # Runtime data
 github_cache.json
