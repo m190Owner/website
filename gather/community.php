@@ -17,6 +17,16 @@ function migrate_community(): void {
    PRAGMA user_version=3;");
  });
 }
+function migrate_presence(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=6)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=6)return;
+  $db->exec("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'online';
+   ALTER TABLE users ADD COLUMN custom_status TEXT NOT NULL DEFAULT '';
+   ALTER TABLE channels ADD COLUMN position INTEGER NOT NULL DEFAULT 0;
+   PRAGMA user_version=6;");
+ });
+}
+function presence(array $u): string {return $u['status']==='invisible'||(int)$u['last_seen']<time()-45?'offline':$u['status'];}
 function blocked(int $other): bool {return !!one('SELECT 1 FROM blocks WHERE (user_id=? AND target=?) OR (user_id=? AND target=?)',[uid(),$other,$other,uid()]);}
 function friends(int $other): bool {return !!one('SELECT 1 FROM friendships WHERE a=? AND b=? AND accepted=1',[min(uid(),$other),max(uid(),$other)]);}
 function permissions_for(string $sid): array {
@@ -26,11 +36,22 @@ function permissions_for(string $sid): array {
 function require_permission(string $sid,string $permission): void {if(!in_array($permission,permissions_for($sid),true))fail(403,'You do not have permission for this action.');}
 function role_owner(string $sid): void {if(member($sid)['role']!=='owner')fail(403,'Only the server owner can manage roles.');}
 function relationship_state(): array {
- $result=[];foreach(sql('SELECT u.*,f.sender,f.accepted FROM friendships f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[uid(),uid(),uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>$u['accepted']?'friend':((int)$u['sender']===uid()?'outgoing':'incoming'),'online'=>(int)$u['last_seen']>time()-45];
+ $result=[];foreach(sql('SELECT u.*,f.sender,f.accepted FROM friendships f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[uid(),uid(),uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>$u['accepted']?'friend':((int)$u['sender']===uid()?'outgoing':'incoming'),'online'=>presence($u)!=='offline'];
  foreach(sql('SELECT u.* FROM blocks b JOIN users u ON u.id=b.target WHERE b.user_id=?',[uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>'blocked','online'=>false];return $result;
 }
 function community(string $action,array $in): array {
  switch($action){
+ case 'status':
+  $status=$in['status']??null;if(!in_array($status,['online','idle','dnd','invisible'],true))fail(400,'Choose a valid status.');
+  sql('UPDATE users SET status=?,custom_status=? WHERE id=?',[$status,text_field($in,'custom_status',0,100),uid()]);break;
+ case 'channel_move':
+  $id=text_field($in,'channel_id',32,32);$direction=$in['direction']??null;if(!in_array($direction,[-1,1],true))fail(400,'Choose up or down.');
+  transaction(function()use($id,$direction){$c=channel($id);if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
+   $rows=sql('SELECT id FROM channels WHERE server_id=? AND parent_id IS NULL AND kind=? AND category=? ORDER BY position,created,id',[$c['server_id'],$c['kind'],$c['category']])->fetchAll();
+   $ids=[];foreach($rows as $row){try{channel($row['id']);$ids[]=$row['id'];}catch(ApiError $e){if($e->status!==403)throw $e;}}
+   $index=array_search($id,$ids,true);$next=$index+$direction;if($next<0||$next>=count($ids))return;
+   [$ids[$index],$ids[$next]]=[$ids[$next],$ids[$index]];foreach($ids as $position=>$channelId)sql('UPDATE channels SET position=? WHERE id=?',[$position+1,$channelId]);
+  });break;
  case 'friend_request':
   rate('friend-request:'.uid(),20,3600);$name=strtolower(text_field($in,'username',3,24));$u=one('SELECT id FROM users WHERE username=?',[$name]);if(!$u||(int)$u['id']===uid()||blocked((int)$u['id']))fail(400,'Unable to send that friend request. Check the username.');$other=(int)$u['id'];
   transaction(function()use($other){$args=[min(uid(),$other),max(uid(),$other)];$f=one('SELECT * FROM friendships WHERE a=? AND b=?',$args);if($f){if((int)$f['sender']!==uid())sql('UPDATE friendships SET accepted=1 WHERE a=? AND b=?',$args);return;}if(sql('SELECT count(*) FROM friendships WHERE a=? OR b=?',[uid(),uid()])->fetchColumn()>=200||sql('SELECT count(*) FROM friendships WHERE a=? OR b=?',[$other,$other])->fetchColumn()>=200)fail(409,'Friend list or request limit reached.');sql('INSERT INTO friendships(a,b,sender) VALUES(?,?,?)',[...$args,uid()]);});break;

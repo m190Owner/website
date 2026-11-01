@@ -15,6 +15,7 @@ function can_view_as(string $cid,int $who): bool {
  global $user;$saved=$user;$user=['id'=>$who];try{channel($cid);return true;}catch(ApiError $e){if(in_array($e->status,[403,404],true))return false;throw $e;}finally{$user=$saved;}
 }
 function mention_names(string $body): array {
+ $body=preg_replace('/```[\s\S]*?```|`[^`\n]+`/',' ',$body);
  preg_match_all('/(?<![a-z0-9_@.])@([a-z0-9_]{3,24})(?![a-z0-9_])/i',$body,$matches);return array_values(array_unique(array_map('strtolower',$matches[1])));
 }
 function notify_message(int $id,array $channel,string $body,?int $reply): void {
