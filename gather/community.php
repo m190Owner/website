@@ -62,7 +62,7 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
-function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel'];}
+function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke'];}
 function permission_names(): array {return ['manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log'];}
 function permissions_for(string $sid): array {
  $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());
@@ -86,6 +86,18 @@ function managed_role(string $sid,string $id): array {
 }
 function grantable_permissions(string $sid,array $permissions): void {if(array_diff($permissions,permissions_for($sid)))fail(403,'You cannot grant permissions you do not have.');}
 function hierarchy_audit(string $sid,string $action,int $target=0,string $detail=''): void {sql('INSERT INTO audit(actor,server_id,action,target,created,detail) VALUES(?,?,?,?,?,?)',[uid(),$sid,$action,$target,time(),$detail]);}
+function audit_value(mixed $value): string {
+ $text=json_encode($value,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);preg_match_all('/./us',$text,$chars);return count($chars[0])>240?implode('',array_slice($chars[0],0,240)).'…':$text;
+}
+function audit_changes(string $sid,string $action,string $label,array $before,array $after,array $fields): bool {
+ $changes=[];foreach($fields as $key=>$name)if(($before[$key]??null)!==($after[$key]??null))$changes[]=$name.': '.audit_value($before[$key]??null).' → '.audit_value($after[$key]??null);
+ if(!$changes)return false;hierarchy_audit($sid,$action,0,$label."\n".implode("\n",$changes));return true;
+}
+function channel_audit_snapshot(array $c): array {
+ return ['name'=>$c['name'],'topic'=>$c['topic'],'category'=>$c['category'],'slowmode'=>(int)$c['slowmode'],'private'=>(bool)$c['private'],'readonly'=>(bool)$c['readonly'],'members'=>array_map('intval',array_column(sql('SELECT user_id FROM channel_members WHERE channel_id=? ORDER BY user_id',[$c['id']])->fetchAll(),'user_id')),'roles'=>array_column(sql('SELECT role_id FROM channel_roles WHERE channel_id=? ORDER BY role_id',[$c['id']])->fetchAll(),'role_id')];
+}
+function channel_audit_fields(): array {return ['name'=>'Name','topic'=>'Topic','category'=>'Category','slowmode'=>'Slow mode (seconds)','private'=>'Private','readonly'=>'Read only','members'=>'Allowed member IDs','roles'=>'Allowed role IDs'];}
+function channel_audit_label(array $c): string {return '#'.$c['name'].' ['.$c['id'].']';}
 function disconnect_role(string $sid,string $role): void {sql('DELETE FROM calls WHERE channel_id IN(SELECT id FROM channels WHERE server_id=?) AND user_id IN(SELECT user_id FROM member_roles WHERE server_id=? AND role_id=?)',[$sid,$sid,$role]);}
 function relationship_state(): array {
  $result=[];foreach(sql('SELECT u.*,f.sender,f.accepted FROM friendships f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[uid(),uid(),uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>$u['accepted']?'friend':((int)$u['sender']===uid()?'outgoing':'incoming'),'online'=>presence($u)!=='offline'];
@@ -172,7 +184,7 @@ function community(string $action,array $in): array {
  case 'channel_access':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');return ['members'=>array_column(sql('SELECT user_id FROM channel_members WHERE channel_id=?',[$cid])->fetchAll(),'user_id'),'roles'=>array_column(sql('SELECT role_id FROM channel_roles WHERE channel_id=?',[$cid])->fetchAll(),'role_id')];
  case 'channel_delete':
-  $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');transaction(function()use($cid,$c){sql('DELETE FROM signals WHERE channel_id=?',[$cid]);sql('DELETE FROM channels WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'delete-channel',0,$c['name']);});break;
+  $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');transaction(function()use($cid,$c){sql('DELETE FROM signals WHERE channel_id=?',[$cid]);sql('DELETE FROM channels WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'delete-channel',0,channel_audit_label($c));});break;
  default:fail(404,'Unknown community action.');
  }return ['ok'=>true];
 }

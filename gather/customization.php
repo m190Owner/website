@@ -22,15 +22,18 @@ function customization(string $action,array $in): array {
   $sid=text_field($in,'server_id',32,32);member($sid);sql('UPDATE members SET nickname=? WHERE server_id=? AND user_id=?',[text_field($in,'nickname',0,32),$sid,uid()]);return ['ok'=>true];
  case 'server_settings':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_server');
-  sql('UPDATE servers SET name=?,description=?,owner_color=?,moderator_color=?,member_color=? WHERE id=?',[text_field($in,'name',1,40),text_field($in,'description',0,300),color_field($in,'owner_color'),color_field($in,'moderator_color'),color_field($in,'member_color'),$sid]);return ['ok'=>true];
+  transaction(function()use($sid,$in){require_permission($sid,'manage_server');$before=one('SELECT name,description,owner_color,moderator_color,member_color FROM servers WHERE id=?',[$sid]);$after=['name'=>text_field($in,'name',1,40),'description'=>text_field($in,'description',0,300),'owner_color'=>color_field($in,'owner_color'),'moderator_color'=>color_field($in,'moderator_color'),'member_color'=>color_field($in,'member_color')];
+   sql('UPDATE servers SET name=?,description=?,owner_color=?,moderator_color=?,member_color=? WHERE id=?',[...array_values($after),$sid]);audit_changes($sid,'server-edit','Server ['.$sid.']',$before,$after,['name'=>'Name','description'=>'Description','owner_color'=>'Owner color','moderator_color'=>'Moderator color','member_color'=>'Member color']);
+  });return ['ok'=>true];
  case 'channel_settings':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
   transaction(function()use($in,$c){
+   $c=channel($c['id']);require_permission($c['server_id'],'manage_channels');$before=channel_audit_snapshot($c);
    $slow=$in['slowmode']??(int)$c['slowmode'];if(!is_int($slow)||$slow<0||$slow>21600)fail(400,'Slow mode must be 0–21600 seconds.');
    $private=$in['private']??(bool)$c['private'];$readonly=$in['readonly']??(bool)$c['readonly'];if(!is_bool($private)||!is_bool($readonly))fail(400,'Invalid channel access.');
    sql('UPDATE channels SET name=?,topic=?,category=?,slowmode=?,private=?,readonly=? WHERE id=?',[text_field($in,'name',1,32),text_field($in,'topic',0,500),text_field($in+['category'=>$c['category']],'category',0,40),$slow,(int)$private,(int)$readonly,$c['id']]);
    foreach(['members','roles'] as $kind)if(array_key_exists($kind,$in)){$values=$in[$kind];if(!is_array($values)||count($values)>100)fail(400,'Invalid access list.');if($kind==='members'){sql('DELETE FROM channel_members WHERE channel_id=?',[$c['id']]);foreach(array_unique([...$values,uid()]) as $id){positive_id($id);if(!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$c['server_id'],$id]))fail(400,'Choose server members.');sql('INSERT INTO channel_members VALUES(?,?)',[$c['id'],$id]);}}else{sql('DELETE FROM channel_roles WHERE channel_id=?',[$c['id']]);foreach(array_unique($values) as $id){if(!is_string($id)||!one('SELECT 1 FROM roles WHERE server_id=? AND id=?',[$c['server_id'],$id]))fail(400,'Choose server roles.');sql('INSERT INTO channel_roles VALUES(?,?)',[$c['id'],$id]);}}}
-   sql('DELETE FROM calls WHERE channel_id=?',[$c['id']]);
+   $after=channel_audit_snapshot(one('SELECT * FROM channels WHERE id=?',[$c['id']]));if(audit_changes($c['server_id'],'channel-edit',channel_audit_label($c),$before,$after,channel_audit_fields()))sql('DELETE FROM calls WHERE channel_id=?',[$c['id']]);
   });return ['ok'=>true];
  case 'emoji':
   $sid=text_field($in,'server_id',32,32);member($sid);return ['emoji'=>sql("SELECT id,substr(slot,7) AS name FROM media WHERE server_id=? AND slot LIKE 'emoji:%' ORDER BY slot",[$sid])->fetchAll()];
