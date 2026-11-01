@@ -24,8 +24,9 @@ function member(string $server,bool $moderate=false): array {
 function channel(string $id,bool $write=false): array {
  $c=one('SELECT * FROM channels WHERE id=?',[$id]);if(!$c)fail(404,'Channel not found.');
  if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are temporarily muted in this server.');
- if($c['private']&&$m['role']!=='owner'&&!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This channel is private.');
- }elseif(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');return $c;
+ if($c['private']&&$m['role']!=='owner'&&!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()])&&!one('SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id=cr.role_id WHERE cr.channel_id=? AND mr.user_id=?',[$id,uid()]))fail(403,'This channel is private.');
+  if($write&&$c['readonly']&&!in_array('manage_messages',permissions_for($c['server_id']),true))fail(403,'This channel is read-only.');
+ }else{if(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');if($write){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if(blocked($other))fail(403,'This conversation is unavailable.');}}return $c;
 }
 function session_for(int $id): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
@@ -35,8 +36,8 @@ function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$
 function configuration(): array {global $privateDir;$p=$privateDir.'/config.php';return is_file($p)?require $p:[];}
 function relay_allowed(array $channel): void {
  if(getenv('GATHER_TEST')==='1')return;
- $allowed=configuration()['relay_owners']??[];$owner=sql('SELECT u.username FROM users u JOIN servers s ON s.owner_id=u.id WHERE s.id=?',[$channel['server_id']])->fetchColumn();
- if(!in_array('*',$allowed,true)&&!in_array(strtolower((string)$owner),$allowed,true))fail(503,'Calls for this server need approval from the Gather host. Text chat is available.');
+ $allowed=configuration()['relay_owners']??[];$owners=$channel['server_id']?array_column(sql('SELECT u.username FROM users u JOIN servers s ON s.owner_id=u.id WHERE s.id=?',[$channel['server_id']])->fetchAll(),'username'):array_column(sql('SELECT u.username FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=?',[$channel['id']])->fetchAll(),'username');
+ if(!in_array('*',$allowed,true)&&!array_intersect(array_map('strtolower',$owners),$allowed))fail(503,'Calls for this server need approval from the Gather host. Text chat is available.');
 }
 function rtc_ready(): bool {$c=configuration();return (!empty($c['cloudflare_key_id'])&&!empty($c['cloudflare_token']))||(!empty($c['turn_urls'])&&!empty($c['turn_secret']));}
 function rtc_config(): array {
@@ -63,5 +64,5 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  $args[]=uid();
  // Put the user parameter before the WHERE parameters to match the reaction subquery.
  $userId=array_pop($args);array_unshift($args,$userId);
- return array_reverse(sql("SELECT m.id,m.user_id,m.body,m.created,m.edited,m.pinned,u.name,u.username,u.avatar,COALESCE(mb.nickname,'') AS nickname,mb.role,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id) AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id JOIN channels ch ON ch.id=m.channel_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=ch.server_id WHERE $where ORDER BY m.id DESC LIMIT 60",$args)->fetchAll());
+ return array_reverse(sql("SELECT m.id,m.user_id,m.body,m.created,m.edited,m.pinned,u.name,u.username,u.avatar,CASE WHEN EXISTS(SELECT 1 FROM blocks bl WHERE bl.user_id=".uid()." AND bl.target=m.user_id) THEN 1 ELSE 0 END AS blocked,COALESCE(mb.nickname,'') AS nickname,mb.role,(SELECT r.color FROM roles r JOIN member_roles mr ON mr.role_id=r.id WHERE mr.user_id=u.id AND mr.server_id=ch.server_id AND length(r.color)>0 ORDER BY r.name LIMIT 1) AS role_color,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id) AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id JOIN channels ch ON ch.id=m.channel_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=ch.server_id WHERE $where ORDER BY m.id DESC LIMIT 60",$args)->fetchAll());
 }
