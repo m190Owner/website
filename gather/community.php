@@ -26,6 +26,18 @@ function migrate_presence(): void {
    PRAGMA user_version=6;");
  });
 }
+function migrate_navigation(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=7)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=7)return;
+  $db->exec('CREATE TABLE category_order(server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,name TEXT NOT NULL,position INTEGER NOT NULL,PRIMARY KEY(server_id,name)); PRAGMA user_version=7;');
+ });
+}
+function server_channel_rows(string $sid): array {
+ return sql('SELECT c.*,COALESCE(o.position,2147483647) AS category_position FROM channels c LEFT JOIN category_order o ON o.server_id=c.server_id AND o.name=c.category WHERE c.server_id=? AND c.parent_id IS NULL ORDER BY category_position,c.category,c.position,c.created,c.id',[$sid])->fetchAll();
+}
+function visible_channel_rows(array $rows): array {
+ return array_values(array_filter($rows,function($row){try{channel($row['id']);return true;}catch(ApiError $e){if($e->status!==403)throw $e;return false;}}));
+}
 function presence(array $u): string {return $u['status']==='invisible'||(int)$u['last_seen']<time()-45?'offline':$u['status'];}
 function blocked(int $other): bool {return !!one('SELECT 1 FROM blocks WHERE (user_id=? AND target=?) OR (user_id=? AND target=?)',[uid(),$other,$other,uid()]);}
 function friends(int $other): bool {return !!one('SELECT 1 FROM friendships WHERE a=? AND b=? AND accepted=1',[min(uid(),$other),max(uid(),$other)]);}
@@ -41,6 +53,19 @@ function relationship_state(): array {
 }
 function community(string $action,array $in): array {
  switch($action){
+ case 'category_order':
+  $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_channels');$name=text_field($in,'category',1,40);$before=($in['before']??null)===null?null:text_field($in,'before',1,40);
+  transaction(function()use($sid,$name,$before){$rows=server_channel_rows($sid);$visible=array_column(visible_channel_rows($rows),'category');if(!in_array($name,$visible,true)||($before!==null&&!in_array($before,$visible,true)))fail(403,'Choose categories you can view in this server.');if($before===$name)return;
+   $names=array_values(array_unique(array_filter(array_column($rows,'category'),fn($value)=>$value!=='')));$names=array_values(array_filter($names,fn($value)=>$value!==$name));$index=$before===null?count($names):array_search($before,$names,true);array_splice($names,$index,0,[$name]);
+   sql('DELETE FROM category_order WHERE server_id=?',[$sid]);foreach($names as $position=>$category)sql('INSERT INTO category_order VALUES(?,?,?)',[$sid,$category,$position]);
+  });break;
+ case 'channel_reorder':
+  $id=text_field($in,'channel_id',32,32);$category=text_field($in,'category',0,40);$before=($in['before_id']??null)===null?null:text_field($in,'before_id',32,32);
+  transaction(function()use($id,$category,$before){$c=channel($id);if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
+   if($before!==null){$target=channel($before);if($target['server_id']!==$c['server_id']||$target['parent_id']||$target['category']!==$category||$target['kind']!==$c['kind'])fail(400,'Choose a channel of the same type in the destination category.');if($before===$id)return;}
+   $ids=array_column(sql('SELECT id FROM channels WHERE server_id=? AND parent_id IS NULL AND kind=? AND category=? AND id<>? ORDER BY position,created,id',[$c['server_id'],$c['kind'],$category,$id])->fetchAll(),'id');
+   $index=$before===null?count($ids):array_search($before,$ids,true);array_splice($ids,$index,0,[$id]);sql('UPDATE channels SET category=? WHERE id=?',[$category,$id]);foreach($ids as $position=>$channelId)sql('UPDATE channels SET position=? WHERE id=?',[$position+1,$channelId]);
+  });break;
  case 'status':
   $status=$in['status']??null;if(!in_array($status,['online','idle','dnd','invisible'],true))fail(400,'Choose a valid status.');
   sql('UPDATE users SET status=?,custom_status=? WHERE id=?',[$status,text_field($in,'custom_status',0,100),uid()]);break;
