@@ -5,6 +5,7 @@ require __DIR__.'/lib.php';
 require __DIR__.'/customization.php';
 require __DIR__.'/community.php';
 require __DIR__.'/conversations.php';
+require __DIR__.'/notifications.php';
 header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');header('X-Robots-Tag: noindex, nofollow, noarchive');
 $db=null;
 try {
@@ -22,10 +23,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();migrate_conversations();
+ migrate_customization();migrate_community();migrate_conversations();migrate_notifications();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.5.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.6.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -43,6 +44,7 @@ try {
  $user=one('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.hash=? AND s.expires>?',[$tokenHash,time()]);if(!$user)fail(401,'Session expired. Please sign in.');
  rate('requests:'.uid(),240,60);$result=['ok'=>true];
  switch($action){
+ case 'inbox':case 'inbox_read':case 'mention_members':case 'message_context':$result=notification_actions($action,$in);break;
  case 'group_create':case 'group_members':case 'group_update':case 'group_leave':case 'thread_create':case 'thread_archive':case 'override_list':case 'override_save':case 'attachment_upload':case 'attachment_get':case 'attachment_discard':$result=conversation_actions($action,$in);break;
  case 'friend_request':case 'relationship':case 'read':case 'typing':case 'role_list':case 'role_save':case 'role_delete':case 'role_assign':case 'channel_access':case 'channel_delete':case 'call_decline':$result=community($action,$in);break;
  case 'logout':sql('DELETE FROM sessions WHERE hash=?',[$tokenHash]);sql('DELETE FROM calls WHERE user_id=?',[uid()]);break;
@@ -62,7 +64,7 @@ try {
    $c['unread']=(int)sql('SELECT count(*) FROM messages WHERE channel_id=? AND deleted=0 AND user_id<>? AND id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND user_id NOT IN (SELECT target FROM blocks WHERE user_id=?)',[$c['id'],uid(),uid(),$c['id'],uid()])->fetchColumn();
    $c['participants']=sql('SELECT c.user_id,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.seen>?',[$c['id'],time()-45])->fetchAll();
   }unset($c);
-  $result=['user'=>public_user($user),'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state()];break;
+  $result=['user'=>public_user($user),'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state(),'inbox_unread'=>inbox_count($channels)];break;
  case 'create_server':
   rate('create-server:'.uid(),5,3600);$name=text_field($in,'name',1,40);if(sql('SELECT count(*) FROM members WHERE user_id=?',[uid()])->fetchColumn()>=30)fail(409,'Server limit reached.');
   $result=transaction(function()use($name){$id=random_id();$text=random_id();sql('INSERT INTO servers(id,name,owner_id,created) VALUES(?,?,?,?)',[$id,$name,uid(),time()]);sql('INSERT INTO members(server_id,user_id,role) VALUES(?,?,?)',[$id,uid(),'owner']);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[$text,$id,'general','text',time()]);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[random_id(),$id,'The living room','voice',time()]);return ['server_id'=>$id,'channel_id'=>$text];});break;
@@ -87,9 +89,9 @@ try {
  case 'send':$result=send_message($in);break;
  case 'edit':case 'delete':case 'pin':case 'react':
   $id=positive_id($in['id']??null);$msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);rate('message-action:'.uid(),60,60);
-  if($action==='react'){transaction(function()use($id){if(one('SELECT 1 FROM reactions WHERE message_id=? AND user_id=?',[$id,uid()]))sql('DELETE FROM reactions WHERE message_id=? AND user_id=?',[$id,uid()]);else sql('INSERT INTO reactions VALUES(?,?)',[$id,uid()]);});}
+  if($action==='react')react_message($id,$c,$in);
   elseif($action==='edit'){if((int)$msg['user_id']!==uid())fail(403,'You can only edit your own message.');sql('UPDATE messages SET body=?,edited=? WHERE id=?',[text_field($in,'body',1,4000),time(),$id]);}
-  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}if($action==='delete')transaction(function()use($id){sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);sql('DELETE FROM attachments WHERE message_id=?',[$id]);});else sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
+  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}if($action==='delete')transaction(function()use($id){sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);sql('DELETE FROM attachments WHERE message_id=?',[$id]);sql('DELETE FROM notifications WHERE message_id=?',[$id]);});else sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
  case 'rtc':$cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);$result=rtc_config();break;
  case 'call_join':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);if(!rtc_ready()&&!$test)fail(503,'Calls are waiting for the server relay configuration.');rate('call-join:'.uid(),15,60);
