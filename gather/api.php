@@ -4,6 +4,7 @@ ini_set('display_errors','0');
 require __DIR__.'/lib.php';
 require __DIR__.'/customization.php';
 require __DIR__.'/community.php';
+require __DIR__.'/conversations.php';
 header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');header('X-Robots-Tag: noindex, nofollow, noarchive');
 $db=null;
 try {
@@ -11,9 +12,9 @@ try {
  if(!$test&&strtolower((string)($_SERVER['HTTPS']??''))!=='on'&&(int)($_SERVER['SERVER_PORT']??0)!==443)fail(400,'HTTPS is required.');
  if($_SERVER['REQUEST_METHOD']!=='POST')fail(405,'Use POST.');
  if(stripos($_SERVER['CONTENT_TYPE']??'','application/json')!==0)fail(415,'JSON is required.');
- $raw=file_get_contents('php://input',false,null,0,750001);if(strlen($raw)>750000)fail(413,'Request too large.');
+ $raw=file_get_contents('php://input',false,null,0,5650001);if(strlen($raw)>5650000)fail(413,'Request too large.');
  try{$in=json_decode($raw,true,32,JSON_THROW_ON_ERROR);}catch(Throwable){fail(400,'Invalid JSON.');}if(!is_array($in))fail(400,'Invalid request.');
- $action=$in['action']??'';if(!is_string($action))fail(400,'Invalid action.');if($action!=='upload_image'&&strlen($raw)>70000)fail(413,'Request too large.');
+ $action=$in['action']??'';if(!is_string($action))fail(400,'Invalid action.');if(!in_array($action,['upload_image','attachment_upload'],true)&&strlen($raw)>70000)fail(413,'Request too large.');
  $privateDir=getenv('GATHER_DATA_DIR')?:dirname(__DIR__,2).'/gather-private';
  if(!is_dir($privateDir)&&!mkdir($privateDir,0700,true))fail(503,'Storage is unavailable.');
  $root=realpath($_SERVER['DOCUMENT_ROOT']??__DIR__);$resolved=realpath($privateDir);
@@ -21,10 +22,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();
+ migrate_customization();migrate_community();migrate_conversations();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.4.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.5.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -42,6 +43,7 @@ try {
  $user=one('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.hash=? AND s.expires>?',[$tokenHash,time()]);if(!$user)fail(401,'Session expired. Please sign in.');
  rate('requests:'.uid(),240,60);$result=['ok'=>true];
  switch($action){
+ case 'group_create':case 'group_members':case 'group_update':case 'group_leave':case 'thread_create':case 'thread_archive':case 'override_list':case 'override_save':case 'attachment_upload':case 'attachment_get':case 'attachment_discard':$result=conversation_actions($action,$in);break;
  case 'friend_request':case 'relationship':case 'read':case 'typing':case 'role_list':case 'role_save':case 'role_delete':case 'role_assign':case 'channel_access':case 'channel_delete':case 'call_decline':$result=community($action,$in);break;
  case 'logout':sql('DELETE FROM sessions WHERE hash=?',[$tokenHash]);sql('DELETE FROM calls WHERE user_id=?',[uid()]);break;
  case 'profile':case 'nickname':case 'server_settings':case 'channel_settings':case 'emoji':case 'media':case 'upload_image':$result=customization($action,$in);break;
@@ -49,10 +51,13 @@ try {
  case 'state':
   if((int)$user['last_seen']<time()-15)sql('UPDATE users SET last_seen=? WHERE id=?',[time(),uid()]);
   $servers=sql('SELECT s.*,m.role,m.muted_until,m.nickname FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ORDER BY s.created',[uid()])->fetchAll();
-  $channels=sql("SELECT c.* FROM channels c WHERE (c.server_id IN (SELECT server_id FROM members WHERE user_id=?) AND (c.private=0 OR c.server_id IN (SELECT id FROM servers WHERE owner_id=?) OR c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?) OR c.id IN (SELECT cr.channel_id FROM channel_roles cr JOIN member_roles mr ON mr.role_id=cr.role_id WHERE mr.user_id=?))) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.created",[uid(),uid(),uid(),uid(),uid()])->fetchAll();
+  $channels=sql("SELECT c.* FROM channels c WHERE c.server_id IN (SELECT server_id FROM members WHERE user_id=?) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.created",[uid(),uid()])->fetchAll();
+  $channels=array_values(array_filter($channels,function($c){try{channel($c['id']);return true;}catch(ApiError $e){if($e->status===403)return false;throw $e;}}));
   foreach($servers as &$s)$s['permissions']=permissions_for($s['id']);unset($s);
   foreach($channels as &$c){
-   if(!$c['server_id']){$peer=one('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()]);$c['peer']=$peer?public_user($peer):null;$c['name']=$peer['name']??'Conversation';$c['blocked']=$peer?blocked((int)$peer['id']):false;}
+   if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()]);$c['peer']=$peer?public_user($peer):null;$c['name']=$peer['name']??'Conversation';$c['blocked']=$peer?blocked((int)$peer['id']):false;}
+   if($c['parent_id']){$parent=channel($c['parent_id']);$c['category']=$parent['category'];$c['slowmode']=$parent['slowmode'];}
+   $c['capabilities']=channel_capabilities($c);if($c['archived'])$c['capabilities']['send']=false;
    $c['last_id']=(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE channel_id=?',[$c['id']])->fetchColumn();
    $c['unread']=(int)sql('SELECT count(*) FROM messages WHERE channel_id=? AND deleted=0 AND user_id<>? AND id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND user_id NOT IN (SELECT target FROM blocks WHERE user_id=?)',[$c['id'],uid(),uid(),$c['id'],uid()])->fetchColumn();
    $c['participants']=sql('SELECT c.user_id,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.seen>?',[$c['id'],time()-45])->fetchAll();
@@ -79,22 +84,20 @@ try {
   $other=positive_id($in['user_id']??null);if($other===uid())fail(400,'Choose another member.');if(blocked($other))fail(403,'This conversation is unavailable.');if(!friends($other)&&!one('SELECT 1 FROM members a JOIN members b ON a.server_id=b.server_id WHERE a.user_id=? AND b.user_id=?',[uid(),$other]))fail(403,'Add this person as a friend or share a server to message them.');
   $result=transaction(function()use($other){$ids=[uid(),$other];sort($ids);$key=implode(':',$ids);$c=one('SELECT id FROM channels WHERE pair_key=?',[$key]);if($c)return ['channel_id'=>$c['id']];$id=random_id();sql('INSERT INTO channels(id,name,kind,private,pair_key,created) VALUES(?,?,?,?,?,?)',[$id,'Direct message','text',1,$key,time()]);foreach($ids as $u)sql('INSERT INTO channel_members VALUES(?,?)',[$id,$u]);return ['channel_id'=>$id];});break;
  case 'messages':$cid=text_field($in,'channel_id',32,32);channel($cid);$before=isset($in['before'])?positive_id($in['before']):0;$search=isset($in['search'])?text_field($in,'search',0,100):'';$result=['messages'=>messages_for($cid,$before,$search,($in['pins']??false)===true),'typing'=>sql('SELECT u.id,u.name FROM typing t JOIN users u ON u.id=t.user_id WHERE t.channel_id=? AND t.user_id<>? AND t.seen>? AND t.user_id NOT IN (SELECT target FROM blocks WHERE user_id=?)',[$cid,uid(),time()-7,uid()])->fetchAll()];break;
- case 'send':
-  $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);if($c['kind']!=='text')fail(400,'Use a text channel.');rate('send:'.uid(),30,60);$body=text_field($in,'body',1,4000);$client=text_field($in,'client_id',16,64);
-  transaction(function()use($cid,$c,$body,$client){if(!one('SELECT 1 FROM messages WHERE user_id=? AND client_id=?',[uid(),$client])&&$c['server_id']&&$c['slowmode']>0&&!in_array('manage_messages',permissions_for($c['server_id']),true)&&one('SELECT 1 FROM messages WHERE channel_id=? AND user_id=? AND created>?',[$cid,uid(),time()-$c['slowmode']]))fail(429,'Slow mode is active. Please wait before sending another message.');sql('INSERT OR IGNORE INTO messages(channel_id,user_id,body,created,client_id) VALUES(?,?,?,?,?)',[$cid,uid(),$body,time(),$client]);sql('DELETE FROM typing WHERE user_id=? AND channel_id=?',[uid(),$cid]);});$result=['id'=>(int)sql('SELECT id FROM messages WHERE user_id=? AND client_id=?',[uid(),$client])->fetchColumn()];break;
+ case 'send':$result=send_message($in);break;
  case 'edit':case 'delete':case 'pin':case 'react':
   $id=positive_id($in['id']??null);$msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);rate('message-action:'.uid(),60,60);
   if($action==='react'){transaction(function()use($id){if(one('SELECT 1 FROM reactions WHERE message_id=? AND user_id=?',[$id,uid()]))sql('DELETE FROM reactions WHERE message_id=? AND user_id=?',[$id,uid()]);else sql('INSERT INTO reactions VALUES(?,?)',[$id,uid()]);});}
   elseif($action==='edit'){if((int)$msg['user_id']!==uid())fail(403,'You can only edit your own message.');sql('UPDATE messages SET body=?,edited=? WHERE id=?',[text_field($in,'body',1,4000),time(),$id]);}
-  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}if($action==='delete')sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);else sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
- case 'rtc':$cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);$result=rtc_config();break;
+  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}if($action==='delete')transaction(function()use($id){sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);sql('DELETE FROM attachments WHERE message_id=?',[$id]);});else sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
+ case 'rtc':$cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);$result=rtc_config();break;
  case 'call_join':
-  $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);if(!rtc_ready()&&!$test)fail(503,'Calls are waiting for the server relay configuration.');rate('call-join:'.uid(),15,60);
-  $result=transaction(function()use($cid){sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM calls WHERE user_id=?',[uid()]);if(sql('SELECT count(*) FROM calls WHERE channel_id=?',[$cid])->fetchColumn()>=6)fail(409,'This room is full (6 people).');$id=random_id();sql('INSERT INTO calls VALUES(?,?,?,?)',[$id,$cid,uid(),time()]);return ['call_id'=>$id];});break;
+  $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);if(!rtc_ready()&&!$test)fail(503,'Calls are waiting for the server relay configuration.');rate('call-join:'.uid(),15,60);
+  $result=transaction(function()use($cid,$in){sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM calls WHERE user_id=?',[uid()]);if(sql('SELECT count(*) FROM calls WHERE channel_id=?',[$cid])->fetchColumn()>=6)fail(409,'This room is full (6 people).');$id=random_id();sql('INSERT INTO calls(id,channel_id,user_id,seen,media_version) VALUES(?,?,?,?,?)',[$id,$cid,uid(),time(),($in['media_version']??1)===2?2:1]);return ['call_id'=>$id];});break;
  case 'call_leave':$id=text_field($in,'call_id',32,32);sql('DELETE FROM calls WHERE id=? AND user_id=?',[$id,uid()]);break;
  case 'call_poll':
   $id=text_field($in,'call_id',32,32);$call=call_record($id);sql('UPDATE calls SET seen=? WHERE id=?',[time(),$id]);$cursor=$in['cursor']??0;if(!is_int($cursor)||$cursor<0)fail(400,'Invalid cursor.');
-  $result=['peers'=>sql('SELECT c.id,c.user_id,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.id<>? AND c.seen>?',[$call['channel_id'],$id,time()-45])->fetchAll(),'signals'=>sql('SELECT s.id,s.from_call,s.payload FROM signals s JOIN calls c ON c.id=s.from_call WHERE s.to_call=? AND s.id>? AND s.created>? AND c.seen>? ORDER BY s.id LIMIT 100',[$id,$cursor,time()-180,time()-45])->fetchAll()];break;
+  $result=['peers'=>sql('SELECT c.id,c.user_id,c.media_version,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.id<>? AND c.seen>?',[$call['channel_id'],$id,time()-45])->fetchAll(),'signals'=>sql('SELECT s.id,s.from_call,s.payload FROM signals s JOIN calls c ON c.id=s.from_call WHERE s.to_call=? AND s.id>? AND s.created>? AND c.seen>? ORDER BY s.id LIMIT 100',[$id,$cursor,time()-180,time()-45])->fetchAll()];break;
  case 'signal':
   $id=text_field($in,'call_id',32,32);$call=call_record($id);$to=text_field($in,'to',32,32);if($to===$id||!one('SELECT 1 FROM calls WHERE id=? AND channel_id=? AND seen>?',[$to,$call['channel_id'],time()-45]))fail(404,'Peer has left.');
   $payload=$in['payload']??null;if(!is_array($payload)||!in_array($payload['type']??'',['offer','answer','candidate'],true))fail(400,'Invalid signal.');$json=json_encode($payload,JSON_THROW_ON_ERROR);if(strlen($json)>60000)fail(413,'Signal too large.');sql('INSERT INTO signals(channel_id,from_call,to_call,payload,created) VALUES(?,?,?,?,?)',[$call['channel_id'],$id,$to,$json,time()]);break;

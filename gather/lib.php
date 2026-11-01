@@ -21,12 +21,11 @@ function member(string $server,bool $moderate=false): array {
  $m=one('SELECT m.*,s.owner_id FROM members m JOIN servers s ON s.id=m.server_id WHERE m.server_id=? AND m.user_id=?',[$server,uid()]);
  if(!$m)fail(403,'You do not belong to this server.');if($moderate&&!in_array($m['role'],['owner','moderator'],true))fail(403,'Moderator permission required.');return $m;
 }
-function channel(string $id,bool $write=false): array {
+function channel(string $id,bool $write=false,string $permission='send'): array {
  $c=one('SELECT * FROM channels WHERE id=?',[$id]);if(!$c)fail(404,'Channel not found.');
- if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are temporarily muted in this server.');
- if($c['private']&&$m['role']!=='owner'&&!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()])&&!one('SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id=cr.role_id WHERE cr.channel_id=? AND mr.user_id=?',[$id,uid()]))fail(403,'This channel is private.');
-  if($write&&$c['readonly']&&!in_array('manage_messages',permissions_for($c['server_id']),true))fail(403,'This channel is read-only.');
- }else{if(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');if($write){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if(blocked($other))fail(403,'This conversation is unavailable.');}}return $c;
+ if($c['parent_id']){$parent=channel($c['parent_id'],$write,$permission);$c['slowmode']=$parent['slowmode'];$c['category']=$parent['category'];if($write&&$c['archived'])fail(403,'This thread is archived.');return $c;}
+ if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are temporarily muted in this server.');$p=channel_capabilities($c);if(!$p['view']||($write&&!$p[$permission]))fail(403,'You do not have permission in this channel.');
+ }else{if(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');if($write&&$c['pair_key']){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if(blocked($other))fail(403,'This conversation is unavailable.');}}return $c;
 }
 function session_for(int $id): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
@@ -56,7 +55,7 @@ function rtc_config(): array {
  $username=(time()+3600).':'.uid();return ['ready'=>true,'iceTransportPolicy'=>'relay','iceServers'=>[['urls'=>$urls,'username'=>$username,'credential'=>base64_encode(hash_hmac('sha1',$username,$secret,true))]]];
 }
 function call_record(string $id): array {
- $call=one('SELECT * FROM calls WHERE id=? AND user_id=? AND seen>?',[$id,uid(),time()-45]);if(!$call)fail(410,'Call expired. Join again.');channel($call['channel_id'],true);return $call;
+ $call=one('SELECT * FROM calls WHERE id=? AND user_id=? AND seen>?',[$id,uid(),time()-45]);if(!$call)fail(410,'Call expired. Join again.');channel($call['channel_id'],true,'connect');return $call;
 }
 function messages_for(string $cid,int $before=0,string $search='',bool $pins=false): array {
  $where='m.channel_id=? AND m.deleted=0';$args=[$cid];
@@ -64,5 +63,6 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  $args[]=uid();
  // Put the user parameter before the WHERE parameters to match the reaction subquery.
  $userId=array_pop($args);array_unshift($args,$userId);
- return array_reverse(sql("SELECT m.id,m.user_id,m.body,m.created,m.edited,m.pinned,u.name,u.username,u.avatar,CASE WHEN EXISTS(SELECT 1 FROM blocks bl WHERE bl.user_id=".uid()." AND bl.target=m.user_id) THEN 1 ELSE 0 END AS blocked,COALESCE(mb.nickname,'') AS nickname,mb.role,(SELECT r.color FROM roles r JOIN member_roles mr ON mr.role_id=r.id WHERE mr.user_id=u.id AND mr.server_id=ch.server_id AND length(r.color)>0 ORDER BY r.name LIMIT 1) AS role_color,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id) AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id JOIN channels ch ON ch.id=m.channel_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=ch.server_id WHERE $where ORDER BY m.id DESC LIMIT 60",$args)->fetchAll());
+ $messages=array_reverse(sql("SELECT m.reply_to,m.id,m.user_id,m.body,m.created,m.edited,m.pinned,u.name,u.username,u.avatar,CASE WHEN EXISTS(SELECT 1 FROM blocks bl WHERE bl.user_id=".uid()." AND bl.target=m.user_id) THEN 1 ELSE 0 END AS blocked,COALESCE(mb.nickname,'') AS nickname,mb.role,(SELECT r.color FROM roles r JOIN member_roles mr ON mr.role_id=r.id WHERE mr.user_id=u.id AND mr.server_id=ch.server_id AND length(r.color)>0 ORDER BY r.name LIMIT 1) AS role_color,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id) AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id JOIN channels ch ON ch.id=m.channel_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=ch.server_id WHERE $where ORDER BY m.id DESC LIMIT 60",$args)->fetchAll());
+ foreach($messages as &$m){$m['attachments']=sql('SELECT id,name,size FROM attachments WHERE message_id=?',[$m['id']])->fetchAll();$m['reply']=$m['reply_to']?one('SELECT m.id,u.name,substr(m.body,1,180) AS body FROM messages m JOIN users u ON u.id=m.user_id WHERE m.id=? AND m.channel_id=? AND m.deleted=0',[$m['reply_to'],$cid]):null;$m['thread']=one('SELECT id,name,archived FROM channels WHERE root_message=?',[$m['id']]);}unset($m);return $messages;
 }
