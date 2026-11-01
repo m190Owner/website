@@ -1,6 +1,6 @@
 Options -Indexes
 DirectoryIndex disabled
-<FilesMatch "^(schema\.sql|lib\.php|config.*|.*\.(sqlite|db|log))$">
+<FilesMatch "^(schema\.sql|customization\.php|lib\.php|config.*|.*\.(sqlite|db|log))$">
   Require all denied
 </FilesMatch>
 <IfModule mod_headers.c>

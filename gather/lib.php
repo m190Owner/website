@@ -31,7 +31,7 @@ function session_for(int $id): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
  sql('INSERT INTO sessions VALUES(?,?,?)',[hash('sha256',$token),$id,time()+30*86400]);return $token;
 }
-function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name']];}
+function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'bio'=>$u['bio'],'pronouns'=>$u['pronouns']];}
 function configuration(): array {global $privateDir;$p=$privateDir.'/config.php';return is_file($p)?require $p:[];}
 function relay_allowed(array $channel): void {
  if(getenv('GATHER_TEST')==='1')return;
@@ -63,5 +63,5 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  $args[]=uid();
  // Put the user parameter before the WHERE parameters to match the reaction subquery.
  $userId=array_pop($args);array_unshift($args,$userId);
- return array_reverse(sql("SELECT m.id,m.user_id,m.body,m.created,m.edited,m.pinned,u.name,u.username,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id) AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id WHERE $where ORDER BY m.id DESC LIMIT 60",$args)->fetchAll());
+ return array_reverse(sql("SELECT m.id,m.user_id,m.body,m.created,m.edited,m.pinned,u.name,u.username,u.avatar,COALESCE(mb.nickname,'') AS nickname,mb.role,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id) AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id JOIN channels ch ON ch.id=m.channel_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=ch.server_id WHERE $where ORDER BY m.id DESC LIMIT 60",$args)->fetchAll());
 }

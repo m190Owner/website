@@ -2,6 +2,7 @@
 declare(strict_types=1);
 ini_set('display_errors','0');
 require __DIR__.'/lib.php';
+require __DIR__.'/customization.php';
 header('Content-Type: application/json; charset=utf-8');header('Cache-Control: no-store');header('X-Content-Type-Options: nosniff');header('X-Robots-Tag: noindex, nofollow, noarchive');
 $db=null;
 try {
@@ -9,9 +10,9 @@ try {
  if(!$test&&strtolower((string)($_SERVER['HTTPS']??''))!=='on'&&(int)($_SERVER['SERVER_PORT']??0)!==443)fail(400,'HTTPS is required.');
  if($_SERVER['REQUEST_METHOD']!=='POST')fail(405,'Use POST.');
  if(stripos($_SERVER['CONTENT_TYPE']??'','application/json')!==0)fail(415,'JSON is required.');
- $raw=file_get_contents('php://input',false,null,0,70001);if(strlen($raw)>70000)fail(413,'Request too large.');
+ $raw=file_get_contents('php://input',false,null,0,750001);if(strlen($raw)>750000)fail(413,'Request too large.');
  try{$in=json_decode($raw,true,32,JSON_THROW_ON_ERROR);}catch(Throwable){fail(400,'Invalid JSON.');}if(!is_array($in))fail(400,'Invalid request.');
- $action=$in['action']??'';if(!is_string($action))fail(400,'Invalid action.');
+ $action=$in['action']??'';if(!is_string($action))fail(400,'Invalid action.');if($action!=='upload_image'&&strlen($raw)>70000)fail(413,'Request too large.');
  $privateDir=getenv('GATHER_DATA_DIR')?:dirname(__DIR__,2).'/gather-private';
  if(!is_dir($privateDir)&&!mkdir($privateDir,0700,true))fail(503,'Storage is unavailable.');
  $root=realpath($_SERVER['DOCUMENT_ROOT']??__DIR__);$resolved=realpath($privateDir);
@@ -19,9 +20,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
+ migrate_customization();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.1.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.2.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -40,17 +42,17 @@ try {
  rate('requests:'.uid(),240,60);$result=['ok'=>true];
  switch($action){
  case 'logout':sql('DELETE FROM sessions WHERE hash=?',[$tokenHash]);sql('DELETE FROM calls WHERE user_id=?',[uid()]);break;
- case 'profile':$name=text_field($in,'name',1,32);sql('UPDATE users SET name=? WHERE id=?',[$name,uid()]);break;
+ case 'profile':case 'nickname':case 'server_settings':case 'channel_settings':case 'emoji':case 'media':case 'upload_image':$result=customization($action,$in);break;
  case 'password':$old=$in['old']??'';$new=$in['password']??'';rate('password:'.uid(),5,600);if(!is_string($old)||!password_verify($old,$user['password']))fail(403,'Current password is incorrect.');if(!is_string($new)||strlen($new)<12||strlen($new)>128)fail(400,'Use a password of 12–128 bytes.');transaction(function()use($new,$tokenHash){sql('UPDATE users SET password=? WHERE id=?',[password_hash($new,PASSWORD_DEFAULT),uid()]);sql('DELETE FROM sessions WHERE user_id=? AND hash<>?',[uid(),$tokenHash]);});break;
  case 'state':
   if((int)$user['last_seen']<time()-15)sql('UPDATE users SET last_seen=? WHERE id=?',[time(),uid()]);
-  $servers=sql('SELECT s.id,s.name,s.owner_id,m.role,m.muted_until FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ORDER BY s.created',[uid()])->fetchAll();
+  $servers=sql('SELECT s.*,m.role,m.muted_until,m.nickname FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ORDER BY s.created',[uid()])->fetchAll();
   $channels=sql("SELECT c.* FROM channels c WHERE (c.server_id IN (SELECT server_id FROM members WHERE user_id=?) AND (c.private=0 OR c.server_id IN (SELECT id FROM servers WHERE owner_id=?) OR c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?))) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.created",[uid(),uid(),uid(),uid()])->fetchAll();
   foreach($channels as &$c){if(!$c['server_id'])$c['name']=sql('SELECT u.name FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()])->fetchColumn()?:'Conversation';}unset($c);
   $result=['user'=>public_user($user),'servers'=>$servers,'channels'=>$channels];break;
  case 'create_server':
   rate('create-server:'.uid(),5,3600);$name=text_field($in,'name',1,40);if(sql('SELECT count(*) FROM members WHERE user_id=?',[uid()])->fetchColumn()>=30)fail(409,'Server limit reached.');
-  $result=transaction(function()use($name){$id=random_id();$text=random_id();sql('INSERT INTO servers VALUES(?,?,?,?)',[$id,$name,uid(),time()]);sql('INSERT INTO members(server_id,user_id,role) VALUES(?,?,?)',[$id,uid(),'owner']);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[$text,$id,'general','text',time()]);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[random_id(),$id,'The living room','voice',time()]);return ['server_id'=>$id,'channel_id'=>$text];});break;
+  $result=transaction(function()use($name){$id=random_id();$text=random_id();sql('INSERT INTO servers(id,name,owner_id,created) VALUES(?,?,?,?)',[$id,$name,uid(),time()]);sql('INSERT INTO members(server_id,user_id,role) VALUES(?,?,?)',[$id,uid(),'owner']);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[$text,$id,'general','text',time()]);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[random_id(),$id,'The living room','voice',time()]);return ['server_id'=>$id,'channel_id'=>$text];});break;
  case 'create_channel':
   $sid=text_field($in,'server_id',32,32);member($sid,true);$name=text_field($in,'name',1,32);$kind=$in['kind']??'text';if(!in_array($kind,['text','voice'],true))fail(400,'Invalid channel type.');
   if(sql('SELECT count(*) FROM channels WHERE server_id=?',[$sid])->fetchColumn()>=50)fail(409,'Channel limit reached.');$private=($in['private']??false)===true;$allowed=$in['members']??[];if(!is_array($allowed)||count($allowed)>100)fail(400,'Invalid member list.');
@@ -60,7 +62,7 @@ try {
  case 'join':
   rate('join:'.uid(),15,600);$code=text_field($in,'code',32,32);
   $result=transaction(function()use($code){$hash=hash('sha256',$code);$i=one('SELECT * FROM invites WHERE hash=? AND expires>? AND remaining>0',[$hash,time()]);if(!$i)fail(404,'Invite is invalid, used up or expired.');$sid=$i['server_id'];if(one('SELECT 1 FROM bans WHERE server_id=? AND user_id=?',[$sid,uid()]))fail(403,'You cannot join this server.');if(!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$sid,uid()])){if(sql('SELECT count(*) FROM members WHERE server_id=?',[$sid])->fetchColumn()>=100)fail(409,'This server is full.');if(sql('SELECT count(*) FROM members WHERE user_id=?',[uid()])->fetchColumn()>=30)fail(409,'Server limit reached.');sql('INSERT INTO members(server_id,user_id) VALUES(?,?)',[$sid,uid()]);sql('UPDATE invites SET remaining=remaining-1 WHERE hash=?',[$hash]);}return ['server_id'=>$sid];});break;
- case 'members':$sid=text_field($in,'server_id',32,32);member($sid);$result=['members'=>sql('SELECT u.id,u.username,u.name,u.last_seen,m.role,m.muted_until FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? ORDER BY u.name',[$sid])->fetchAll()];break;
+ case 'members':$sid=text_field($in,'server_id',32,32);member($sid);$result=['members'=>sql('SELECT u.id,u.username,u.name,u.avatar,u.banner,u.bio,u.pronouns,u.last_seen,m.role,m.muted_until,m.nickname FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? ORDER BY u.name',[$sid])->fetchAll(),'emoji'=>sql("SELECT id,substr(slot,7) AS name FROM media WHERE server_id=? AND slot LIKE 'emoji:%' ORDER BY slot",[$sid])->fetchAll()];break;
  case 'moderate':
   $sid=text_field($in,'server_id',32,32);$actor=member($sid,true);$target=positive_id($in['user_id']??null);$op=$in['operation']??'';if($target===uid())fail(400,'You cannot moderate yourself.');$victim=one('SELECT * FROM members WHERE server_id=? AND user_id=?',[$sid,$target]);if(!$victim)fail(404,'Member not found.');if($victim['role']==='owner'||($victim['role']==='moderator'&&$actor['role']!=='owner'))fail(403,'You cannot moderate that member.');
   transaction(function()use($sid,$actor,$target,$op){if(in_array($op,['kick','ban'],true)){if($op==='ban')sql('INSERT OR IGNORE INTO bans VALUES(?,?)',[$sid,$target]);sql('DELETE FROM channel_members WHERE user_id=? AND channel_id IN (SELECT id FROM channels WHERE server_id=?)',[$target,$sid]);sql('DELETE FROM calls WHERE user_id=? AND channel_id IN (SELECT id FROM channels WHERE server_id=?)',[$target,$sid]);sql('DELETE FROM members WHERE server_id=? AND user_id=?',[$sid,$target]);}elseif(in_array($op,['mute','unmute'],true)){sql('UPDATE members SET muted_until=? WHERE server_id=? AND user_id=?',[$op==='mute'?time()+3600:0,$sid,$target]);if($op==='mute')sql('DELETE FROM calls WHERE user_id=? AND channel_id IN (SELECT id FROM channels WHERE server_id=?)',[$target,$sid]);}elseif(in_array($op,['promote','demote'],true)&&$actor['role']==='owner'){sql('UPDATE members SET role=? WHERE server_id=? AND user_id=?',[$op==='promote'?'moderator':'member',$sid,$target]);}else fail(400,'Invalid moderation action.');sql('INSERT INTO audit(actor,server_id,action,target,created) VALUES(?,?,?,?,?)',[uid(),$sid,$op,$target,time()]);});break;
