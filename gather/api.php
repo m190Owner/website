@@ -26,7 +26,7 @@ try {
  migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.16.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.17.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -56,7 +56,9 @@ try {
   $channels=sql("SELECT c.*,COALESCE((SELECT position FROM category_order o WHERE o.server_id=c.server_id AND o.name=c.category),2147483647) AS category_position FROM channels c WHERE c.server_id IN (SELECT server_id FROM members WHERE user_id=?) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.position,c.created,c.id",[uid(),uid()])->fetchAll();
   $channels=array_values(array_filter($channels,function($c){try{channel($c['id']);return true;}catch(ApiError $e){if($e->status===403)return false;throw $e;}}));
   foreach($servers as &$s){$s['permissions']=permissions_for($s['id']);$s['role_rank']=role_rank($s['id'],uid());}unset($s);
+  $notificationSummary=inbox_summary($channels);
   foreach($channels as &$c){
+   $c['mention_count']=$notificationSummary[$c['id']]['total']??0;$c['first_mention_id']=$notificationSummary[$c['id']]['first_id']??null;
    if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()]);$c['peer']=$peer?public_user($peer):null;$c['name']=$peer['name']??'Conversation';$c['blocked']=$peer?blocked((int)$peer['id']):false;}
    if($c['parent_id']){$parent=channel($c['parent_id']);$c['category']=$parent['category'];$c['slowmode']=$parent['slowmode'];}
    $c['capabilities']=channel_capabilities($c);if($c['archived'])$c['capabilities']['send']=false;
@@ -64,7 +66,7 @@ try {
    $c['unread']=(int)sql('SELECT count(*) FROM messages WHERE channel_id=? AND deleted=0 AND user_id<>? AND id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND user_id NOT IN (SELECT target FROM blocks WHERE user_id=?)',[$c['id'],uid(),uid(),$c['id'],uid()])->fetchColumn();
    $c['participants']=sql('SELECT c.user_id,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.seen>?',[$c['id'],time()-45])->fetchAll();
   }unset($c);
-  $result=['user'=>public_user($user)+['status'=>$user['status']],'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state(),'inbox_unread'=>inbox_count($channels)];break;
+  $result=['user'=>public_user($user)+['status'=>$user['status']],'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state(),'inbox_unread'=>array_sum(array_column($notificationSummary,'total'))];break;
  case 'create_server':
   rate('create-server:'.uid(),5,3600);$name=text_field($in,'name',1,40);if(sql('SELECT count(*) FROM members WHERE user_id=?',[uid()])->fetchColumn()>=30)fail(409,'Server limit reached.');
   $result=transaction(function()use($name){$id=random_id();$text=random_id();sql('INSERT INTO servers(id,name,owner_id,created) VALUES(?,?,?,?)',[$id,$name,uid(),time()]);sql('INSERT INTO members(server_id,user_id,role) VALUES(?,?,?)',[$id,uid(),'owner']);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[$text,$id,'general','text',time()]);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[random_id(),$id,'The living room','voice',time()]);return ['server_id'=>$id,'channel_id'=>$text];});break;
