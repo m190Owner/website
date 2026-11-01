@@ -24,7 +24,7 @@ function member(string $server,bool $moderate=false): array {
 function channel(string $id,bool $write=false,string $permission='send'): array {
  $c=one('SELECT * FROM channels WHERE id=?',[$id]);if(!$c)fail(404,'Channel not found.');
  if($c['parent_id']){$parent=channel($c['parent_id'],$write,$permission);$c['slowmode']=$parent['slowmode'];$c['category']=$parent['category'];if($write&&$c['archived'])fail(403,'This thread is archived.');return $c;}
- if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are temporarily muted in this server.');$p=channel_capabilities($c);if(!$p['view']||($write&&!$p[$permission]))fail(403,'You do not have permission in this channel.');
+ if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are timed out in this server until '.gmdate('Y-m-d H:i:s',(int)$m['muted_until']).' UTC.');$p=channel_capabilities($c);if(!$p['view']||($write&&!$p[$permission]))fail(403,'You do not have permission in this channel.');
  }else{if(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');if($write&&$c['pair_key']){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if(blocked($other))fail(403,'This conversation is unavailable.');}}return $c;
 }
 function session_for(int $id): string {
