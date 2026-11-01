@@ -4,6 +4,7 @@
 !c/.htaccess
 !t/.htaccess
 !gather/.htaccess
+!gather/updates/.htaccess
 
 # Runtime data
 github_cache.json
