@@ -23,7 +23,7 @@ try {
  migrate_customization();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.2.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.3.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -48,7 +48,7 @@ try {
   if((int)$user['last_seen']<time()-15)sql('UPDATE users SET last_seen=? WHERE id=?',[time(),uid()]);
   $servers=sql('SELECT s.*,m.role,m.muted_until,m.nickname FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ORDER BY s.created',[uid()])->fetchAll();
   $channels=sql("SELECT c.* FROM channels c WHERE (c.server_id IN (SELECT server_id FROM members WHERE user_id=?) AND (c.private=0 OR c.server_id IN (SELECT id FROM servers WHERE owner_id=?) OR c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?))) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.created",[uid(),uid(),uid(),uid()])->fetchAll();
-  foreach($channels as &$c){if(!$c['server_id'])$c['name']=sql('SELECT u.name FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()])->fetchColumn()?:'Conversation';}unset($c);
+  foreach($channels as &$c){if(!$c['server_id']){$peer=one('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()]);$c['peer']=$peer?public_user($peer):null;$c['name']=$peer['name']??'Conversation';}}unset($c);
   $result=['user'=>public_user($user),'servers'=>$servers,'channels'=>$channels];break;
  case 'create_server':
   rate('create-server:'.uid(),5,3600);$name=text_field($in,'name',1,40);if(sql('SELECT count(*) FROM members WHERE user_id=?',[uid()])->fetchColumn()>=30)fail(409,'Server limit reached.');
