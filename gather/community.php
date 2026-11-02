@@ -38,7 +38,23 @@ function server_channel_rows(string $sid): array {
 function visible_channel_rows(array $rows): array {
  return array_values(array_filter($rows,function($row){try{channel($row['id']);return true;}catch(ApiError $e){if($e->status!==403)throw $e;return false;}}));
 }
-function presence(array $u): string {return $u['status']==='invisible'||(int)$u['last_seen']<time()-45?'offline':$u['status'];}
+function migrate_automatic_presence(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=11)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=11)return;
+  $db->exec("ALTER TABLE sessions ADD COLUMN seen INTEGER NOT NULL DEFAULT 0; ALTER TABLE sessions ADD COLUMN idle INTEGER NOT NULL DEFAULT 0; ALTER TABLE users ADD COLUMN auto_idle INTEGER NOT NULL DEFAULT 0; CREATE INDEX sessions_presence ON sessions(user_id,expires,seen); PRAGMA user_version=11;");
+ });
+}
+function refresh_presence(int $id): void {
+ $recent=one('SELECT MAX(seen) AS seen,MAX(CASE WHEN idle=0 THEN 1 ELSE 0 END) AS active FROM sessions WHERE user_id=? AND expires>? AND seen>=?',[$id,time(),time()-45]);
+ $seen=(int)($recent['seen']??0);$idle=$recent['active']?0:1;
+ sql('UPDATE users SET last_seen=?,auto_idle=? WHERE id=? AND (last_seen<>? OR auto_idle<>?)',[$seen,$idle,$id,$seen,$idle]);
+}
+function presence_heartbeat(array $in): void {
+ global $user,$tokenHash;$idle=array_key_exists('idle',$in)?$in['idle']:false;if(!is_bool($idle))fail(400,'Idle must be true or false.');
+ transaction(function()use($idle,$tokenHash){sql('UPDATE sessions SET seen=?,idle=? WHERE hash=? AND (seen<? OR idle<>?)',[time(),(int)$idle,$tokenHash,time()-15,(int)$idle]);refresh_presence(uid());});
+ $user=one('SELECT * FROM users WHERE id=?',[uid()]);
+}
+function presence(array $u): string {return $u['status']==='invisible'||(int)$u['last_seen']<time()-45?'offline':($u['status']==='online'&&!empty($u['auto_idle'])?'idle':$u['status']);}
 function blocked(int $other): bool {return !!one('SELECT 1 FROM blocks WHERE (user_id=? AND target=?) OR (user_id=? AND target=?)',[uid(),$other,$other,uid()]);}
 function friends(int $other): bool {return !!one('SELECT 1 FROM friendships WHERE a=? AND b=? AND accepted=1',[min(uid(),$other),max(uid(),$other)]);}
 function migrate_hierarchy(): void {

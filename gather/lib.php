@@ -29,7 +29,7 @@ function channel(string $id,bool $write=false,string $permission='send'): array 
 }
 function session_for(int $id): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
- sql('INSERT INTO sessions VALUES(?,?,?)',[hash('sha256',$token),$id,time()+30*86400]);return $token;
+ sql('INSERT INTO sessions(hash,user_id,expires) VALUES(?,?,?)',[hash('sha256',$token),$id,time()+30*86400]);return $token;
 }
 function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'bio'=>$u['bio'],'pronouns'=>$u['pronouns'],'presence'=>presence($u),'custom_status'=>$u['custom_status'],'last_seen'=>$u['status']==='invisible'?0:(int)$u['last_seen']];}
 function configuration(): array {global $privateDir;$p=$privateDir.'/config.php';return is_file($p)?require $p:[];}
