@@ -17,6 +17,7 @@ function can_view_as(string $cid,int $who): bool {
 function mention_names(string $body): array {
  $body=preg_replace('/```[\s\S]*?```|`[^`\n]+`/',' ',$body);
  $body=preg_replace('~\[([^\]\n]+)\]\(([^()\s]+(?:\([^()\s]*\)[^()\s]*)*)\)~','$1',$body);
+ $body=preg_replace('~(?<![a-z0-9_@/\\\\])https?://(?:(?!\~\~)[^\s<>"\'`*|])+~i',' ',$body);
  preg_match_all('/(?<![a-z0-9_@.])@([a-z0-9_]{3,24})(?![a-z0-9_])/i',$body,$matches);return array_values(array_unique(array_map('strtolower',$matches[1])));
 }
 function notify_message(int $id,array $channel,string $body,?int $reply): void {
