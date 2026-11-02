@@ -27,9 +27,34 @@ function channel(string $id,bool $write=false,string $permission='send'): array 
  if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are timed out in this server until '.gmdate('Y-m-d H:i:s',(int)$m['muted_until']).' UTC.');$p=channel_capabilities($c);if(!$p['view']||($write&&!$p[$permission]))fail(403,'You do not have permission in this channel.');
  }else{if(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');if($write&&$c['pair_key']){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if(blocked($other))fail(403,'This conversation is unavailable.');}}return $c;
 }
+function migrate_sessions(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=12)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=12)return;
+  $db->exec("ALTER TABLE sessions ADD COLUMN public_id TEXT NOT NULL DEFAULT ''; ALTER TABLE sessions ADD COLUMN created INTEGER NOT NULL DEFAULT 0;");
+  foreach(sql('SELECT hash FROM sessions')->fetchAll() as $session)sql('UPDATE sessions SET public_id=? WHERE hash=?',[random_id(),$session['hash']]);
+  $db->exec('CREATE UNIQUE INDEX sessions_public_id ON sessions(public_id); PRAGMA user_version=12;');
+ });
+}
+function session_actions(string $action,array $in): array {
+ global $tokenHash;
+ if($action==='session_list'){
+  $rows=sql('SELECT public_id AS id,created,seen,expires,hash=? AS current FROM sessions WHERE user_id=? AND expires>? ORDER BY current DESC,created DESC,public_id',[$tokenHash,uid(),time()])->fetchAll();
+  foreach($rows as &$row)$row['current']=(bool)$row['current'];return ['sessions'=>$rows];
+ }
+ $all=array_key_exists('all_others',$in)?$in['all_others']:false;$id=$in['session_id']??null;
+ if(!is_bool($all)||($all&&array_key_exists('session_id',$in))||(!$all&&(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/',$id))))fail(400,'Choose a session or all other sessions.');
+ rate('session-revoke:'.uid(),10,60);
+ return transaction(function()use($in,$all,$id,$tokenHash){
+  $current=one('SELECT u.password FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND s.hash=? AND s.expires>?',[uid(),$tokenHash,time()]);if(!$current)fail(401,'Session expired. Please sign in.');
+  $password=$in['password']??null;if(!is_string($password)||strlen($password)>128||!password_verify($password,$current['password']))fail(403,'Current password is incorrect.');
+  if($all)$deleted=sql('DELETE FROM sessions WHERE user_id=? AND hash<>?',[uid(),$tokenHash])->rowCount();
+  else{$target=one('SELECT hash FROM sessions WHERE public_id=? AND user_id=? AND expires>?',[$id,uid(),time()]);if(!$target)fail(404,'Session is no longer available.');if(hash_equals($target['hash'],$tokenHash))fail(400,'Use Log Out to sign out this session.');$deleted=sql('DELETE FROM sessions WHERE public_id=? AND user_id=?',[$id,uid()])->rowCount();}
+  refresh_presence(uid());return ['ok'=>true,'revoked'=>$deleted];
+ });
+}
 function session_for(int $id): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
- sql('INSERT INTO sessions(hash,user_id,expires) VALUES(?,?,?)',[hash('sha256',$token),$id,time()+30*86400]);return $token;
+ sql('INSERT INTO sessions(hash,user_id,expires,public_id,created) VALUES(?,?,?,?,?)',[hash('sha256',$token),$id,time()+30*86400,random_id(),time()]);return $token;
 }
 function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'bio'=>$u['bio'],'pronouns'=>$u['pronouns'],'presence'=>presence($u),'custom_status'=>$u['custom_status'],'last_seen'=>$u['status']==='invisible'?0:(int)$u['last_seen']];}
 function configuration(): array {global $privateDir;$p=$privateDir.'/config.php';return is_file($p)?require $p:[];}
