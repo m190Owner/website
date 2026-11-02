@@ -114,6 +114,12 @@ function channel_audit_snapshot(array $c): array {
 }
 function channel_audit_fields(): array {return ['name'=>'Name','topic'=>'Topic','category'=>'Category','slowmode'=>'Slow mode (seconds)','private'=>'Private','readonly'=>'Read only','members'=>'Allowed member IDs','roles'=>'Allowed role IDs'];}
 function channel_audit_label(array $c): string {return '#'.$c['name'].' ['.$c['id'].']';}
+function role_audit_snapshot(array $role): array {
+ $permissions=array_values(array_unique(json_decode($role['permissions'],true)));sort($permissions,SORT_STRING);
+ return ['name'=>$role['name'],'color'=>$role['color'],'permissions'=>$permissions,'position'=>(int)$role['position']];
+}
+function role_audit_fields(): array {return ['name'=>'Name','color'=>'Color','permissions'=>'Permissions','position'=>'Position (higher is above)'];}
+function role_audit_label(array $role): string {return 'Role '.$role['name'].' ['.$role['id'].']';}
 function disconnect_role(string $sid,string $role): void {sql('DELETE FROM calls WHERE channel_id IN(SELECT id FROM channels WHERE server_id=?) AND user_id IN(SELECT user_id FROM member_roles WHERE server_id=? AND role_id=?)',[$sid,$sid,$role]);}
 function relationship_state(): array {
  $result=[];foreach(sql('SELECT u.*,f.sender,f.accepted FROM friendships f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[uid(),uid(),uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>$u['accepted']?'friend':((int)$u['sender']===uid()?'outgoing':'incoming'),'online'=>presence($u)!=='offline'];
@@ -185,7 +191,7 @@ function community(string $action,array $in): array {
   transaction(function()use($sid,$name,$color,$permissions,$id,$in){require_permission($sid,'manage_roles');grantable_permissions($sid,$permissions);
    if(isset($in['id'])){$role=managed_role($sid,$id);$oldModeration=array_intersect(json_decode($role['permissions'],true),moderation_permissions());if(!isset($in['permission_version'])&&count($oldModeration)>0&&count($oldModeration)<3)fail(409,'Update Gather before editing a role with separate moderation permissions.');$position=$role['position'];if(array_diff(json_decode($role['permissions'],true),$permissions))disconnect_role($sid,$id);}
    else{if(sql('SELECT count(*) FROM roles WHERE server_id=?',[$sid])->fetchColumn()>=30)fail(409,'Role limit reached.');sql('UPDATE roles SET position=position+1 WHERE server_id=?',[$sid]);$position=1;}
-   sql('INSERT INTO roles(id,server_id,name,color,permissions,position) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,color=excluded.color,permissions=excluded.permissions',[$id,$sid,$name,$color,json_encode(array_values(array_unique($permissions))),$position]);hierarchy_audit($sid,isset($in['id'])?'role-edit':'role-create',0,$name);
+   sql('INSERT INTO roles(id,server_id,name,color,permissions,position) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,color=excluded.color,permissions=excluded.permissions',[$id,$sid,$name,$color,json_encode(array_values(array_unique($permissions))),$position]);$after=one('SELECT * FROM roles WHERE id=? AND server_id=?',[$id,$sid]);audit_changes($sid,isset($in['id'])?'role-edit':'role-create',role_audit_label($after),isset($in['id'])?role_audit_snapshot($role):[],role_audit_snapshot($after),role_audit_fields());
   });return ['id'=>$id];
  case 'role_move':
   $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);$target=array_key_exists('target_id',$in)?text_field($in,'target_id',32,32):null;$direction=$in['direction']??null;if($target===null&&!in_array($direction,[-1,1],true))fail(400,'Choose up or down.');
@@ -197,9 +203,9 @@ function community(string $action,array $in): array {
     for($i=min($from,$to);$i<=max($from,$to);$i++)managed_role($sid,$ids[$i]);
     array_splice($ids,$from,1);array_splice($ids,$to,0,[$id]);foreach($ids as $i=>$roleId)sql('UPDATE roles SET position=? WHERE id=? AND server_id=?',[$roles[$i]['position'],$roleId,$sid]);
    }else{$next=one('SELECT * FROM roles WHERE server_id=? AND position'.($direction===1?'>':'<').'? ORDER BY position '.($direction===1?'ASC':'DESC').' LIMIT 1',[$sid,$role['position']]);if(!$next)return;managed_role($sid,$next['id']);sql('UPDATE roles SET position=? WHERE id=?',[$next['position'],$id]);sql('UPDATE roles SET position=? WHERE id=?',[$role['position'],$next['id']]);}
-   hierarchy_audit($sid,'role-move',0,$role['name']);});break;
+   audit_changes($sid,'role-move',role_audit_label($role),role_audit_snapshot($role),role_audit_snapshot(one('SELECT * FROM roles WHERE id=? AND server_id=?',[$id,$sid])),role_audit_fields());});break;
  case 'role_delete':
-  $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);transaction(function()use($sid,$id){$role=managed_role($sid,$id);disconnect_role($sid,$id);sql('DELETE FROM roles WHERE id=? AND server_id=?',[$id,$sid]);sql('UPDATE roles SET position=position-1 WHERE server_id=? AND position>?',[$sid,$role['position']]);sql('DELETE FROM channel_overrides WHERE kind=? AND subject=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',['role',$id,$sid]);hierarchy_audit($sid,'role-delete',0,$role['name']);});break;
+  $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);transaction(function()use($sid,$id){$role=managed_role($sid,$id);disconnect_role($sid,$id);sql('DELETE FROM roles WHERE id=? AND server_id=?',[$id,$sid]);sql('UPDATE roles SET position=position-1 WHERE server_id=? AND position>?',[$sid,$role['position']]);sql('DELETE FROM channel_overrides WHERE kind=? AND subject=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',['role',$id,$sid]);audit_changes($sid,'role-delete',role_audit_label($role),role_audit_snapshot($role),[],role_audit_fields());});break;
  case 'role_assign':
   if(array_key_exists('role_ids',$in)){
    $sid=text_field($in,'server_id',32,32);$who=positive_id($in['user_id']??null);$sets=[];
