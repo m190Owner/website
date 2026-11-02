@@ -78,7 +78,7 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
-function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete'];}
+function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen'];}
 function permission_names(): array {return ['manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log'];}
 function permissions_for(string $sid): array {
  $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());
@@ -114,6 +114,7 @@ function channel_audit_snapshot(array $c): array {
 }
 function channel_audit_fields(): array {return ['name'=>'Name','topic'=>'Topic','category'=>'Category','slowmode'=>'Slow mode (seconds)','private'=>'Private','readonly'=>'Read only','members'=>'Allowed member IDs','roles'=>'Allowed role IDs'];}
 function channel_audit_label(array $c): string {return '#'.$c['name'].' ['.$c['id'].']';}
+function thread_audit_label(array $c): string {return 'Thread '.$c['name'].' ['.$c['id'].'] · Parent ['.$c['parent_id'].'] · Root message ['.$c['root_message'].']';}
 function role_audit_snapshot(array $role): array {
  $permissions=array_values(array_unique(json_decode($role['permissions'],true)));sort($permissions,SORT_STRING);
  return ['name'=>$role['name'],'color'=>$role['color'],'permissions'=>$permissions,'position'=>(int)$role['position']];
@@ -235,7 +236,7 @@ function community(string $action,array $in): array {
  case 'channel_access':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');return ['members'=>array_column(sql('SELECT user_id FROM channel_members WHERE channel_id=?',[$cid])->fetchAll(),'user_id'),'roles'=>array_column(sql('SELECT role_id FROM channel_roles WHERE channel_id=?',[$cid])->fetchAll(),'role_id')];
  case 'channel_delete':
-  $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');transaction(function()use($cid,$c){sql('DELETE FROM signals WHERE channel_id=?',[$cid]);sql('DELETE FROM channels WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'delete-channel',0,channel_audit_label($c));});break;
+  $cid=text_field($in,'channel_id',32,32);transaction(function()use($cid){$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');sql('DELETE FROM signals WHERE channel_id=?',[$cid]);sql('DELETE FROM channels WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'delete-channel',0,$c['parent_id']?thread_audit_label($c):channel_audit_label($c));});break;
  default:fail(404,'Unknown community action.');
  }return ['ok'=>true];
 }
