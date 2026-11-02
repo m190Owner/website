@@ -16,6 +16,20 @@ function migrate_server_profiles(): void {
   $db->exec("ALTER TABLE members ADD COLUMN server_bio TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN profile_revision INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=14;");
  });
 }
+function migrate_server_avatars(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=15)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=15)return;
+  $db->exec("ALTER TABLE members ADD COLUMN server_avatar TEXT NOT NULL DEFAULT ''; CREATE TRIGGER member_avatar_cleanup AFTER DELETE ON members BEGIN DELETE FROM media WHERE server_id=OLD.server_id AND slot='member-avatar:'||OLD.user_id; END; PRAGMA user_version=15;");
+ });
+}
+function validate_image(mixed $data): void {
+  if(!is_string($data))fail(400,'Invalid image.');
+  if($data!==''){
+   if(strlen($data)>700000||!preg_match('#^data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$#D',$data,$match))fail(400,'Choose a PNG, JPEG, WebP or GIF image up to 512 KB.');
+   $bytes=base64_decode($match[2],true);$info=$bytes===false?false:@getimagesizefromstring($bytes);
+   if(!$info||strlen($bytes)>524288||($info['mime']??'')!=='image/'.$match[1]||$info[0]<1||$info[1]<1||$info[0]>2048||$info[1]>2048||$info[0]*$info[1]>4194304)fail(400,'Choose an image up to 2048 × 2048 and 512 KB.');
+  }
+}
 function color_field(array $in,string $key): string {
  $color=$in[$key]??'';if(!is_string($color)||($color!==''&&!preg_match('/^#[0-9a-fA-F]{6}$/D',$color)))fail(400,'Choose a valid role color.');return $color;
 }
@@ -27,10 +41,16 @@ function customization(string $action,array $in): array {
  case 'nickname':
   $sid=text_field($in,'server_id',32,32);$nickname=text_field($in,'nickname',0,32);
   if(array_key_exists('profile_revision',$in)&&(!is_int($in['profile_revision'])||$in['profile_revision']<0))fail(400,'Invalid profile revision.');
+  member($sid);if(array_key_exists('avatar_data',$in)){rate('image-upload:'.uid(),60,3600);validate_image($in['avatar_data']);}
   transaction(function()use($sid,$nickname,$in){$m=member($sid);
    if(array_key_exists('profile_revision',$in)&&$in['profile_revision']!==(int)$m['profile_revision'])fail(409,'Your server profile changed elsewhere. Close and reopen Server Profile before saving.');
    $bio=text_field($in+['server_bio'=>$m['server_bio']],'server_bio',0,190);
-   sql('UPDATE members SET nickname=?,server_bio=?,profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',[$nickname,$bio,$sid,uid()]);
+   $avatar=$m['server_avatar'];
+   if(array_key_exists('avatar_data',$in)){
+    $slot='member-avatar:'.uid();sql('DELETE FROM media WHERE server_id=? AND slot=?',[$sid,$slot]);
+    $avatar=$in['avatar_data']!==''?random_id():'';if($avatar)sql('INSERT INTO media VALUES(?,NULL,?,?,?)',[$avatar,$sid,$slot,$in['avatar_data']]);
+   }
+   sql('UPDATE members SET nickname=?,server_bio=?,server_avatar=?,profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',[$nickname,$bio,$avatar,$sid,uid()]);
   });return ['ok'=>true];
  case 'server_settings':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_server');
@@ -59,12 +79,7 @@ function customization(string $action,array $in): array {
   if($sid!==null){$sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_server');if(!in_array($slot,['icon','banner'],true)&&!preg_match('/^emoji:[a-z0-9_]{2,32}$/D',$slot))fail(400,'Use an emoji name with 2–32 lowercase letters, numbers or underscores.');}
   elseif(!in_array($slot,['avatar','banner'],true))fail(400,'Invalid profile image.');
   rate('image-upload:'.uid(),60,3600);$data=$in['data']??null;
-  if(!is_string($data))fail(400,'Invalid image.');
-  if($data!==''){
-   if(strlen($data)>700000||!preg_match('#^data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)$#D',$data,$match))fail(400,'Choose a PNG, JPEG, WebP or GIF image up to 512 KB.');
-   $bytes=base64_decode($match[2],true);$info=$bytes===false?false:@getimagesizefromstring($bytes);
-   if(!$info||strlen($bytes)>524288||($info['mime']??'')!=='image/'.$match[1]||$info[0]<1||$info[1]<1||$info[0]>2048||$info[1]>2048||$info[0]*$info[1]>4194304)fail(400,'Choose an image up to 2048 × 2048 and 512 KB.');
-  }
+  validate_image($data);
   return transaction(function()use($sid,$owner,$slot,$data){
    $existing=one('SELECT id FROM media WHERE user_id IS ? AND server_id IS ? AND slot=?',[$owner,$sid,$slot]);
    if($data!==''&&str_starts_with($slot,'emoji:')&&!$existing&&sql("SELECT count(*) FROM media WHERE server_id=? AND slot LIKE 'emoji:%'",[$sid])->fetchColumn()>=50)fail(409,'This server has reached its 50 custom emoji limit.');
