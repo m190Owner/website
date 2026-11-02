@@ -201,6 +201,17 @@ function community(string $action,array $in): array {
  case 'role_delete':
   $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);transaction(function()use($sid,$id){$role=managed_role($sid,$id);disconnect_role($sid,$id);sql('DELETE FROM roles WHERE id=? AND server_id=?',[$id,$sid]);sql('UPDATE roles SET position=position-1 WHERE server_id=? AND position>?',[$sid,$role['position']]);sql('DELETE FROM channel_overrides WHERE kind=? AND subject=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',['role',$id,$sid]);hierarchy_audit($sid,'role-delete',0,$role['name']);});break;
  case 'role_assign':
+  if(array_key_exists('role_ids',$in)){
+   $sid=text_field($in,'server_id',32,32);$who=positive_id($in['user_id']??null);$sets=[];
+   foreach(['role_ids','expected_roles'] as $key){$values=$in[$key]??null;if(!is_array($values)||!array_is_list($values)||count($values)>30)fail(400,'Invalid role selection.');foreach($values as $value)if(!is_string($value)||!preg_match('/^[a-f0-9]{32}$/D',$value))fail(400,'Invalid role selection.');if(count(array_unique($values))!==count($values))fail(400,'Duplicate role selection.');sort($values,SORT_STRING);$sets[$key]=$values;}
+   transaction(function()use($sid,$who,$sets){require_permission($sid,'manage_roles');lower_member($sid,$who);$current=sql('SELECT role_id FROM member_roles WHERE server_id=? AND user_id=? ORDER BY role_id',[$sid,$who])->fetchAll(PDO::FETCH_COLUMN);
+    if($current!==$sets['expected_roles'])fail(409,'This member’s roles changed. Close and reopen Assign Roles before saving.');
+    $added=array_diff($sets['role_ids'],$current);$removed=array_diff($current,$sets['role_ids']);$changes=[];
+    foreach(array_merge($added,$removed) as $id){$role=managed_role($sid,$id);$assigned=in_array($id,$added,true);if($assigned)grantable_permissions($sid,json_decode($role['permissions'],true));$changes[]=[$role,$assigned];}
+    foreach($changes as [$role,$assigned]){if($assigned)sql('INSERT INTO member_roles VALUES(?,?,?)',[$sid,$who,$role['id']]);else sql('DELETE FROM member_roles WHERE server_id=? AND user_id=? AND role_id=?',[$sid,$who,$role['id']]);hierarchy_audit($sid,$assigned?'role-assign':'role-remove',$who,$role['name']);}
+    if($removed)sql('DELETE FROM calls WHERE user_id=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',[$who,$sid]);
+   });break;
+  }
   $sid=text_field($in,'server_id',32,32);$who=positive_id($in['user_id']??null);$id=text_field($in,'role_id',32,32);$assigned=$in['assigned']??null;if(!is_bool($assigned))fail(400,'Invalid assignment.');
   transaction(function()use($sid,$who,$id,$assigned){$role=managed_role($sid,$id);lower_member($sid,$who);if($assigned){grantable_permissions($sid,json_decode($role['permissions'],true));sql('INSERT OR IGNORE INTO member_roles VALUES(?,?,?)',[$sid,$who,$id]);}else{sql('DELETE FROM member_roles WHERE server_id=? AND user_id=? AND role_id=?',[$sid,$who,$id]);sql('DELETE FROM calls WHERE user_id=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',[$who,$sid]);}hierarchy_audit($sid,$assigned?'role-assign':'role-remove',$who,$role['name']);});break;
  case 'transfer_owner':
