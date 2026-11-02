@@ -188,8 +188,16 @@ function community(string $action,array $in): array {
    sql('INSERT INTO roles(id,server_id,name,color,permissions,position) VALUES(?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,color=excluded.color,permissions=excluded.permissions',[$id,$sid,$name,$color,json_encode(array_values(array_unique($permissions))),$position]);hierarchy_audit($sid,isset($in['id'])?'role-edit':'role-create',0,$name);
   });return ['id'=>$id];
  case 'role_move':
-  $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);$direction=$in['direction']??null;if(!in_array($direction,[-1,1],true))fail(400,'Choose up or down.');
-  transaction(function()use($sid,$id,$direction){$role=managed_role($sid,$id);$next=one('SELECT * FROM roles WHERE server_id=? AND position'.($direction===1?'>':'<').'? ORDER BY position '.($direction===1?'ASC':'DESC').' LIMIT 1',[$sid,$role['position']]);if(!$next)return;managed_role($sid,$next['id']);sql('UPDATE roles SET position=? WHERE id=?',[$next['position'],$id]);sql('UPDATE roles SET position=? WHERE id=?',[$role['position'],$next['id']]);hierarchy_audit($sid,'role-move',0,$role['name']);});break;
+  $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);$target=array_key_exists('target_id',$in)?text_field($in,'target_id',32,32):null;$direction=$in['direction']??null;if($target===null&&!in_array($direction,[-1,1],true))fail(400,'Choose up or down.');
+  $expected=$in['expected_order']??null;if(($target!==null||array_key_exists('expected_order',$in))&&(!is_array($expected)||!array_is_list($expected)||count($expected)<1||count($expected)>30))fail(400,'Invalid role order.');
+  if(is_array($expected))foreach($expected as $item)if(!is_string($item)||!preg_match('/^[a-f0-9]{32}$/D',$item))fail(400,'Invalid role order.');
+  transaction(function()use($sid,$id,$direction,$target,$expected){$role=managed_role($sid,$id);$roles=sql('SELECT id,position FROM roles WHERE server_id=? ORDER BY position DESC,id',[$sid])->fetchAll();$ids=array_column($roles,'id');
+   if($expected!==null&&$expected!==$ids)fail(409,'Role order changed. Close and reopen Roles & permissions before moving roles.');
+   if($target!==null){managed_role($sid,$target);$from=array_search($id,$ids,true);$to=array_search($target,$ids,true);if($from===$to)return;
+    for($i=min($from,$to);$i<=max($from,$to);$i++)managed_role($sid,$ids[$i]);
+    array_splice($ids,$from,1);array_splice($ids,$to,0,[$id]);foreach($ids as $i=>$roleId)sql('UPDATE roles SET position=? WHERE id=? AND server_id=?',[$roles[$i]['position'],$roleId,$sid]);
+   }else{$next=one('SELECT * FROM roles WHERE server_id=? AND position'.($direction===1?'>':'<').'? ORDER BY position '.($direction===1?'ASC':'DESC').' LIMIT 1',[$sid,$role['position']]);if(!$next)return;managed_role($sid,$next['id']);sql('UPDATE roles SET position=? WHERE id=?',[$next['position'],$id]);sql('UPDATE roles SET position=? WHERE id=?',[$role['position'],$next['id']]);}
+   hierarchy_audit($sid,'role-move',0,$role['name']);});break;
  case 'role_delete':
   $sid=text_field($in,'server_id',32,32);$id=text_field($in,'id',32,32);transaction(function()use($sid,$id){$role=managed_role($sid,$id);disconnect_role($sid,$id);sql('DELETE FROM roles WHERE id=? AND server_id=?',[$id,$sid]);sql('UPDATE roles SET position=position-1 WHERE server_id=? AND position>?',[$sid,$role['position']]);sql('DELETE FROM channel_overrides WHERE kind=? AND subject=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',['role',$id,$sid]);hierarchy_audit($sid,'role-delete',0,$role['name']);});break;
  case 'role_assign':
