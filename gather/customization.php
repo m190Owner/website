@@ -10,6 +10,12 @@ function migrate_customization(): void {
   $db->exec("CREATE TABLE media(id TEXT PRIMARY KEY,user_id INTEGER REFERENCES users(id),server_id TEXT REFERENCES servers(id) ON DELETE CASCADE,slot TEXT NOT NULL,data TEXT NOT NULL,UNIQUE(user_id,slot),UNIQUE(server_id,slot)); PRAGMA user_version=2;");
  });
 }
+function migrate_server_profiles(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=14)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=14)return;
+  $db->exec("ALTER TABLE members ADD COLUMN server_bio TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN profile_revision INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=14;");
+ });
+}
 function color_field(array $in,string $key): string {
  $color=$in[$key]??'';if(!is_string($color)||($color!==''&&!preg_match('/^#[0-9a-fA-F]{6}$/D',$color)))fail(400,'Choose a valid role color.');return $color;
 }
@@ -19,7 +25,13 @@ function customization(string $action,array $in): array {
   global $user;
   sql('UPDATE users SET name=?,bio=?,pronouns=? WHERE id=?',[text_field($in,'name',1,32),text_field($in+['bio'=>$user['bio']],'bio',0,190),text_field($in+['pronouns'=>$user['pronouns']],'pronouns',0,40),uid()]);return ['ok'=>true];
  case 'nickname':
-  $sid=text_field($in,'server_id',32,32);member($sid);sql('UPDATE members SET nickname=? WHERE server_id=? AND user_id=?',[text_field($in,'nickname',0,32),$sid,uid()]);return ['ok'=>true];
+  $sid=text_field($in,'server_id',32,32);$nickname=text_field($in,'nickname',0,32);
+  if(array_key_exists('profile_revision',$in)&&(!is_int($in['profile_revision'])||$in['profile_revision']<0))fail(400,'Invalid profile revision.');
+  transaction(function()use($sid,$nickname,$in){$m=member($sid);
+   if(array_key_exists('profile_revision',$in)&&$in['profile_revision']!==(int)$m['profile_revision'])fail(409,'Your server profile changed elsewhere. Close and reopen Server Profile before saving.');
+   $bio=text_field($in+['server_bio'=>$m['server_bio']],'server_bio',0,190);
+   sql('UPDATE members SET nickname=?,server_bio=?,profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',[$nickname,$bio,$sid,uid()]);
+  });return ['ok'=>true];
  case 'server_settings':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_server');
   transaction(function()use($sid,$in){require_permission($sid,'manage_server');$before=one('SELECT name,description,owner_color,moderator_color,member_color FROM servers WHERE id=?',[$sid]);$after=['name'=>text_field($in,'name',1,40),'description'=>text_field($in,'description',0,300),'owner_color'=>color_field($in,'owner_color'),'moderator_color'=>color_field($in,'moderator_color'),'member_color'=>color_field($in,'member_color')];
