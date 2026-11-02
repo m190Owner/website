@@ -1,13 +1,13 @@
 {
-  "version": "0.25.0",
+  "version": "0.26.0",
   "files": [
     {
-      "url": "https://github.com/m190Owner/website/releases/download/gather-v0.25.0/Gather-Setup-0.25.0.exe",
-      "sha512": "/BvJiIJHmimXTXXpwf5xeMHOqYpHNPHliS4zvkKfEFRjZlNEqEeqj8jRMZOZvngGeRb7GNl+3FaSRavXBVbDOA==",
-      "size": 121583360
+      "url": "https://github.com/m190Owner/website/releases/download/gather-v0.26.0/Gather-Setup-0.26.0.exe",
+      "sha512": "gDvXTlfe4dPLkGE+80s9WgUPCPzb+cB1/c0QTZw6nHLQP2805gZ1wEItUBzNPIbqUOUHCkRTGGYEMIMqW4Ttdw==",
+      "size": 121583573
     }
   ],
-  "path": "https://github.com/m190Owner/website/releases/download/gather-v0.25.0/Gather-Setup-0.25.0.exe",
-  "sha512": "/BvJiIJHmimXTXXpwf5xeMHOqYpHNPHliS4zvkKfEFRjZlNEqEeqj8jRMZOZvngGeRb7GNl+3FaSRavXBVbDOA==",
-  "releaseDate": "2026-11-02T11:51:00.946Z"
+  "path": "https://github.com/m190Owner/website/releases/download/gather-v0.26.0/Gather-Setup-0.26.0.exe",
+  "sha512": "gDvXTlfe4dPLkGE+80s9WgUPCPzb+cB1/c0QTZw6nHLQP2805gZ1wEItUBzNPIbqUOUHCkRTGGYEMIMqW4Ttdw==",
+  "releaseDate": "2026-11-02T12:46:39.742Z"
 }
