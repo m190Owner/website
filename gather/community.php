@@ -78,7 +78,7 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
-function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke'];}
+function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete'];}
 function permission_names(): array {return ['manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log'];}
 function permissions_for(string $sid): array {
  $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());

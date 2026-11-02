@@ -88,11 +88,14 @@ function customization(string $action,array $in): array {
   rate('image-upload:'.uid(),60,3600);$data=$in['data']??null;
   validate_image($data);
   return transaction(function()use($sid,$owner,$slot,$data){
-   $existing=one('SELECT id FROM media WHERE user_id IS ? AND server_id IS ? AND slot=?',[$owner,$sid,$slot]);
+   if($sid!==null)require_permission($sid,'manage_server');
+   $existing=one('SELECT id,data FROM media WHERE user_id IS ? AND server_id IS ? AND slot=?',[$owner,$sid,$slot]);
+   if($sid!==null&&($existing['data']??'')===$data)return ['id'=>$existing['id']??''];
    if($data!==''&&str_starts_with($slot,'emoji:')&&!$existing&&sql("SELECT count(*) FROM media WHERE server_id=? AND slot LIKE 'emoji:%'",[$sid])->fetchColumn()>=50)fail(409,'This server has reached its 50 custom emoji limit.');
    if($existing)sql('DELETE FROM media WHERE id=?',[$existing['id']]);
    $id=$data!==''?random_id():'';if($id)sql('INSERT INTO media VALUES(?,?,?,?,?)',[$id,$owner,$sid,$slot,$data]);
    if(!str_starts_with($slot,'emoji:')){if($sid)sql("UPDATE servers SET $slot=? WHERE id=?",[$id,$sid]);else sql("UPDATE users SET $slot=? WHERE id=?",[$id,uid()]);}
+   if($sid!==null){$emoji=str_starts_with($slot,'emoji:');audit_changes($sid,$emoji?($id===''?'emoji-delete':($existing?'emoji-edit':'emoji-create')):'server-image','Server ['.$sid.'] · '.($emoji?':'.substr($slot,6).':':$slot),['image'=>$existing['id']??''],['image'=>$id],['image'=>'Media ID']);}
    return ['id'=>$id];
   });
  }
