@@ -22,6 +22,12 @@ function migrate_server_avatars(): void {
   $db->exec("ALTER TABLE members ADD COLUMN server_avatar TEXT NOT NULL DEFAULT ''; CREATE TRIGGER member_avatar_cleanup AFTER DELETE ON members BEGIN DELETE FROM media WHERE server_id=OLD.server_id AND slot='member-avatar:'||OLD.user_id; END; PRAGMA user_version=15;");
  });
 }
+function migrate_server_profile_details(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=16)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=16)return;
+  $db->exec("ALTER TABLE members ADD COLUMN server_banner TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN server_pronouns TEXT NOT NULL DEFAULT ''; CREATE TRIGGER member_banner_cleanup AFTER DELETE ON members BEGIN DELETE FROM media WHERE server_id=OLD.server_id AND slot='member-banner:'||OLD.user_id; END; PRAGMA user_version=16;");
+ });
+}
 function validate_image(mixed $data): void {
   if(!is_string($data))fail(400,'Invalid image.');
   if($data!==''){
@@ -41,16 +47,17 @@ function customization(string $action,array $in): array {
  case 'nickname':
   $sid=text_field($in,'server_id',32,32);$nickname=text_field($in,'nickname',0,32);
   if(array_key_exists('profile_revision',$in)&&(!is_int($in['profile_revision'])||$in['profile_revision']<0))fail(400,'Invalid profile revision.');
-  member($sid);if(array_key_exists('avatar_data',$in)){rate('image-upload:'.uid(),60,3600);validate_image($in['avatar_data']);}
+  member($sid);foreach(['avatar_data','banner_data'] as $key)if(array_key_exists($key,$in)){rate('image-upload:'.uid(),60,3600);validate_image($in[$key]);}
   transaction(function()use($sid,$nickname,$in){$m=member($sid);
    if(array_key_exists('profile_revision',$in)&&$in['profile_revision']!==(int)$m['profile_revision'])fail(409,'Your server profile changed elsewhere. Close and reopen Server Profile before saving.');
    $bio=text_field($in+['server_bio'=>$m['server_bio']],'server_bio',0,190);
-   $avatar=$m['server_avatar'];
-   if(array_key_exists('avatar_data',$in)){
-    $slot='member-avatar:'.uid();sql('DELETE FROM media WHERE server_id=? AND slot=?',[$sid,$slot]);
-    $avatar=$in['avatar_data']!==''?random_id():'';if($avatar)sql('INSERT INTO media VALUES(?,NULL,?,?,?)',[$avatar,$sid,$slot,$in['avatar_data']]);
+   $pronouns=text_field($in+['server_pronouns'=>$m['server_pronouns']],'server_pronouns',0,40);
+   foreach(['avatar','banner'] as $kind)if(array_key_exists($kind.'_data',$in)){
+    $slot='member-'.$kind.':'.uid();sql('DELETE FROM media WHERE server_id=? AND slot=?',[$sid,$slot]);
+    $id=$in[$kind.'_data']!==''?random_id():'';if($id)sql('INSERT INTO media VALUES(?,NULL,?,?,?)',[$id,$sid,$slot,$in[$kind.'_data']]);
+    $m['server_'.$kind]=$id;
    }
-   sql('UPDATE members SET nickname=?,server_bio=?,server_avatar=?,profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',[$nickname,$bio,$avatar,$sid,uid()]);
+   sql('UPDATE members SET nickname=?,server_bio=?,server_avatar=?,server_banner=?,server_pronouns=?,profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',[$nickname,$bio,$m['server_avatar'],$m['server_banner'],$pronouns,$sid,uid()]);
   });return ['ok'=>true];
  case 'server_settings':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_server');
