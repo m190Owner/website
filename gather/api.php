@@ -26,7 +26,7 @@ try {
  migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.29.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.30.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -100,7 +100,8 @@ try {
  case 'call_leave':$id=text_field($in,'call_id',32,32);sql('DELETE FROM calls WHERE id=? AND user_id=?',[$id,uid()]);break;
  case 'call_poll':
   $id=text_field($in,'call_id',32,32);$call=call_record($id);sql('UPDATE calls SET seen=? WHERE id=?',[time(),$id]);$cursor=$in['cursor']??0;if(!is_int($cursor)||$cursor<0)fail(400,'Invalid cursor.');
-  $result=['peers'=>sql('SELECT c.id,c.user_id,c.media_version,u.name,COALESCE(NULLIF(m.server_avatar,\'\'),u.avatar) AS avatar FROM calls c JOIN users u ON u.id=c.user_id JOIN channels ch ON ch.id=c.channel_id LEFT JOIN members m ON m.user_id=u.id AND m.server_id=ch.server_id WHERE c.channel_id=? AND c.id<>? AND c.seen>?',[$call['channel_id'],$id,time()-45])->fetchAll(),'signals'=>sql('SELECT s.id,s.from_call,s.payload FROM signals s JOIN calls c ON c.id=s.from_call WHERE s.to_call=? AND s.id>? AND s.created>? AND c.seen>? ORDER BY s.id LIMIT 100',[$id,$cursor,time()-180,time()-45])->fetchAll()];break;
+  $participants=sql('SELECT c.id,c.user_id,c.media_version,u.name,COALESCE(NULLIF(m.server_avatar,\'\'),u.avatar) AS avatar FROM calls c JOIN users u ON u.id=c.user_id JOIN channels ch ON ch.id=c.channel_id LEFT JOIN members m ON m.user_id=u.id AND m.server_id=ch.server_id WHERE c.channel_id=? AND c.seen>?',[$call['channel_id'],time()-45])->fetchAll();$self=null;$peers=[];foreach($participants as $participant){if($participant['id']===$id)$self=$participant;else $peers[]=$participant;}
+  $result=['self'=>$self,'peers'=>$peers,'signals'=>sql('SELECT s.id,s.from_call,s.payload FROM signals s JOIN calls c ON c.id=s.from_call WHERE s.to_call=? AND s.id>? AND s.created>? AND c.seen>? ORDER BY s.id LIMIT 100',[$id,$cursor,time()-180,time()-45])->fetchAll()];break;
  case 'signal':
   $id=text_field($in,'call_id',32,32);$call=call_record($id);$to=text_field($in,'to',32,32);if($to===$id||!one('SELECT 1 FROM calls WHERE id=? AND channel_id=? AND seen>?',[$to,$call['channel_id'],time()-45]))fail(404,'Peer has left.');
   $payload=$in['payload']??null;if(!is_array($payload)||!in_array($payload['type']??'',['offer','answer','candidate'],true))fail(400,'Invalid signal.');$json=json_encode($payload,JSON_THROW_ON_ERROR);if(strlen($json)>60000)fail(413,'Signal too large.');sql('INSERT INTO signals(channel_id,from_call,to_call,payload,created) VALUES(?,?,?,?,?)',[$call['channel_id'],$id,$to,$json,time()]);break;
