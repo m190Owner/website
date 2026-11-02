@@ -26,7 +26,7 @@ try {
  migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.34.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.35.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -88,11 +88,19 @@ try {
   $result=transaction(function()use($other){$ids=[uid(),$other];sort($ids);$key=implode(':',$ids);$c=one('SELECT id FROM channels WHERE pair_key=?',[$key]);if($c)return ['channel_id'=>$c['id']];$id=random_id();sql('INSERT INTO channels(id,name,kind,private,pair_key,created) VALUES(?,?,?,?,?,?)',[$id,'Direct message','text',1,$key,time()]);foreach($ids as $u)sql('INSERT INTO channel_members VALUES(?,?)',[$id,$u]);return ['channel_id'=>$id];});break;
  case 'messages':$cid=text_field($in,'channel_id',32,32);channel($cid);$before=isset($in['before'])?positive_id($in['before']):0;$after=isset($in['after'])?positive_id($in['after']):0;if($before&&$after)fail(400,'Choose one history direction.');if($after&&!one('SELECT 1 FROM messages WHERE id=? AND channel_id=?',[$after,$cid]))fail(400,'History cursor must belong to this conversation.');$search=isset($in['search'])?text_field($in,'search',0,100):'';$result=['messages'=>messages_for($cid,$before,$search,($in['pins']??false)===true,$after),'typing'=>sql('SELECT u.id,u.name FROM typing t JOIN users u ON u.id=t.user_id WHERE t.channel_id=? AND t.user_id<>? AND t.seen>? AND t.user_id NOT IN (SELECT target FROM blocks WHERE user_id=?)',[$cid,uid(),time()-7,uid()])->fetchAll()];break;
  case 'send':$result=send_message($in);break;
- case 'edit':case 'delete':case 'pin':case 'react':
+ case 'delete':
+  $id=positive_id($in['id']??null);rate('message-action:'.uid(),60,60);
+  transaction(function()use($id){
+   $msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);$other=(int)$msg['user_id']!==uid();
+   if($other){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}
+   sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);sql('DELETE FROM attachments WHERE message_id=?',[$id]);sql('DELETE FROM notifications WHERE message_id=?',[$id]);
+   if($other)hierarchy_audit($c['server_id'],'message-delete',(int)$msg['user_id'],'Message ['.$id.'] · Channel ['.$c['id'].'] · Server ['.$c['server_id'].']');
+  });break;
+ case 'edit':case 'pin':case 'react':
   $id=positive_id($in['id']??null);$msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);rate('message-action:'.uid(),60,60);
   if($action==='react')react_message($id,$c,$in);
   elseif($action==='edit'){if((int)$msg['user_id']!==uid())fail(403,'You can only edit your own message.');sql('UPDATE messages SET body=?,edited=? WHERE id=?',[text_field($in,'body',1,4000),time(),$id]);}
-  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}if($action==='delete')transaction(function()use($id){sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);sql('DELETE FROM attachments WHERE message_id=?',[$id]);sql('DELETE FROM notifications WHERE message_id=?',[$id]);});else sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
+  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
  case 'rtc':$cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);$result=rtc_config();break;
  case 'call_join':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);if(!rtc_ready()&&!$test)fail(503,'Calls are waiting for the server relay configuration.');rate('call-join:'.uid(),15,60);
