@@ -23,10 +23,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();
+ migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.24.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.25.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -68,7 +68,7 @@ try {
    $c['unread']=(int)$unread['total'];$c['first_unread_id']=$unread['first_id']===null?null:(int)$unread['first_id'];
    $c['participants']=sql('SELECT c.user_id,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.seen>?',[$c['id'],time()-45])->fetchAll();
   }unset($c);
-  $result=['user'=>public_user($user)+['status'=>$user['status']],'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state(),'inbox_unread'=>array_sum(array_column($notificationSummary,'total'))];break;
+  $result=['user'=>public_user($user)+['status'=>$user['status'],'custom_status_expires_at'=>custom_status($user)!==''?(int)$user['custom_status_expires_at']:0,'status_revision'=>(int)$user['status_revision']],'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state(),'inbox_unread'=>array_sum(array_column($notificationSummary,'total'))];break;
  case 'create_server':
   rate('create-server:'.uid(),5,3600);$name=text_field($in,'name',1,40);if(sql('SELECT count(*) FROM members WHERE user_id=?',[uid()])->fetchColumn()>=30)fail(409,'Server limit reached.');
   $result=transaction(function()use($name){$id=random_id();$text=random_id();sql('INSERT INTO servers(id,name,owner_id,created) VALUES(?,?,?,?)',[$id,$name,uid(),time()]);sql('INSERT INTO members(server_id,user_id,role) VALUES(?,?,?)',[$id,uid(),'owner']);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[$text,$id,'general','text',time()]);sql('INSERT INTO channels(id,server_id,name,kind,created) VALUES(?,?,?,?,?)',[random_id(),$id,'The living room','voice',time()]);return ['server_id'=>$id,'channel_id'=>$text];});break;

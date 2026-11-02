@@ -56,7 +56,14 @@ function session_for(int $id): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
  sql('INSERT INTO sessions(hash,user_id,expires,public_id,created) VALUES(?,?,?,?,?)',[hash('sha256',$token),$id,time()+30*86400,random_id(),time()]);return $token;
 }
-function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'bio'=>$u['bio'],'pronouns'=>$u['pronouns'],'presence'=>presence($u),'custom_status'=>$u['custom_status'],'last_seen'=>$u['status']==='invisible'?0:(int)$u['last_seen']];}
+function migrate_status_expiry(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=13)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=13)return;
+  $db->exec('ALTER TABLE users ADD COLUMN custom_status_expires_at INTEGER NOT NULL DEFAULT 0; ALTER TABLE users ADD COLUMN status_revision INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=13;');
+ });
+}
+function custom_status(array $u): string {return $u['custom_status_expires_at']>0&&$u['custom_status_expires_at']<=time()?'':$u['custom_status'];}
+function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'bio'=>$u['bio'],'pronouns'=>$u['pronouns'],'presence'=>presence($u),'custom_status'=>custom_status($u),'last_seen'=>$u['status']==='invisible'?0:(int)$u['last_seen']];}
 function configuration(): array {global $privateDir;$p=$privateDir.'/config.php';return is_file($p)?require $p:[];}
 function relay_allowed(array $channel): void {
  if(getenv('GATHER_TEST')==='1')return;

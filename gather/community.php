@@ -145,7 +145,17 @@ function community(string $action,array $in): array {
   });break;
  case 'status':
   $status=$in['status']??null;if(!in_array($status,['online','idle','dnd','invisible'],true))fail(400,'Choose a valid status.');
-  sql('UPDATE users SET status=?,custom_status=? WHERE id=?',[$status,text_field($in,'custom_status',0,100),uid()]);break;
+  $text=text_field($in,'custom_status',0,100);
+  $duration=array_key_exists('clear_after',$in)?$in['clear_after']:'keep';
+  if(!in_array($duration,['keep',0,1800,3600,14400,86400],true))fail(400,'Choose a valid status duration.');
+  if(array_key_exists('status_revision',$in)&&(!is_int($in['status_revision'])||$in['status_revision']<0))fail(400,'Invalid status revision.');
+  transaction(function()use($in,$status,$text,$duration){
+   $current=one('SELECT custom_status,custom_status_expires_at,status_revision FROM users WHERE id=?',[uid()]);
+   if(array_key_exists('status_revision',$in)&&$in['status_revision']!==(int)$current['status_revision'])fail(409,'Your status changed elsewhere. Close and reopen Set Status before saving.');
+   $expires=$duration==='keep'?(int)$current['custom_status_expires_at']:($duration?time()+$duration:0);
+   if($text===''||(!array_key_exists('clear_after',$in)&&$text!==$current['custom_status']))$expires=0;
+   sql('UPDATE users SET status=?,custom_status=?,custom_status_expires_at=?,status_revision=status_revision+1 WHERE id=?',[$status,$text,$expires,uid()]);
+  });break;
  case 'channel_move':
   $id=text_field($in,'channel_id',32,32);$direction=$in['direction']??null;if(!in_array($direction,[-1,1],true))fail(400,'Choose up or down.');
   transaction(function()use($id,$direction){$c=channel($id);if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
