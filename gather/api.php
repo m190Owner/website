@@ -26,7 +26,7 @@ try {
  migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.18.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.19.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -63,7 +63,8 @@ try {
    if($c['parent_id']){$parent=channel($c['parent_id']);$c['category']=$parent['category'];$c['slowmode']=$parent['slowmode'];}
    $c['capabilities']=channel_capabilities($c);if($c['archived'])$c['capabilities']['send']=false;
    $c['last_id']=(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE channel_id=?',[$c['id']])->fetchColumn();
-   $c['unread']=(int)sql('SELECT count(*) FROM messages WHERE channel_id=? AND deleted=0 AND user_id<>? AND id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND user_id NOT IN (SELECT target FROM blocks WHERE user_id=?)',[$c['id'],uid(),uid(),$c['id'],uid()])->fetchColumn();
+   $unread=one('SELECT count(*) AS total,min(m.id) AS first_id FROM messages m WHERE m.channel_id=? AND m.deleted=0 AND m.user_id<>? AND m.id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))',[$c['id'],uid(),uid(),$c['id'],uid(),uid()]);
+   $c['unread']=(int)$unread['total'];$c['first_unread_id']=$unread['first_id']===null?null:(int)$unread['first_id'];
    $c['participants']=sql('SELECT c.user_id,u.name,u.avatar FROM calls c JOIN users u ON u.id=c.user_id WHERE c.channel_id=? AND c.seen>?',[$c['id'],time()-45])->fetchAll();
   }unset($c);
   $result=['user'=>public_user($user)+['status'=>$user['status']],'servers'=>$servers,'channels'=>$channels,'relationships'=>relationship_state(),'inbox_unread'=>array_sum(array_column($notificationSummary,'total'))];break;
