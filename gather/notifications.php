@@ -1,5 +1,17 @@
 <?php
 declare(strict_types=1);
+function migrate_category_notification_mutes(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=23)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=23)return;
+  $db->exec("CREATE TABLE category_notification_mutes(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,category TEXT NOT NULL,muted_until INTEGER NOT NULL,revision INTEGER NOT NULL,silent_through INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(user_id,server_id,category));
+   CREATE TRIGGER category_mutes_delete AFTER DELETE ON channels WHEN OLD.parent_id IS NULL BEGIN
+    DELETE FROM category_notification_mutes WHERE server_id=OLD.server_id AND category=OLD.category AND NOT EXISTS(SELECT 1 FROM channels WHERE server_id=OLD.server_id AND category=OLD.category AND parent_id IS NULL);
+   END;
+   CREATE TRIGGER category_mutes_move AFTER UPDATE OF category,server_id,parent_id ON channels WHEN OLD.parent_id IS NULL BEGIN
+    DELETE FROM category_notification_mutes WHERE server_id=OLD.server_id AND category=OLD.category AND NOT EXISTS(SELECT 1 FROM channels WHERE server_id=OLD.server_id AND category=OLD.category AND parent_id IS NULL);
+   END; PRAGMA user_version=23;");
+ });
+}
 function migrate_role_alerts(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=22)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=22)return;$db->exec('ALTER TABLE server_notification_preferences ADD COLUMN suppress_roles INTEGER NOT NULL DEFAULT 0 CHECK(suppress_roles IN (0,1)); PRAGMA user_version=22;');});
@@ -27,16 +39,17 @@ function migrate_server_notification_mutes(): void {
  });
 }
 // Called after channel access or server membership validation, inside the preference transaction.
-function save_notification_mute(string $id,array $in,bool $server=false): ?array {
+function save_notification_mute(string $id,array $in,bool $server=false,?string $category=null): ?array {
  $duration=array_key_exists('mute_for',$in)?$in['mute_for']:'keep';
  if($duration!=='keep'&&(!is_int($duration)||!in_array($duration,[0,900,3600,28800,86400],true)))fail(400,'Choose a mute duration.');
- $table=$server?'server_notification_mutes':'notification_mutes';$key=$server?'server_id':'channel_id';
- $mute=one("SELECT * FROM $table WHERE user_id=? AND $key=?",[uid(),$id]);if($duration==='keep')return $mute;
+ $table=$category!==null?'category_notification_mutes':($server?'server_notification_mutes':'notification_mutes');$key=$server||$category!==null?'server_id':'channel_id';$ids=[uid(),$id];if($category!==null)$ids[]=$category;$where="user_id=? AND $key=?".($category!==null?' AND category=?':'');$columns="user_id,$key".($category!==null?',category':'');
+ $mute=one("SELECT * FROM $table WHERE $where",$ids);if($duration==='keep')return $mute;
  if(!isset($in['mute_revision'])||!is_int($in['mute_revision'])||$in['mute_revision']!==(int)($mute['revision']??0))fail(409,'The mute changed elsewhere. Reopen notification settings and try again.');
  if($duration===0&&(int)($mute['muted_until']??0)<=time())return $mute;
  $watermark=$server?'SELECT COALESCE(max(m.id),0) FROM messages m JOIN channels c ON c.id=m.channel_id WHERE c.server_id=?':'SELECT COALESCE(max(id),0) FROM messages WHERE channel_id=?';
- $mute=['muted_until'=>time()+$duration,'revision'=>(int)($mute['revision']??0)+1,'silent_through'=>$duration===0?(int)sql($watermark,[$id])->fetchColumn():0];
- sql("INSERT INTO $table(user_id,$key,muted_until,revision,silent_through) VALUES(?,?,?,?,?) ON CONFLICT(user_id,$key) DO UPDATE SET muted_until=excluded.muted_until,revision=excluded.revision,silent_through=excluded.silent_through",[uid(),$id,$mute['muted_until'],$mute['revision'],$mute['silent_through']]);return $mute;
+ if($category!==null)$watermark='SELECT COALESCE(max(m.id),0) FROM messages m JOIN channels c ON c.id=m.channel_id LEFT JOIN channels p ON p.id=c.parent_id WHERE c.server_id=? AND COALESCE(p.category,c.category)=?';
+ $mute=['muted_until'=>time()+$duration,'revision'=>(int)($mute['revision']??0)+1,'silent_through'=>$duration===0?(int)sql($watermark,$category!==null?[$id,$category]:[$id])->fetchColumn():0];
+ sql("INSERT INTO $table($columns,muted_until,revision,silent_through) VALUES(".implode(',',array_fill(0,count($ids)+3,'?')).") ON CONFLICT($columns) DO UPDATE SET muted_until=excluded.muted_until,revision=excluded.revision,silent_through=excluded.silent_through",[...$ids,$mute['muted_until'],$mute['revision'],$mute['silent_through']]);return $mute;
 }
 function migrate_notification_mutes(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=19)return;
@@ -117,7 +130,7 @@ function inbox_rows(bool $unread=false): array {
 }
 function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
- foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN (n.kind<>\'role\' OR COALESCE(np.suppress_roles,0)=0) AND m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id LEFT JOIN server_notification_preferences np ON np.user_id=n.user_id AND np.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
+ foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN (n.kind<>\'role\' OR COALESCE(np.suppress_roles,0)=0) AND m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0),COALESCE(cm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0),COALESCE(cm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN channels mp ON mp.id=mc.parent_id LEFT JOIN category_notification_mutes cm ON cm.user_id=n.user_id AND cm.server_id=mc.server_id AND cm.category=COALESCE(mp.category,mc.category) LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id LEFT JOIN server_notification_preferences np ON np.user_id=n.user_id AND np.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
 }
 function react_message(int $id,array $c,array $in): void {
  $emoji=$in['emoji']??'❤️';if(!is_string($emoji)||strlen($emoji)>50)fail(400,'Invalid reaction.');if(array_key_exists('selected',$in)&&!is_bool($in['selected']))fail(400,'Invalid reaction state.');
@@ -133,8 +146,8 @@ function notification_actions(string $action,array $in): array {
  switch($action){
  case 'category_notification_preference':
   $sid=text_field($in,'server_id',32,32);$category=text_field($in,'category',1,40);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit'],true))fail(400,'Choose a notification setting.');
-  return transaction(function()use($sid,$category,$mode){member($sid);$visible=visible_channel_rows(sql('SELECT * FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$category])->fetchAll());if(!$visible)fail(403,'Choose a category you can view.');
-   if($mode==='inherit')sql('DELETE FROM category_notification_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$sid,$category]);else sql('INSERT INTO category_notification_preferences VALUES(?,?,?,?) ON CONFLICT(user_id,server_id,category) DO UPDATE SET mode=excluded.mode',[uid(),$sid,$category,$mode]);return ['ok'=>true,'mode'=>$mode==='inherit'?null:$mode];
+  return transaction(function()use($sid,$category,$mode,$in){member($sid);$visible=visible_channel_rows(sql('SELECT * FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$category])->fetchAll());if(!$visible)fail(403,'Choose a category you can view.');
+   $mute=save_notification_mute($sid,$in,false,$category);if($mode==='inherit')sql('DELETE FROM category_notification_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$sid,$category]);else sql('INSERT INTO category_notification_preferences VALUES(?,?,?,?) ON CONFLICT(user_id,server_id,category) DO UPDATE SET mode=excluded.mode',[uid(),$sid,$category,$mode]);return ['ok'=>true,'mode'=>$mode==='inherit'?null:$mode]+notification_mute_fields($mute);
   });
  case 'server_notification_preference':
   $id=text_field($in,'server_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted'],true))fail(400,'Choose a notification setting.');
