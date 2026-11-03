@@ -1,5 +1,14 @@
 <?php
 declare(strict_types=1);
+function migrate_server_notifications(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=18)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=18)return;
+  $db->exec("CREATE TABLE next_notification_preferences(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,mode TEXT NOT NULL CHECK(mode IN ('all','mentions','muted','inherit')),PRIMARY KEY(user_id,channel_id));
+   INSERT INTO next_notification_preferences SELECT * FROM notification_preferences;
+   DROP TABLE notification_preferences; ALTER TABLE next_notification_preferences RENAME TO notification_preferences;
+   CREATE TABLE server_notification_preferences(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,mode TEXT NOT NULL CHECK(mode IN ('all','mentions','muted')),PRIMARY KEY(user_id,server_id)); PRAGMA user_version=18;");
+ });
+}
 function migrate_notification_preferences(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=17)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=17)return;
@@ -55,9 +64,12 @@ function react_message(int $id,array $c,array $in): void {
 }
 function notification_actions(string $action,array $in): array {
  switch($action){
+ case 'server_notification_preference':
+  $id=text_field($in,'server_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted'],true))fail(400,'Choose a notification setting.');
+  return transaction(function()use($id,$mode){member($id);sql('INSERT INTO server_notification_preferences(user_id,server_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,server_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode];});
  case 'notification_preference':
-  $id=text_field($in,'channel_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted'],true))fail(400,'Choose a notification setting.');
-  return transaction(function()use($id,$mode){channel($id);sql('INSERT INTO notification_preferences(user_id,channel_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode];});
+  $id=text_field($in,'channel_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit'],true))fail(400,'Choose a notification setting.');
+  return transaction(function()use($id,$mode){$c=channel($id);if($mode==='inherit'&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');sql('INSERT INTO notification_preferences(user_id,channel_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode];});
  case 'inbox':$rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
  case 'inbox_read':
   if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return ['ok'=>true];
