@@ -1,5 +1,9 @@
 <?php
 declare(strict_types=1);
+function migrate_role_alerts(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=22)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=22)return;$db->exec('ALTER TABLE server_notification_preferences ADD COLUMN suppress_roles INTEGER NOT NULL DEFAULT 0 CHECK(suppress_roles IN (0,1)); PRAGMA user_version=22;');});
+}
 function migrate_category_notifications(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=21)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=21)return;
@@ -99,7 +103,7 @@ function notify_message(int $id,array $channel,string $body,?int $reply): void {
   foreach($roles as $role)if(!one('SELECT id FROM roles WHERE id=? AND server_id=?',[$role,$channel['server_id']]))fail(400,'A mentioned role is no longer available in this server.');
   // shortcut: bound role expansion for shared hosting; use queued delivery before supporting larger mentions.
   $marks=implode(',',array_fill(0,count($roles),'?'));$people=sql("SELECT DISTINCT user_id FROM member_roles WHERE server_id=? AND role_id IN ($marks) LIMIT 201",[$channel['server_id'],...$roles])->fetchAll();if(count($people)>200)fail(400,'This role mention is too large. Mention a smaller role.');
-  foreach($people as $person)$targets[(int)$person['user_id']]='mention';
+  foreach($people as $person)$targets[(int)$person['user_id']]??='role';
  }
  foreach($names as $name){$person=one('SELECT id FROM users WHERE username=?',[$name]);if($person)$targets[(int)$person['id']]='mention';}
  foreach($targets as $who=>$kind){if($who===uid()||blocked($who)||!can_view_as($channel['id'],$who))continue;sql('INSERT OR IGNORE INTO notifications VALUES(?,?,?,0)',[$who,$id,$kind]);
@@ -109,11 +113,11 @@ function notify_message(int $id,array $channel,string $body,?int $reply): void {
 }
 function inbox_rows(bool $unread=false): array {
  $rows=sql('SELECT n.message_id,n.kind,n.seen,m.channel_id,m.body,m.created,m.user_id,u.name,u.username,u.avatar,c.name AS channel_name,c.server_id,s.name AS server_name FROM notifications n JOIN messages m ON m.id=n.message_id JOIN users u ON u.id=m.user_id JOIN channels c ON c.id=m.channel_id LEFT JOIN servers s ON s.id=c.server_id WHERE n.user_id=? AND m.deleted=0'.($unread?' AND n.seen=0':'').' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY n.message_id DESC LIMIT 500',[uid(),uid(),uid()])->fetchAll();
- $visible=[];$result=[];$roleNames=[];foreach($rows as $row){$cid=$row['channel_id'];if(!array_key_exists($cid,$visible))$visible[$cid]=can_view_as($cid,uid());if(!$visible[$cid])continue;$sid=$row['server_id'];if($sid&&!isset($roleNames[$sid]))$roleNames[$sid]=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');$row['preview']=role_preview($row['body'],$roleNames[$sid]??[]);if(!$row['server_id']&&one('SELECT 1 FROM channels WHERE id=? AND pair_key IS NOT NULL',[$cid]))$row['channel_name']=$row['name'];$result[]=$row;}return $result;
+ $visible=[];$result=[];$roleNames=[];foreach($rows as $row){$cid=$row['channel_id'];if(!array_key_exists($cid,$visible))$visible[$cid]=can_view_as($cid,uid());if(!$visible[$cid])continue;$sid=$row['server_id'];if($sid&&!isset($roleNames[$sid]))$roleNames[$sid]=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');$row['preview']=role_preview($row['body'],$roleNames[$sid]??[]);if($row['kind']==='role')$row['kind']='mention';if(!$row['server_id']&&one('SELECT 1 FROM channels WHERE id=? AND pair_key IS NOT NULL',[$cid]))$row['channel_name']=$row['name'];$result[]=$row;}return $result;
 }
 function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
- foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
+ foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN (n.kind<>\'role\' OR COALESCE(np.suppress_roles,0)=0) AND m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id LEFT JOIN server_notification_preferences np ON np.user_id=n.user_id AND np.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
 }
 function react_message(int $id,array $c,array $in): void {
  $emoji=$in['emoji']??'❤️';if(!is_string($emoji)||strlen($emoji)>50)fail(400,'Invalid reaction.');if(array_key_exists('selected',$in)&&!is_bool($in['selected']))fail(400,'Invalid reaction state.');
@@ -134,7 +138,8 @@ function notification_actions(string $action,array $in): array {
   });
  case 'server_notification_preference':
   $id=text_field($in,'server_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted'],true))fail(400,'Choose a notification setting.');
-  return transaction(function()use($id,$mode,$in){member($id);$mute=save_notification_mute($id,$in,true);sql('INSERT INTO server_notification_preferences(user_id,server_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,server_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode]+notification_mute_fields($mute);});
+  if(array_key_exists('suppress_roles',$in)&&!is_bool($in['suppress_roles']))fail(400,'Choose whether to suppress role alerts.');
+  return transaction(function()use($id,$mode,$in){member($id);$suppress=$in['suppress_roles']??(bool)(one('SELECT suppress_roles FROM server_notification_preferences WHERE user_id=? AND server_id=?',[uid(),$id])['suppress_roles']??false);$mute=save_notification_mute($id,$in,true);sql('INSERT INTO server_notification_preferences(user_id,server_id,mode,suppress_roles) VALUES(?,?,?,?) ON CONFLICT(user_id,server_id) DO UPDATE SET mode=excluded.mode,suppress_roles=excluded.suppress_roles',[uid(),$id,$mode,(int)$suppress]);return ['ok'=>true,'mode'=>$mode,'suppress_roles'=>$suppress]+notification_mute_fields($mute);});
  case 'notification_preference':
   $id=text_field($in,'channel_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit','category'],true))fail(400,'Choose a notification setting.');
   return transaction(function()use($id,$mode,$in){$c=channel($id);if(in_array($mode,['inherit','category'],true)&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');$mute=save_notification_mute($id,$in);

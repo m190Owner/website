@@ -23,10 +23,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();
+ migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.45.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.46.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -58,15 +58,15 @@ try {
   $channels=array_values(array_filter($channels,function($c){try{channel($c['id']);return true;}catch(ApiError $e){if($e->status===403)return false;throw $e;}}));
   $serverNotificationMutes=array_column(sql('SELECT * FROM server_notification_mutes WHERE user_id=?',[uid()])->fetchAll(),null,'server_id');
   $categoryNotificationModes=[];foreach(sql('SELECT server_id,category,mode FROM category_notification_preferences WHERE user_id=?',[uid()])->fetchAll() as $row)$categoryNotificationModes[$row['server_id']][$row['category']]=$row['mode'];
-  $serverNotificationModes=array_column(sql('SELECT server_id,mode FROM server_notification_preferences WHERE user_id=?',[uid()])->fetchAll(),'mode','server_id');
-  foreach($servers as &$s){$s+=notification_mute_fields($serverNotificationMutes[$s['id']]??null);$s['notification_mode']=$serverNotificationModes[$s['id']]??null;$s['permissions']=permissions_for($s['id']);$s['role_rank']=role_rank($s['id'],uid());}unset($s);
+  $serverNotificationPreferences=array_column(sql('SELECT * FROM server_notification_preferences WHERE user_id=?',[uid()])->fetchAll(),null,'server_id');$serverNotificationModes=array_column($serverNotificationPreferences,'mode','server_id');
+  foreach($servers as &$s){$s+=notification_mute_fields($serverNotificationMutes[$s['id']]??null);$s['notification_mode']=$serverNotificationModes[$s['id']]??null;$s['suppress_roles']=(bool)($serverNotificationPreferences[$s['id']]['suppress_roles']??false);$s['permissions']=permissions_for($s['id']);$s['role_rank']=role_rank($s['id'],uid());}unset($s);
   $notificationSummary=inbox_summary($channels);
   $notificationMutes=array_column(sql('SELECT * FROM notification_mutes WHERE user_id=?',[uid()])->fetchAll(),null,'channel_id');
   $notificationModes=array_column(sql('SELECT channel_id,mode FROM notification_preferences WHERE user_id=?',[uid()])->fetchAll(),'mode','channel_id');
   foreach($channels as &$c){
    $serverMute=$serverNotificationMutes[$c['server_id']]??null;$c['server_notification_muted']=(int)($serverMute['muted_until']??0)>time();$c['server_notification_muted_until']=(int)($serverMute['muted_until']??0);
    $mute=$notificationMutes[$c['id']]??null;$c+=notification_mute_fields($mute);$c['notification_mention_id']=$notificationSummary[$c['id']]['alert_id']??0;
-   $c['server_notification_mode']=$c['server_id']?($serverNotificationModes[$c['server_id']]??null):null;$c['notification_mode']=$notificationModes[$c['id']]??null;$c['last_mention_id']=$notificationSummary[$c['id']]['last_id']??0;
+   $c['server_suppress_roles']=(bool)($serverNotificationPreferences[$c['server_id']]['suppress_roles']??false);$c['server_notification_mode']=$c['server_id']?($serverNotificationModes[$c['server_id']]??null):null;$c['notification_mode']=$notificationModes[$c['id']]??null;$c['last_mention_id']=$notificationSummary[$c['id']]['last_id']??0;
    $c['mention_count']=$notificationSummary[$c['id']]['total']??0;$c['first_mention_id']=$notificationSummary[$c['id']]['first_id']??null;
    if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()]);$c['peer']=$peer?public_user($peer):null;$c['name']=$peer['name']??'Conversation';$c['blocked']=$peer?blocked((int)$peer['id']):false;}
    if($c['parent_id']){$parent=channel($c['parent_id']);$c['category']=$parent['category'];$c['slowmode']=$parent['slowmode'];}
