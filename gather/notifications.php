@@ -1,5 +1,14 @@
 <?php
 declare(strict_types=1);
+function migrate_notification_mutes(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=19)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=19)return;
+  $db->exec("CREATE TABLE notification_mutes(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,muted_until INTEGER NOT NULL,revision INTEGER NOT NULL,silent_through INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(user_id,channel_id)); PRAGMA user_version=19;");
+ });
+}
+function notification_mute_fields(?array $mute): array {
+ $until=(int)($mute['muted_until']??0);return ['notification_muted_until'=>$until,'notification_muted'=>$until>time(),'notification_mute_revision'=>(int)($mute['revision']??0)];
+}
 function migrate_server_notifications(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=18)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=18)return;
@@ -50,7 +59,7 @@ function inbox_rows(bool $unread=false): array {
 }
 function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
- foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id FROM notifications n JOIN messages m ON m.id=n.message_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id']];return $result;
+ foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN m.created>=COALESCE(nm.muted_until,0) AND m.id>COALESCE(nm.silent_through,0) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
 }
 function react_message(int $id,array $c,array $in): void {
  $emoji=$in['emoji']??'❤️';if(!is_string($emoji)||strlen($emoji)>50)fail(400,'Invalid reaction.');if(array_key_exists('selected',$in)&&!is_bool($in['selected']))fail(400,'Invalid reaction state.');
@@ -69,7 +78,11 @@ function notification_actions(string $action,array $in): array {
   return transaction(function()use($id,$mode){member($id);sql('INSERT INTO server_notification_preferences(user_id,server_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,server_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode];});
  case 'notification_preference':
   $id=text_field($in,'channel_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit'],true))fail(400,'Choose a notification setting.');
-  return transaction(function()use($id,$mode){$c=channel($id);if($mode==='inherit'&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');sql('INSERT INTO notification_preferences(user_id,channel_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode];});
+  $duration=array_key_exists('mute_for',$in)?$in['mute_for']:'keep';if($duration!=='keep'&&(!is_int($duration)||!in_array($duration,[0,900,3600,28800,86400],true)))fail(400,'Choose a mute duration.');
+  return transaction(function()use($id,$mode,$duration,$in){$c=channel($id);if($mode==='inherit'&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');$mute=one('SELECT * FROM notification_mutes WHERE user_id=? AND channel_id=?',[uid(),$id]);
+   if($duration!=='keep'){if(!isset($in['mute_revision'])||!is_int($in['mute_revision'])||$in['mute_revision']!==(int)($mute['revision']??0))fail(409,'The mute changed elsewhere. Reopen notification settings and try again.');if($duration!==0||(int)($mute['muted_until']??0)>time()){$mute=['muted_until'=>time()+$duration,'revision'=>(int)($mute['revision']??0)+1,'silent_through'=>$duration===0?(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE channel_id=?',[$id])->fetchColumn():0];sql('INSERT INTO notification_mutes(user_id,channel_id,muted_until,revision,silent_through) VALUES(?,?,?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET muted_until=excluded.muted_until,revision=excluded.revision,silent_through=excluded.silent_through',[uid(),$id,$mute['muted_until'],$mute['revision'],$mute['silent_through']]);}}
+   sql('INSERT INTO notification_preferences(user_id,channel_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode]+notification_mute_fields($mute);
+  });
  case 'inbox':$rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
  case 'inbox_read':
   if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return ['ok'=>true];
