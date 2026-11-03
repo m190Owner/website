@@ -23,10 +23,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();
+ migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.42.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.43.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -45,7 +45,7 @@ try {
  rate('requests:'.uid(),240,60);$result=['ok'=>true];
  switch($action){
  case 'session_list':case 'session_revoke':$result=session_actions($action,$in);break;
- case 'server_notification_preference':case 'notification_preference':case 'inbox':case 'inbox_read':case 'mention_members':case 'message_context':$result=notification_actions($action,$in);break;
+ case 'category_notification_preference':case 'server_notification_preference':case 'notification_preference':case 'inbox':case 'inbox_read':case 'mention_members':case 'message_context':$result=notification_actions($action,$in);break;
  case 'group_create':case 'group_members':case 'group_update':case 'group_leave':case 'thread_create':case 'thread_archive':case 'override_list':case 'override_save':case 'attachment_upload':case 'attachment_get':case 'attachment_discard':$result=conversation_actions($action,$in);break;
  case 'audit_list':case 'ban_list':case 'unban':case 'role_move':case 'transfer_owner':case 'moderate':case 'category_order':case 'channel_reorder':case 'status':case 'channel_move':case 'friend_request':case 'relationship':case 'read':case 'typing':case 'role_list':case 'role_save':case 'role_delete':case 'role_assign':case 'channel_access':case 'channel_delete':case 'call_decline':$result=community($action,$in);break;
  case 'logout':transaction(function()use($tokenHash){sql('DELETE FROM sessions WHERE hash=?',[$tokenHash]);refresh_presence(uid());sql('DELETE FROM calls WHERE user_id=?',[uid()]);});break;
@@ -57,6 +57,7 @@ try {
   $channels=sql("SELECT c.*,COALESCE((SELECT position FROM category_order o WHERE o.server_id=c.server_id AND o.name=c.category),2147483647) AS category_position FROM channels c WHERE c.server_id IN (SELECT server_id FROM members WHERE user_id=?) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.position,c.created,c.id",[uid(),uid()])->fetchAll();
   $channels=array_values(array_filter($channels,function($c){try{channel($c['id']);return true;}catch(ApiError $e){if($e->status===403)return false;throw $e;}}));
   $serverNotificationMutes=array_column(sql('SELECT * FROM server_notification_mutes WHERE user_id=?',[uid()])->fetchAll(),null,'server_id');
+  $categoryNotificationModes=[];foreach(sql('SELECT server_id,category,mode FROM category_notification_preferences WHERE user_id=?',[uid()])->fetchAll() as $row)$categoryNotificationModes[$row['server_id']][$row['category']]=$row['mode'];
   $serverNotificationModes=array_column(sql('SELECT server_id,mode FROM server_notification_preferences WHERE user_id=?',[uid()])->fetchAll(),'mode','server_id');
   foreach($servers as &$s){$s+=notification_mute_fields($serverNotificationMutes[$s['id']]??null);$s['notification_mode']=$serverNotificationModes[$s['id']]??null;$s['permissions']=permissions_for($s['id']);$s['role_rank']=role_rank($s['id'],uid());}unset($s);
   $notificationSummary=inbox_summary($channels);
@@ -69,6 +70,7 @@ try {
    $c['mention_count']=$notificationSummary[$c['id']]['total']??0;$c['first_mention_id']=$notificationSummary[$c['id']]['first_id']??null;
    if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? AND u.id<>?',[$c['id'],uid()]);$c['peer']=$peer?public_user($peer):null;$c['name']=$peer['name']??'Conversation';$c['blocked']=$peer?blocked((int)$peer['id']):false;}
    if($c['parent_id']){$parent=channel($c['parent_id']);$c['category']=$parent['category'];$c['slowmode']=$parent['slowmode'];}
+   $c['category_notification_mode']=$c['server_id']?($categoryNotificationModes[$c['server_id']][$c['category']]??null):null;
    $c['capabilities']=channel_capabilities($c);if($c['archived'])$c['capabilities']['send']=false;
    $c['last_id']=(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE channel_id=?',[$c['id']])->fetchColumn();
    $unread=one('SELECT count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN m.created>=? AND m.id>? THEN m.id END) AS alert_id FROM messages m WHERE m.channel_id=? AND m.deleted=0 AND m.user_id<>? AND m.id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))',[max((int)($mute['muted_until']??0),(int)($serverMute['muted_until']??0)),max((int)($mute['silent_through']??0),(int)($serverMute['silent_through']??0)),$c['id'],uid(),uid(),$c['id'],uid(),uid()]);

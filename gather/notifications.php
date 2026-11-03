@@ -1,5 +1,21 @@
 <?php
 declare(strict_types=1);
+function migrate_category_notifications(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=21)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=21)return;
+  $db->exec("CREATE TABLE next_notification_preferences(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,mode TEXT NOT NULL CHECK(mode IN ('all','mentions','muted','inherit','category')),PRIMARY KEY(user_id,channel_id));
+   INSERT INTO next_notification_preferences SELECT * FROM notification_preferences;
+   DROP TABLE notification_preferences; ALTER TABLE next_notification_preferences RENAME TO notification_preferences;
+   CREATE TABLE category_notification_preferences(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,category TEXT NOT NULL,mode TEXT NOT NULL CHECK(mode IN ('all','mentions','muted')),PRIMARY KEY(user_id,server_id,category));
+   CREATE TRIGGER category_notifications_delete AFTER DELETE ON channels WHEN OLD.parent_id IS NULL BEGIN
+    DELETE FROM category_notification_preferences WHERE server_id=OLD.server_id AND category=OLD.category AND NOT EXISTS(SELECT 1 FROM channels WHERE server_id=OLD.server_id AND category=OLD.category AND parent_id IS NULL);
+   END;
+   CREATE TRIGGER category_notifications_move AFTER UPDATE OF category,server_id,parent_id ON channels WHEN OLD.parent_id IS NULL BEGIN
+    DELETE FROM category_notification_preferences WHERE server_id=OLD.server_id AND category=OLD.category AND NOT EXISTS(SELECT 1 FROM channels WHERE server_id=OLD.server_id AND category=OLD.category AND parent_id IS NULL);
+   END;
+   PRAGMA user_version=21;");
+ });
+}
 function migrate_server_notification_mutes(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=20)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=20)return;
@@ -91,12 +107,17 @@ function react_message(int $id,array $c,array $in): void {
 }
 function notification_actions(string $action,array $in): array {
  switch($action){
+ case 'category_notification_preference':
+  $sid=text_field($in,'server_id',32,32);$category=text_field($in,'category',1,40);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit'],true))fail(400,'Choose a notification setting.');
+  return transaction(function()use($sid,$category,$mode){member($sid);$visible=visible_channel_rows(sql('SELECT * FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$category])->fetchAll());if(!$visible)fail(403,'Choose a category you can view.');
+   if($mode==='inherit')sql('DELETE FROM category_notification_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$sid,$category]);else sql('INSERT INTO category_notification_preferences VALUES(?,?,?,?) ON CONFLICT(user_id,server_id,category) DO UPDATE SET mode=excluded.mode',[uid(),$sid,$category,$mode]);return ['ok'=>true,'mode'=>$mode==='inherit'?null:$mode];
+  });
  case 'server_notification_preference':
   $id=text_field($in,'server_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted'],true))fail(400,'Choose a notification setting.');
   return transaction(function()use($id,$mode,$in){member($id);$mute=save_notification_mute($id,$in,true);sql('INSERT INTO server_notification_preferences(user_id,server_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,server_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode]+notification_mute_fields($mute);});
  case 'notification_preference':
-  $id=text_field($in,'channel_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit'],true))fail(400,'Choose a notification setting.');
-  return transaction(function()use($id,$mode,$in){$c=channel($id);if($mode==='inherit'&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');$mute=save_notification_mute($id,$in);
+  $id=text_field($in,'channel_id',32,32);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit','category'],true))fail(400,'Choose a notification setting.');
+  return transaction(function()use($id,$mode,$in){$c=channel($id);if(in_array($mode,['inherit','category'],true)&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');$mute=save_notification_mute($id,$in);
    sql('INSERT INTO notification_preferences(user_id,channel_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode]+notification_mute_fields($mute);
   });
  case 'inbox':$rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
