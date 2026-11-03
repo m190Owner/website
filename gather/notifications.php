@@ -72,15 +72,27 @@ function migrate_notifications(): void {
 function can_view_as(string $cid,int $who): bool {
  global $user;$saved=$user;$user=['id'=>$who];try{channel($cid);return true;}catch(ApiError $e){if(in_array($e->status,[403,404],true))return false;throw $e;}finally{$user=$saved;}
 }
-function mention_names(string $body): array {
+function mention_text(string $body): string {
  $body=preg_replace('/```[\s\S]*?```|`[^`\n]+`/',' ',$body);
  $body=preg_replace('~\[([^\]\n]+)\]\(([^()\s]+(?:\([^()\s]*\)[^()\s]*)*)\)~','$1',$body);
  $body=preg_replace('~(?<![a-z0-9_@/\\\\])https?://(?:(?!\~\~)[^\s<>"\'`*|])+~i',' ',$body);
- preg_match_all('/(?<![a-z0-9_@.])@([a-z0-9_]{3,24})(?![a-z0-9_])/i',$body,$matches);return array_values(array_unique(array_map('strtolower',$matches[1])));
+ return $body;
+}
+function mention_names(string $body): array {
+ preg_match_all('/(?<![a-z0-9_@.])@([a-z0-9_]{3,24})(?![a-z0-9_])/i',mention_text($body),$matches);return array_values(array_unique(array_map('strtolower',$matches[1])));
+}
+function mention_roles(string $body): array {
+ preg_match_all('/<@&([a-f0-9]{32})>/',mention_text($body),$matches);return array_values(array_unique($matches[1]));
 }
 function notify_message(int $id,array $channel,string $body,?int $reply): void {
  $targets=[];if($reply){$original=one('SELECT user_id FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$reply,$channel['id']]);if($original)$targets[(int)$original['user_id']]='reply';}
- $names=mention_names($body);if(count($names)>20)fail(400,'Mention up to 20 people per message.');
+ $names=mention_names($body);$roles=mention_roles($body);if(count($names)+count($roles)>20)fail(400,'Use up to 20 person or role mentions per message.');
+ if($roles){if(!$channel['server_id'])fail(400,'Role mentions are only available in servers.');require_permission($channel['server_id'],'mention_roles');
+  foreach($roles as $role)if(!one('SELECT id FROM roles WHERE id=? AND server_id=?',[$role,$channel['server_id']]))fail(400,'A mentioned role is no longer available in this server.');
+  // shortcut: bound role expansion for shared hosting; use queued delivery before supporting larger mentions.
+  $marks=implode(',',array_fill(0,count($roles),'?'));$people=sql("SELECT DISTINCT user_id FROM member_roles WHERE server_id=? AND role_id IN ($marks) LIMIT 201",[$channel['server_id'],...$roles])->fetchAll();if(count($people)>200)fail(400,'This role mention is too large. Mention a smaller role.');
+  foreach($people as $person)$targets[(int)$person['user_id']]='mention';
+ }
  foreach($names as $name){$person=one('SELECT id FROM users WHERE username=?',[$name]);if($person)$targets[(int)$person['id']]='mention';}
  foreach($targets as $who=>$kind){if($who===uid()||blocked($who)||!can_view_as($channel['id'],$who))continue;sql('INSERT OR IGNORE INTO notifications VALUES(?,?,?,0)',[$who,$id,$kind]);
   // shortcut: retain the latest 500 events per person; add paged archival if larger inboxes are needed.
@@ -125,7 +137,7 @@ function notification_actions(string $action,array $in): array {
   if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return ['ok'=>true];
  case 'mention_members':
   $c=channel(text_field($in,'channel_id',32,32));$people=$c['server_id']?sql('SELECT u.* FROM users u JOIN members m ON m.user_id=u.id WHERE m.server_id=? ORDER BY u.name',[$c['server_id']])->fetchAll():sql('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? ORDER BY u.name',[$c['id']])->fetchAll();
-  return ['members'=>array_values(array_map('public_user',array_filter($people,fn($p)=>(int)$p['id']!==uid()&&!blocked((int)$p['id'])&&can_view_as($c['id'],(int)$p['id']))))];
+  return ['roles'=>$c['server_id']&&in_array('mention_roles',permissions_for($c['server_id']),true)?sql('SELECT id,name FROM roles WHERE server_id=? ORDER BY position DESC,id',[$c['server_id']])->fetchAll():[],'members'=>array_values(array_map('public_user',array_filter($people,fn($p)=>(int)$p['id']!==uid()&&!blocked((int)$p['id'])&&can_view_as($c['id'],(int)$p['id']))))];
  case 'message_context':
   $id=positive_id($in['message_id']??null);$m=one('SELECT channel_id FROM messages WHERE id=? AND deleted=0',[$id]);if(!$m)fail(404,'Message no longer available.');$c=channel($m['channel_id']);$after=sql('SELECT id FROM messages WHERE channel_id=? AND deleted=0 AND id>=? ORDER BY id LIMIT 30',[$c['id'],$id])->fetchAll();$last=end($after);return ['channel'=>$c,'messages'=>messages_for($c['id'],(int)$last['id']+1)];
  }fail(404,'Unknown notification action.');
