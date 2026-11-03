@@ -84,6 +84,14 @@ function mention_names(string $body): array {
 function mention_roles(string $body): array {
  preg_match_all('/<@&([a-f0-9]{32})>/',mention_text($body),$matches);return array_values(array_unique($matches[1]));
 }
+function role_preview(string $body,array $names): string {
+ // Match code and whole links first so only mention text, including link labels, is substituted.
+ return preg_replace_callback('~```[\s\S]*?```|`[^`\n]+`|\[([^\]\n]+)\]\(([^()\s]+(?:\([^()\s]*\)[^()\s]*)*)\)|<@&([a-f0-9]{32})>~',function($m)use($names){
+  if(isset($m[3]))return '@'.($names[$m[3]]??'Deleted role');
+  if(isset($m[1]))return '['.role_preview($m[1],$names).']('.$m[2].')';
+  return $m[0];
+ },$body);
+}
 function notify_message(int $id,array $channel,string $body,?int $reply): void {
  $targets=[];if($reply){$original=one('SELECT user_id FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$reply,$channel['id']]);if($original)$targets[(int)$original['user_id']]='reply';}
  $names=mention_names($body);$roles=mention_roles($body);if(count($names)+count($roles)>20)fail(400,'Use up to 20 person or role mentions per message.');
@@ -101,7 +109,7 @@ function notify_message(int $id,array $channel,string $body,?int $reply): void {
 }
 function inbox_rows(bool $unread=false): array {
  $rows=sql('SELECT n.message_id,n.kind,n.seen,m.channel_id,m.body,m.created,m.user_id,u.name,u.username,u.avatar,c.name AS channel_name,c.server_id,s.name AS server_name FROM notifications n JOIN messages m ON m.id=n.message_id JOIN users u ON u.id=m.user_id JOIN channels c ON c.id=m.channel_id LEFT JOIN servers s ON s.id=c.server_id WHERE n.user_id=? AND m.deleted=0'.($unread?' AND n.seen=0':'').' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY n.message_id DESC LIMIT 500',[uid(),uid(),uid()])->fetchAll();
- $visible=[];$result=[];foreach($rows as $row){$cid=$row['channel_id'];if(!array_key_exists($cid,$visible))$visible[$cid]=can_view_as($cid,uid());if(!$visible[$cid])continue;if(!$row['server_id']&&one('SELECT 1 FROM channels WHERE id=? AND pair_key IS NOT NULL',[$cid]))$row['channel_name']=$row['name'];$result[]=$row;}return $result;
+ $visible=[];$result=[];$roleNames=[];foreach($rows as $row){$cid=$row['channel_id'];if(!array_key_exists($cid,$visible))$visible[$cid]=can_view_as($cid,uid());if(!$visible[$cid])continue;$sid=$row['server_id'];if($sid&&!isset($roleNames[$sid]))$roleNames[$sid]=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');$row['preview']=role_preview($row['body'],$roleNames[$sid]??[]);if(!$row['server_id']&&one('SELECT 1 FROM channels WHERE id=? AND pair_key IS NOT NULL',[$cid]))$row['channel_name']=$row['name'];$result[]=$row;}return $result;
 }
 function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
