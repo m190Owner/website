@@ -73,7 +73,9 @@ function conversation_actions(string $action,array $in): array {
 function send_message(array $in): array {
  $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);if($c['kind']!=='text')fail(400,'Use a text channel.');rate('send:'.uid(),30,60);$ids=$in['attachments']??[];if(!is_array($ids)||count($ids)>3||count(array_unique($ids,SORT_REGULAR))!==count($ids))fail(400,'Attach up to 3 files.');foreach($ids as $id)if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/',$id))fail(400,'Invalid attachment.');$body=text_field($in,'body',$ids?0:1,4000);$client=text_field($in,'client_id',16,64);$reply=isset($in['reply_to'])?positive_id($in['reply_to']):null;
  if(array_key_exists('notify_everyone',$in)&&!is_bool($in['notify_everyone']))fail(400,'Invalid everyone mention choice.');
- $broadcast=$in['notify_everyone']??false;
+ if(array_key_exists('notify_here',$in)&&!is_bool($in['notify_here']))fail(400,'Invalid here mention choice.');
+ if(!empty($in['notify_here'])&&!empty($in['notify_everyone']))fail(400,'Choose one notification audience.');
+ $broadcast=!empty($in['notify_everyone'])?'everyone':(!empty($in['notify_here'])?'here':null);
  return transaction(function()use($cid,$c,$ids,$body,$client,$reply,$broadcast){$old=one('SELECT id,channel_id FROM messages WHERE user_id=? AND client_id=?',[uid(),$client]);if($old){if($old['channel_id']!==$cid)fail(409,'Message retry belongs to another channel.');return ['id'=>(int)$old['id']];}
   $c=channel($cid,true);
   if($reply&&!one('SELECT 1 FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$reply,$cid]))fail(400,'Reply must reference a message in this conversation.');

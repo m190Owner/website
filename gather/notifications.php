@@ -117,7 +117,7 @@ function role_preview(string $body,array $names): string {
   return $m[0];
  },$body);
 }
-function notify_message(int $id,array $channel,string $body,?int $reply,bool $broadcast=false): void {
+function notify_message(int $id,array $channel,string $body,?int $reply,?string $broadcast=null): void {
  $targets=[];if($reply){$original=one('SELECT user_id FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$reply,$channel['id']]);if($original)$targets[(int)$original['user_id']]='reply';}
  $names=mention_names($body);$roles=mention_roles($body);if(count($names)+count($roles)>20)fail(400,'Use up to 20 person or role mentions per message.');
  if($roles){if(!$channel['server_id'])fail(400,'Role mentions are only available in servers.');require_permission($channel['server_id'],'mention_roles');
@@ -127,16 +127,18 @@ function notify_message(int $id,array $channel,string $body,?int $reply,bool $br
   foreach($people as $person)$targets[(int)$person['user_id']]??='role';
  }
  if($broadcast){
-  if(!$channel['server_id']||!in_array('everyone',$names,true))fail(400,'Use @everyone in a server message.');
+  if(!$channel['server_id']||!in_array($broadcast,$names,true))fail(400,"Use @$broadcast in a server message.");
   require_permission($channel['server_id'],'mention_everyone');
-  $people=sql('SELECT user_id FROM members WHERE server_id=? LIMIT 101',[$channel['server_id']])->fetchAll();
+  $people=$broadcast==='here'
+   ?sql("SELECT m.user_id FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND u.status='online' AND EXISTS(SELECT 1 FROM sessions s WHERE s.user_id=u.id AND s.expires>? AND s.seen>=? AND s.idle=0) LIMIT 101",[$channel['server_id'],time(),time()-45])->fetchAll()
+   :sql('SELECT user_id FROM members WHERE server_id=? LIMIT 101',[$channel['server_id']])->fetchAll();
   if(count($people)>100)fail(400,'This server is too large for an everyone mention.');
   foreach($people as $person){
    $who=(int)$person['user_id'];
    if(!isset($targets[$who]))$targets[$who]='everyone';
    elseif($targets[$who]==='role')$targets[$who]='role_everyone';
   }
-  $names=array_diff($names,['everyone']);
+  $names=array_diff($names,['everyone','here']);
  }
  foreach($names as $name){$person=one('SELECT id FROM users WHERE username=?',[$name]);if($person)$targets[(int)$person['id']]='mention';}
  foreach($targets as $who=>$kind){if($who===uid()||blocked($who)||!can_view_as($channel['id'],$who))continue;sql('INSERT OR IGNORE INTO notifications VALUES(?,?,?,0)',[$who,$id,$kind]);
