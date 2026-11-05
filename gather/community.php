@@ -35,6 +35,30 @@ function migrate_navigation(): void {
 function server_channel_rows(string $sid): array {
  return sql('SELECT c.*,COALESCE(o.position,2147483647) AS category_position FROM channels c LEFT JOIN category_order o ON o.server_id=c.server_id AND o.name=c.category WHERE c.server_id=? AND c.parent_id IS NULL ORDER BY category_position,c.category,c.position,c.created,c.id',[$sid])->fetchAll();
 }
+function migrate_empty_categories(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=25)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=25)return;
+  $db->exec('CREATE TABLE explicit_categories(server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,name TEXT NOT NULL,PRIMARY KEY(server_id,name));');
+  foreach(['category_mutes'=>'category_notification_mutes','category_notifications'=>'category_notification_preferences'] as $prefix=>$table){
+   foreach(['delete'=>'DELETE','move'=>'UPDATE OF category,server_id,parent_id'] as $suffix=>$event){
+    $db->exec("DROP TRIGGER ".$prefix."_".$suffix.";
+     CREATE TRIGGER ".$prefix."_".$suffix." AFTER ".$event." ON channels WHEN OLD.parent_id IS NULL BEGIN
+      DELETE FROM ".$table." WHERE server_id=OLD.server_id AND category=OLD.category
+       AND NOT EXISTS(SELECT 1 FROM channels WHERE server_id=OLD.server_id AND category=OLD.category AND parent_id IS NULL)
+       AND NOT EXISTS(SELECT 1 FROM explicit_categories WHERE server_id=OLD.server_id AND name=OLD.category);
+     END;");
+   }
+  }
+  $db->exec('PRAGMA user_version=25;');
+ });
+}
+function server_categories(string $sid,bool $visible=true): array {
+ $rows=server_channel_rows($sid);$names=array_column($rows,'category');$shown=array_column($visible?visible_channel_rows($rows):$rows,'category');
+ $categories=sql("SELECT names.name,COALESCE(o.position,2147483647) AS position FROM
+  (SELECT category AS name FROM channels WHERE server_id=? AND parent_id IS NULL AND category<>'' UNION SELECT name FROM explicit_categories WHERE server_id=?) names
+  LEFT JOIN category_order o ON o.server_id=? AND o.name=names.name ORDER BY position,names.name",[$sid,$sid,$sid])->fetchAll();
+ return array_values(array_filter($categories,fn($c)=>!$visible||!in_array($c['name'],$names,true)||in_array($c['name'],$shown,true)));
+}
 function visible_channel_rows(array $rows): array {
  return array_values(array_filter($rows,function($row){try{channel($row['id']);return true;}catch(ApiError $e){if($e->status!==403)throw $e;return false;}}));
 }
@@ -78,7 +102,7 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
-function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen','channel-move','category-move'];}
+function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen','channel-move','category-create','category-delete','category-move'];}
 function permission_names(): array {return ['manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log','mention_roles','mention_everyone'];}
 function permissions_for(string $sid): array {
  $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());
@@ -141,10 +165,32 @@ function community(string $action,array $in): array {
  case 'unban':
   $sid=text_field($in,'server_id',32,32);$target=positive_id($in['user_id']??null);$reason=array_key_exists('reason',$in)?text_field($in,'reason',0,300):'';
   $changed=transaction(function()use($sid,$target,$reason){require_permission($sid,'ban_members');$changed=sql('DELETE FROM bans WHERE server_id=? AND user_id=?',[$sid,$target])->rowCount()>0;if($changed)hierarchy_audit($sid,'unban',$target,$reason);return $changed;});return ['ok'=>true,'changed'=>$changed];
+ case 'category_create':
+  $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);
+  transaction(function()use($sid,$name){
+   require_permission($sid,'manage_channels');
+   if(one("SELECT 1 FROM channels WHERE server_id=? AND parent_id IS NULL AND category=? COLLATE NOCASE UNION SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? COLLATE NOCASE",[$sid,$name,$sid,$name]))fail(409,'Category name unavailable.');
+   if(count(server_categories($sid,false))>=50)fail(409,'Category limit reached.');
+   sql('INSERT INTO explicit_categories VALUES(?,?)',[$sid,$name]);
+   $position=(int)sql('SELECT COALESCE(max(position),0)+1 FROM category_order WHERE server_id=?',[$sid])->fetchColumn();
+   sql('INSERT INTO category_order VALUES(?,?,?) ON CONFLICT(server_id,name) DO UPDATE SET position=excluded.position',[$sid,$name,$position]);
+   hierarchy_audit($sid,'category-create',0,'Category '.$name.' · Server ['.$sid.']');
+  });break;
+ case 'category_delete':
+  $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);
+  transaction(function()use($sid,$name){
+   require_permission($sid,'manage_channels');
+   if(!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=?',[$sid,$name]))fail(404,'Category unavailable.');
+   if(one('SELECT 1 FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$name]))fail(409,'Move the channels before deleting this category.');
+   sql('DELETE FROM explicit_categories WHERE server_id=? AND name=?',[$sid,$name]);
+   sql('DELETE FROM category_order WHERE server_id=? AND name=?',[$sid,$name]);
+   foreach(['category_notification_preferences','category_notification_mutes'] as $table)sql('DELETE FROM '.$table.' WHERE server_id=? AND category=?',[$sid,$name]);
+   hierarchy_audit($sid,'category-delete',0,'Category '.$name.' · Server ['.$sid.']');
+  });break;
  case 'category_order':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_channels');$name=text_field($in,'category',1,40);$before=($in['before']??null)===null?null:text_field($in,'before',1,40);
-  transaction(function()use($sid,$name,$before){require_permission($sid,'manage_channels');$rows=server_channel_rows($sid);$visible=array_column(visible_channel_rows($rows),'category');if(!in_array($name,$visible,true)||($before!==null&&!in_array($before,$visible,true)))fail(403,'Choose categories you can view in this server.');if($before===$name)return;
-   $names=array_values(array_unique(array_filter(array_column($rows,'category'),fn($value)=>$value!=='')));$oldIndex=array_search($name,$names,true);$names=array_values(array_filter($names,fn($value)=>$value!==$name));$index=$before===null?count($names):array_search($before,$names,true);if($index===$oldIndex)return;array_splice($names,$index,0,[$name]);
+  transaction(function()use($sid,$name,$before){require_permission($sid,'manage_channels');$visible=array_column(server_categories($sid),'name');if(!in_array($name,$visible,true)||($before!==null&&!in_array($before,$visible,true)))fail(403,'Choose categories you can view in this server.');if($before===$name)return;
+   $names=array_column(server_categories($sid,false),'name');$oldIndex=array_search($name,$names,true);$names=array_values(array_filter($names,fn($value)=>$value!==$name));$index=$before===null?count($names):array_search($before,$names,true);if($index===$oldIndex)return;array_splice($names,$index,0,[$name]);
    sql('DELETE FROM category_order WHERE server_id=?',[$sid]);foreach($names as $position=>$category)sql('INSERT INTO category_order VALUES(?,?,?)',[$sid,$category,$position]);audit_changes($sid,'category-move','Category '.$name.' · Server ['.$sid.']',['position'=>$oldIndex+1],['position'=>$index+1],['position'=>'Category position (1 is first)']);
   });break;
  case 'channel_reorder':
