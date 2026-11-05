@@ -61,6 +61,14 @@ function migrate_category_identity(): void {
    PRAGMA user_version=26;");
  });
 }
+function migrate_category_collapse(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=29)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=29)return;
+  $db->exec('CREATE TABLE category_collapse_preferences(user_id INTEGER NOT NULL,server_id TEXT NOT NULL,category TEXT NOT NULL,collapsed INTEGER NOT NULL CHECK(collapsed IN (0,1)),revision INTEGER NOT NULL,PRIMARY KEY(user_id,server_id,category),FOREIGN KEY(server_id,user_id) REFERENCES members(server_id,user_id) ON DELETE CASCADE);');
+  foreach(['delete'=>'DELETE','move'=>'UPDATE OF category,server_id,parent_id'] as $suffix=>$event)$db->exec("CREATE TRIGGER category_collapse_".$suffix." AFTER ".$event." ON channels WHEN OLD.parent_id IS NULL BEGIN DELETE FROM category_collapse_preferences WHERE server_id=OLD.server_id AND category=OLD.category AND NOT EXISTS(SELECT 1 FROM channels WHERE server_id=OLD.server_id AND category=OLD.category AND parent_id IS NULL) AND NOT EXISTS(SELECT 1 FROM explicit_categories WHERE server_id=OLD.server_id AND name=OLD.category); END;");
+  $db->exec('PRAGMA user_version=29;');
+ });
+}
 function implicit_category_key(string $sid,string $name,array $rows): string {
  $ids=array_column(array_filter($rows,fn($r)=>$r['category']===$name),'id');sort($ids,SORT_STRING);
  return substr(hash('sha256',json_encode([$sid,$name,$ids])),0,32);
@@ -179,6 +187,15 @@ function community(string $action,array $in): array {
  case 'unban':
   $sid=text_field($in,'server_id',32,32);$target=positive_id($in['user_id']??null);$reason=array_key_exists('reason',$in)?text_field($in,'reason',0,300):'';
   $changed=transaction(function()use($sid,$target,$reason){require_permission($sid,'ban_members');$changed=sql('DELETE FROM bans WHERE server_id=? AND user_id=?',[$sid,$target])->rowCount()>0;if($changed)hierarchy_audit($sid,'unban',$target,$reason);return $changed;});return ['ok'=>true,'changed'=>$changed];
+ case 'category_collapse':
+  $sid=text_field($in,'server_id',32,32);$name=text_field($in,'category',1,40);$key=text_field($in,'category_key',32,32);$collapsed=$in['collapsed']??null;$revision=$in['revision']??null;
+  if(!is_bool($collapsed)||!is_int($revision)||$revision<0)fail(400,'Invalid category preference.');
+  return transaction(function()use($sid,$name,$key,$collapsed,$revision){
+   member($sid);$found=null;foreach(server_categories($sid) as $category)if($category['name']===$name)$found=$category;
+   if(!$found)fail(403,'Choose a category you can view.');if($found['rename_key']!==$key)fail(409,'This category changed. Refresh and try again.');
+   $old=one('SELECT revision FROM category_collapse_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$sid,$name]);if((int)($old['revision']??0)!==$revision)fail(409,'This preference changed on another device. Refresh and try again.');
+   sql('INSERT INTO category_collapse_preferences VALUES(?,?,?,?,?) ON CONFLICT(user_id,server_id,category) DO UPDATE SET collapsed=excluded.collapsed,revision=excluded.revision',[uid(),$sid,$name,(int)$collapsed,$revision+1]);return ['collapsed'=>$collapsed,'collapse_revision'=>$revision+1];
+  });
  case 'category_create':
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);
   transaction(function()use($sid,$name){
@@ -207,7 +224,7 @@ function community(string $action,array $in): array {
    }
    // Keep the old explicit row until channels move so cleanup triggers preserve its settings.
    sql('UPDATE channels SET category=? WHERE server_id=? AND category=? AND parent_id IS NULL',[$next,$sid,$name]);
-   foreach(['category_notification_preferences','category_notification_mutes'] as $table)sql('UPDATE '.$table.' SET category=? WHERE server_id=? AND category=?',[$next,$sid,$name]);
+   foreach(['category_notification_preferences','category_notification_mutes','category_collapse_preferences'] as $table)sql('UPDATE '.$table.' SET category=? WHERE server_id=? AND category=?',[$next,$sid,$name]);
    sql('DELETE FROM category_order WHERE server_id=? AND name=?',[$sid,$next]);
    sql('UPDATE category_order SET name=? WHERE server_id=? AND name=?',[$next,$sid,$name]);
    sql('UPDATE explicit_categories SET name=? WHERE server_id=? AND id=?',[$next,$sid,$id]);
@@ -222,7 +239,7 @@ function community(string $action,array $in): array {
    if(one('SELECT 1 FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$name]))fail(409,'Move the channels before deleting this category.');
    sql('DELETE FROM explicit_categories WHERE server_id=? AND name=?',[$sid,$name]);
    sql('DELETE FROM category_order WHERE server_id=? AND name=?',[$sid,$name]);
-   foreach(['category_notification_preferences','category_notification_mutes'] as $table)sql('DELETE FROM '.$table.' WHERE server_id=? AND category=?',[$sid,$name]);
+   foreach(['category_notification_preferences','category_notification_mutes','category_collapse_preferences'] as $table)sql('DELETE FROM '.$table.' WHERE server_id=? AND category=?',[$sid,$name]);
    hierarchy_audit($sid,'category-delete',0,'Category '.$name.' · Server ['.$sid.']');
   });break;
  case 'category_order':
