@@ -194,6 +194,10 @@ function role_audit_snapshot(array $role): array {
 }
 function role_audit_fields(): array {return ['name'=>'Name','color'=>'Color','permissions'=>'Permissions','position'=>'Position (higher is above)'];}
 function role_audit_label(array $role): string {return 'Role '.$role['name'].' ['.$role['id'].']';}
+function role_assignment_audit(string $sid,int $who,array $role,bool $assigned): void {
+ $member=one('SELECT name,username FROM users WHERE id=?',[$who]);
+ hierarchy_audit($sid,$assigned?'role-assign':'role-remove',$who,'Member at change: '.audit_value($member['name']).' (@'.$member['username'].') ['.$who."]\n".role_audit_label($role)."\nAssigned: ".($assigned?'false → true':'true → false'));
+}
 function disconnect_role(string $sid,string $role): void {sql('DELETE FROM calls WHERE channel_id IN(SELECT id FROM channels WHERE server_id=?) AND user_id IN(SELECT user_id FROM member_roles WHERE server_id=? AND role_id=?)',[$sid,$sid,$role]);}
 function relationship_state(): array {
  $result=[];foreach(sql('SELECT u.*,f.sender,f.accepted FROM friendships f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[uid(),uid(),uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>$u['accepted']?'friend':((int)$u['sender']===uid()?'outgoing':'incoming'),'online'=>presence($u)!=='offline'];
@@ -353,12 +357,14 @@ function community(string $action,array $in): array {
     if($current!==$sets['expected_roles'])fail(409,'This member’s roles changed. Close and reopen Assign Roles before saving.');
     $added=array_diff($sets['role_ids'],$current);$removed=array_diff($current,$sets['role_ids']);$changes=[];
     foreach(array_merge($added,$removed) as $id){$role=managed_role($sid,$id);$assigned=in_array($id,$added,true);if($assigned)grantable_permissions($sid,json_decode($role['permissions'],true));$changes[]=[$role,$assigned];}
-    foreach($changes as [$role,$assigned]){if($assigned)sql('INSERT INTO member_roles VALUES(?,?,?)',[$sid,$who,$role['id']]);else sql('DELETE FROM member_roles WHERE server_id=? AND user_id=? AND role_id=?',[$sid,$who,$role['id']]);hierarchy_audit($sid,$assigned?'role-assign':'role-remove',$who,$role['name']);}
+    foreach($changes as [$role,$assigned]){if($assigned)sql('INSERT INTO member_roles VALUES(?,?,?)',[$sid,$who,$role['id']]);else sql('DELETE FROM member_roles WHERE server_id=? AND user_id=? AND role_id=?',[$sid,$who,$role['id']]);role_assignment_audit($sid,$who,$role,$assigned);}
     if($removed)sql('DELETE FROM calls WHERE user_id=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',[$who,$sid]);
    });break;
   }
   $sid=text_field($in,'server_id',32,32);$who=positive_id($in['user_id']??null);$id=text_field($in,'role_id',32,32);$assigned=$in['assigned']??null;if(!is_bool($assigned))fail(400,'Invalid assignment.');
-  transaction(function()use($sid,$who,$id,$assigned){$role=managed_role($sid,$id);lower_member($sid,$who);if($assigned){grantable_permissions($sid,json_decode($role['permissions'],true));sql('INSERT OR IGNORE INTO member_roles VALUES(?,?,?)',[$sid,$who,$id]);}else{sql('DELETE FROM member_roles WHERE server_id=? AND user_id=? AND role_id=?',[$sid,$who,$id]);sql('DELETE FROM calls WHERE user_id=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',[$who,$sid]);}hierarchy_audit($sid,$assigned?'role-assign':'role-remove',$who,$role['name']);});break;
+  transaction(function()use($sid,$who,$id,$assigned){$role=managed_role($sid,$id);lower_member($sid,$who);if($assigned){grantable_permissions($sid,json_decode($role['permissions'],true));$changed=sql('INSERT OR IGNORE INTO member_roles VALUES(?,?,?)',[$sid,$who,$id])->rowCount()>0;}else $changed=sql('DELETE FROM member_roles WHERE server_id=? AND user_id=? AND role_id=?',[$sid,$who,$id])->rowCount()>0;
+   if(!$changed)return;if(!$assigned)sql('DELETE FROM calls WHERE user_id=? AND channel_id IN(SELECT id FROM channels WHERE server_id=?)',[$who,$sid]);role_assignment_audit($sid,$who,$role,$assigned);
+  });break;
  case 'transfer_owner':
   $sid=text_field($in,'server_id',32,32);if(member($sid)['role']!=='owner')fail(403,'Only the current owner can transfer ownership.');rate('transfer:'.uid(),10,3600);$who=positive_id($in['user_id']??null);$password=$in['password']??null;if(!is_string($password)||strlen($password)>128)fail(400,'Enter your current password.');$confirmation=text_field($in,'confirmation',3,24);
   transaction(function()use($sid,$who,$password,$confirmation){$actor=member($sid);if($actor['role']!=='owner'||(int)$actor['owner_id']!==uid())fail(403,'Ownership has changed.');if($who===uid())fail(400,'Choose another member.');$target=one('SELECT u.username FROM users u JOIN members m ON m.user_id=u.id WHERE m.server_id=? AND u.id=?',[$sid,$who]);if(!$target)fail(400,'Choose an existing server member.');if($confirmation!==$target['username'])fail(400,'Type the new owner username exactly.');$current=one('SELECT password FROM users WHERE id=?',[uid()]);if(!password_verify($password,$current['password']))fail(403,'Your current password is incorrect.');
