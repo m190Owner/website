@@ -88,6 +88,15 @@ function group_people(array $ids): array {
  foreach($ids as $id){positive_id($id);if($id===uid()||!friends($id)||blocked($id))fail(403,'Group invitations require an accepted, unblocked friendship.');}
  $all=[uid(),...$ids];foreach($all as $a)foreach($all as $b)if(one('SELECT 1 FROM blocks WHERE user_id=? AND target=?',[$a,$b]))fail(403,'These members cannot share a group.');return $all;
 }
+function apply_channel_sync(array $c,array $preview): void {
+ if(!$preview['category'])fail(409,'Create or rename an explicit category first.');
+ $subjects=[];foreach($preview['current'] as $row)$subjects[$row['kind'].':'.$row['subject']]=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];
+ foreach($preview['target'] as $row){$key=$row['kind'].':'.$row['subject'];$subjects[$key]??=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];$subjects[$key][$row['permission']]=(int)$row['value'];}
+ $caps=channel_capabilities($c);
+ foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);foreach($values as $permission=>$value){$before=0;foreach($preview['current'] as $row)if($row['kind']===$kind&&$row['subject']===$subject&&$row['permission']===$permission)$before=(int)$row['value'];if(!$caps[$permission]&&$value>$before)fail(403,'You cannot broaden a permission you do not have.');}}
+ foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);save_channel_override($c,$kind,$subject,$values);}
+ set_channel_sync($c,$preview['category']['id']);
+}
 function conversation_actions(string $action,array $in): array {
  switch($action){
  case 'channel_sync_preview':case 'channel_sync':
@@ -97,13 +106,7 @@ function conversation_actions(string $action,array $in): array {
    if(!hash_equals($preview['snapshot'],text_field($in,'snapshot',64,64)))fail(409,'Channel or category permissions changed. Reopen the preview.');
    $enabled=$in['enabled']??null;if(!is_bool($enabled))fail(400,'Choose whether to sync.');
    if(!$enabled){set_channel_sync($c,null);return ['ok'=>true];}
-   if(!$preview['category'])fail(409,'Create or rename an explicit category first.');
-   $subjects=[];foreach($preview['current'] as $row)$subjects[$row['kind'].':'.$row['subject']]=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];
-   foreach($preview['target'] as $row){$key=$row['kind'].':'.$row['subject'];$subjects[$key]??=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];$subjects[$key][$row['permission']]=(int)$row['value'];}
-   $caps=channel_capabilities($c);
-   foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);foreach($values as $permission=>$value){$before=0;foreach($preview['current'] as $row)if($row['kind']===$kind&&$row['subject']===$subject&&$row['permission']===$permission)$before=(int)$row['value'];if(!$caps[$permission]&&$value>$before)fail(403,'You cannot broaden a permission you do not have.');}}
-   foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);save_channel_override($c,$kind,$subject,$values);}
-   set_channel_sync($c,$preview['category']['id']);return ['ok'=>true];
+   apply_channel_sync($c,$preview);return ['ok'=>true];
   });
  case 'category_permissions':case 'category_permissions_apply':
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);$id=text_field($in,'id',32,32);
