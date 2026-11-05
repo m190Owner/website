@@ -69,6 +69,29 @@ function migrate_category_collapse(): void {
   $db->exec('PRAGMA user_version=29;');
  });
 }
+function migrate_server_layout(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=30)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=30)return;$db->exec('CREATE TABLE server_layout_preferences(user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,layout TEXT NOT NULL,revision INTEGER NOT NULL); PRAGMA user_version=30;');});
+}
+function validated_server_layout(mixed $value,bool $strict=true): array {
+ if(!is_array($value)||($value['version']??null)!==1||!is_array($value['items']??null)||!array_is_list($value['items'])||count($value['items'])>200)fail(400,'Use a supported server layout.');
+ $allowed=array_column(sql('SELECT m.server_id FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=? ORDER BY s.created,s.id',[uid()])->fetchAll(),'server_id');$seen=[];$folders=[];$items=[];
+ $take=function($id)use($allowed,$strict,&$seen){if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/D',$id)||isset($seen[$id]))fail(400,'Duplicate or invalid server in layout.');$seen[$id]=true;if(!in_array($id,$allowed,true)){if($strict)fail(403,'Refresh the server list before saving.');return false;}return true;};
+ foreach($value['items'] as $item){
+  if(!is_array($item))fail(400,'Invalid layout item.');
+  if(array_key_exists('server',$item)){if(count($item)!==1)fail(400,'Invalid server layout item.');if($take($item['server']))$items[]=['server'=>$item['server']];continue;}
+  $id=$item['id']??null;$name=text_field($item,'name',1,32);$collapsed=$item['collapsed']??null;$color=$item['color']??'default';$servers=$item['servers']??null;
+  if(!is_string($id)||!preg_match('/^folder-[a-z0-9-]{1,80}$/D',$id)||isset($folders[$id])||count($folders)>=100||!is_bool($collapsed)||!is_array($servers)||!array_is_list($servers)||count($servers)>200||!is_string($color)||!in_array($color,['default','blue','green','purple','orange','pink','red'],true)||array_diff(array_keys($item),['id','name','collapsed','servers','color']))fail(400,'Invalid server folder.');
+  $folders[$id]=true;$kept=[];foreach($servers as $server)if($take($server))$kept[]=$server;
+  $folder=['id'=>$id,'name'=>$name,'collapsed'=>$collapsed,'servers'=>$kept];if($color!=='default')$folder['color']=$color;$items[]=$folder;
+ }
+ foreach($allowed as $id)if(!isset($seen[$id]))$items[]=['server'=>$id];return ['version'=>1,'items'=>$items];
+}
+function server_layout_state(): array {
+ $row=one('SELECT layout,revision FROM server_layout_preferences WHERE user_id=?',[uid()]);$layout=$row?json_decode($row['layout'],true):null;
+ if($layout&&($layout['version']??null)===1)$layout=validated_server_layout($layout,false);
+ return ['server_layout'=>$layout,'server_layout_revision'=>(int)($row['revision']??0)];
+}
 function implicit_category_key(string $sid,string $name,array $rows): string {
  $ids=array_column(array_filter($rows,fn($r)=>$r['category']===$name),'id');sort($ids,SORT_STRING);
  return substr(hash('sha256',json_encode([$sid,$name,$ids])),0,32);
@@ -187,6 +210,9 @@ function community(string $action,array $in): array {
  case 'unban':
   $sid=text_field($in,'server_id',32,32);$target=positive_id($in['user_id']??null);$reason=array_key_exists('reason',$in)?text_field($in,'reason',0,300):'';
   $changed=transaction(function()use($sid,$target,$reason){require_permission($sid,'ban_members');$changed=sql('DELETE FROM bans WHERE server_id=? AND user_id=?',[$sid,$target])->rowCount()>0;if($changed)hierarchy_audit($sid,'unban',$target,$reason);return $changed;});return ['ok'=>true,'changed'=>$changed];
+ case 'server_layout':
+  $revision=$in['revision']??null;if(!is_int($revision)||$revision<0)fail(400,'Invalid layout revision.');
+  return transaction(function()use($revision,$in){$old=server_layout_state();if($old['server_layout_revision']!==$revision)fail(409,'Server organization changed on another device. Refresh before editing again.');if($old['server_layout']&&($old['server_layout']['version']??null)!==1)fail(409,'Update Gather before editing this newer layout.');$layout=validated_server_layout($in['layout']??null);sql('INSERT INTO server_layout_preferences VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET layout=excluded.layout,revision=excluded.revision',[uid(),json_encode($layout),$revision+1]);return ['server_layout'=>$layout,'server_layout_revision'=>$revision+1];});
  case 'category_collapse':
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'category',1,40);$key=text_field($in,'category_key',32,32);$collapsed=$in['collapsed']??null;$revision=$in['revision']??null;
   if(!is_bool($collapsed)||!is_int($revision)||$revision<0)fail(400,'Invalid category preference.');
