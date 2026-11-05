@@ -88,6 +88,10 @@ function group_people(array $ids): array {
  foreach($ids as $id){positive_id($id);if($id===uid()||!friends($id)||blocked($id))fail(403,'Group invitations require an accepted, unblocked friendship.');}
  $all=[uid(),...$ids];foreach($all as $a)foreach($all as $b)if(one('SELECT 1 FROM blocks WHERE user_id=? AND target=?',[$a,$b]))fail(403,'These members cannot share a group.');return $all;
 }
+function channel_move_preview(array $c,string $name,string $id): array {
+ $destination=category_permission_snapshot($c['server_id'],$name,$id);$source=channel_sync_preview($c);
+ return ['category'=>['id'=>$id,'name'=>$name],'current'=>$source['current'],'target'=>$destination['overrides'],'snapshot'=>hash('sha256',json_encode([$source['snapshot'],channel_order_snapshot($c),$destination['snapshot']]))];
+}
 function apply_channel_sync(array $c,array $preview): void {
  if(!$preview['category'])fail(409,'Create or rename an explicit category first.');
  $subjects=[];foreach($preview['current'] as $row)$subjects[$row['kind'].':'.$row['subject']]=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];
@@ -99,9 +103,11 @@ function apply_channel_sync(array $c,array $preview): void {
 }
 function conversation_actions(string $action,array $in): array {
  switch($action){
- case 'channel_sync_preview':case 'channel_sync':
+ case 'channel_move_preview':case 'channel_sync_preview':case 'channel_sync':
   return transaction(function()use($action,$in){
-   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');$preview=channel_sync_preview($c);
+   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
+   if($action==='channel_move_preview')return channel_move_preview($c,text_field($in,'category',1,40),text_field($in,'category_id',32,32));
+   $preview=channel_sync_preview($c);
    if($action==='channel_sync_preview')return $preview;
    if(!hash_equals($preview['snapshot'],text_field($in,'snapshot',64,64)))fail(409,'Channel or category permissions changed. Reopen the preview.');
    $enabled=$in['enabled']??null;if(!is_bool($enabled))fail(400,'Choose whether to sync.');

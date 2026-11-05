@@ -233,10 +233,17 @@ function community(string $action,array $in): array {
   });break;
  case 'channel_reorder':
   $id=text_field($in,'channel_id',32,32);$category=text_field($in,'category',0,40);$before=($in['before_id']??null)===null?null:text_field($in,'before_id',32,32);
-  transaction(function()use($id,$category,$before){$c=channel($id);if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
+  transaction(function()use($id,$category,$before,$in){$c=channel($id);if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');
+   $sync=$in['sync_category']??false;if(!is_bool($sync))fail(400,'Choose whether to sync category overrides.');
+   if(array_key_exists('category_id',$in)){
+    if($before!==null)fail(400,'Previewed moves append to the category.');
+    $preview=channel_move_preview($c,$category,text_field($in,'category_id',32,32));
+    if(!hash_equals($preview['snapshot'],text_field($in,'move_snapshot',64,64)))fail(409,'Source or destination changed. Reopen the move preview.');
+   }elseif($sync||array_key_exists('move_snapshot',$in))fail(400,'Preview the destination before syncing.');
    if($before!==null){$target=channel($before);if($target['server_id']!==$c['server_id']||$target['parent_id']||$target['category']!==$category||$target['kind']!==$c['kind'])fail(400,'Choose a channel of the same type in the destination category.');if($before===$id)return;}
    $oldOrder=channel_order_snapshot($c);$ids=array_column(sql('SELECT id FROM channels WHERE server_id=? AND parent_id IS NULL AND kind=? AND category=? AND id<>? ORDER BY position,created,id',[$c['server_id'],$c['kind'],$category,$id])->fetchAll(),'id');
-   $index=$before===null?count($ids):array_search($before,$ids,true);if($category===$oldOrder['category']&&$index+1===$oldOrder['position'])return;array_splice($ids,$index,0,[$id]);if($category!==$c['category'])set_channel_sync($c,null);sql('UPDATE channels SET category=? WHERE id=?',[$category,$id]);foreach($ids as $position=>$channelId)sql('UPDATE channels SET position=? WHERE id=?',[$position+1,$channelId]);audit_changes($c['server_id'],'channel-move',channel_audit_label($c),$oldOrder,['category'=>$category,'position'=>$index+1],['category'=>'Category','position'=>'Position within type/category (1 is first)']);
+   $index=$before===null?count($ids):array_search($before,$ids,true);if($category===$oldOrder['category']&&$index+1===$oldOrder['position']&&!$sync)return;array_splice($ids,$index,0,[$id]);if($category!==$c['category'])set_channel_sync($c,null);sql('UPDATE channels SET category=? WHERE id=?',[$category,$id]);foreach($ids as $position=>$channelId)sql('UPDATE channels SET position=? WHERE id=?',[$position+1,$channelId]);audit_changes($c['server_id'],'channel-move',channel_audit_label($c),$oldOrder,['category'=>$category,'position'=>$index+1],['category'=>'Category','position'=>'Position within type/category (1 is first)']);
+   if($sync){$moved=one('SELECT * FROM channels WHERE id=?',[$id]);apply_channel_sync($moved,channel_sync_preview($moved));}
   });break;
  case 'status':
   $status=$in['status']??null;if(!in_array($status,['online','idle','dnd','invisible'],true))fail(400,'Choose a valid status.');
