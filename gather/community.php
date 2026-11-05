@@ -52,11 +52,20 @@ function migrate_empty_categories(): void {
   $db->exec('PRAGMA user_version=25;');
  });
 }
+function migrate_category_identity(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=26)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=26)return;
+  $db->exec("ALTER TABLE explicit_categories ADD COLUMN id TEXT;
+   UPDATE explicit_categories SET id=lower(hex(randomblob(16)));
+   CREATE UNIQUE INDEX explicit_category_id ON explicit_categories(id);
+   PRAGMA user_version=26;");
+ });
+}
 function server_categories(string $sid,bool $visible=true): array {
  $rows=server_channel_rows($sid);$names=array_column($rows,'category');$shown=array_column($visible?visible_channel_rows($rows):$rows,'category');
- $categories=sql("SELECT names.name,COALESCE(o.position,2147483647) AS position FROM
+ $categories=sql("SELECT names.name,COALESCE(o.position,2147483647) AS position,e.id FROM
   (SELECT category AS name FROM channels WHERE server_id=? AND parent_id IS NULL AND category<>'' UNION SELECT name FROM explicit_categories WHERE server_id=?) names
-  LEFT JOIN category_order o ON o.server_id=? AND o.name=names.name ORDER BY position,names.name",[$sid,$sid,$sid])->fetchAll();
+  LEFT JOIN category_order o ON o.server_id=? AND o.name=names.name LEFT JOIN explicit_categories e ON e.server_id=? AND e.name=names.name ORDER BY position,names.name",[$sid,$sid,$sid,$sid])->fetchAll();
  return array_values(array_filter($categories,fn($c)=>!$visible||!in_array($c['name'],$names,true)||in_array($c['name'],$shown,true)));
 }
 function visible_channel_rows(array $rows): array {
@@ -102,7 +111,7 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
-function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen','channel-move','category-create','category-delete','category-move'];}
+function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen','channel-move','category-create','category-rename','category-delete','category-move'];}
 function permission_names(): array {return ['manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log','mention_roles','mention_everyone'];}
 function permissions_for(string $sid): array {
  $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());
@@ -171,10 +180,28 @@ function community(string $action,array $in): array {
    require_permission($sid,'manage_channels');
    if(one("SELECT 1 FROM channels WHERE server_id=? AND parent_id IS NULL AND category=? COLLATE NOCASE UNION SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? COLLATE NOCASE",[$sid,$name,$sid,$name]))fail(409,'Category name unavailable.');
    if(count(server_categories($sid,false))>=50)fail(409,'Category limit reached.');
-   sql('INSERT INTO explicit_categories VALUES(?,?)',[$sid,$name]);
+   sql('INSERT INTO explicit_categories(server_id,name,id) VALUES(?,?,?)',[$sid,$name,random_id()]);
    $position=(int)sql('SELECT COALESCE(max(position),0)+1 FROM category_order WHERE server_id=?',[$sid])->fetchColumn();
    sql('INSERT INTO category_order VALUES(?,?,?) ON CONFLICT(server_id,name) DO UPDATE SET position=excluded.position',[$sid,$name,$position]);
    hierarchy_audit($sid,'category-create',0,'Category '.$name.' · Server ['.$sid.']');
+  });break;
+ case 'category_rename':
+  $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);$next=text_field($in,'new_name',1,40);$id=text_field($in,'id',32,32);
+  transaction(function()use($sid,$name,$next,$id){
+   require_permission($sid,'manage_channels');
+   if(!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? AND id=?',[$sid,$name,$id]))fail(409,'This category changed. Reopen Organize Channels.');
+   $rows=sql('SELECT * FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$name])->fetchAll();
+   if(count(visible_channel_rows($rows))!==count($rows))fail(403,'You must be able to view every channel in this category.');
+   if($name===$next)return;
+   if(one("SELECT 1 FROM channels WHERE server_id=? AND parent_id IS NULL AND category=? COLLATE NOCASE AND category<>?
+    UNION SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? COLLATE NOCASE AND name<>?",[$sid,$next,$name,$sid,$next,$name]))fail(409,'Category name unavailable.');
+   // Keep the old explicit row until channels move so cleanup triggers preserve its settings.
+   sql('UPDATE channels SET category=? WHERE server_id=? AND category=? AND parent_id IS NULL',[$next,$sid,$name]);
+   foreach(['category_notification_preferences','category_notification_mutes'] as $table)sql('UPDATE '.$table.' SET category=? WHERE server_id=? AND category=?',[$next,$sid,$name]);
+   sql('DELETE FROM category_order WHERE server_id=? AND name=?',[$sid,$next]);
+   sql('UPDATE category_order SET name=? WHERE server_id=? AND name=?',[$next,$sid,$name]);
+   sql('UPDATE explicit_categories SET name=? WHERE server_id=? AND id=?',[$next,$sid,$id]);
+   audit_changes($sid,'category-rename','Category ['.$id.'] · Server ['.$sid.']',['name'=>$name],['name'=>$next],['name'=>'Category name']);
   });break;
  case 'category_delete':
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);
