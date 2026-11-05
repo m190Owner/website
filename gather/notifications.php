@@ -168,7 +168,7 @@ function notification_actions(string $action,array $in): array {
  switch($action){
  case 'category_notification_preference':
   $sid=text_field($in,'server_id',32,32);$category=text_field($in,'category',1,40);$mode=$in['mode']??null;if(!is_string($mode)||!in_array($mode,['all','mentions','muted','inherit'],true))fail(400,'Choose a notification setting.');
-  return transaction(function()use($sid,$category,$mode,$in){member($sid);$visible=array_column(server_categories($sid),'name');if(!in_array($category,$visible,true))fail(403,'Choose a category you can view.');
+  return transaction(function()use($sid,$category,$mode,$in){member($sid);if(array_key_exists('category_id',$in)){$id=text_field($in,'category_id',32,32);if(!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? AND id=?',[$sid,$category,$id]))fail(409,'This category changed. Reopen its notification settings.');}$visible=array_column(server_categories($sid),'name');if(!in_array($category,$visible,true))fail(403,'Choose a category you can view.');
    $mute=save_notification_mute($sid,$in,false,$category);if($mode==='inherit')sql('DELETE FROM category_notification_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$sid,$category]);else sql('INSERT INTO category_notification_preferences VALUES(?,?,?,?) ON CONFLICT(user_id,server_id,category) DO UPDATE SET mode=excluded.mode',[uid(),$sid,$category,$mode]);return ['ok'=>true,'mode'=>$mode==='inherit'?null:$mode]+notification_mute_fields($mute);
   });
  case 'server_notification_preference':
