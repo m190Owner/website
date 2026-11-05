@@ -37,6 +37,26 @@ function migrate_category_overrides(): void {
    PRAGMA user_version=27;");
  });
 }
+function migrate_category_sync(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=28)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=28)return;
+  $db->exec('CREATE TABLE channel_category_sync(channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,category_id TEXT NOT NULL REFERENCES explicit_categories(id) ON DELETE CASCADE); CREATE INDEX category_synced_channels ON channel_category_sync(category_id); CREATE TRIGGER synced_member_override_delete AFTER DELETE ON members BEGIN DELETE FROM channel_overrides WHERE kind=\'member\' AND subject=CAST(OLD.user_id AS TEXT) AND channel_id IN (SELECT s.channel_id FROM channel_category_sync s JOIN explicit_categories e ON e.id=s.category_id WHERE e.server_id=OLD.server_id); END; PRAGMA user_version=28;');
+ });
+}
+function set_channel_sync(array $c,?string $categoryId): void {
+ $old=one('SELECT category_id FROM channel_category_sync WHERE channel_id=?',[$c['id']])['category_id']??null;
+ if($old===$categoryId)return;
+ sql('DELETE FROM channel_category_sync WHERE channel_id=?',[$c['id']]);
+ if($categoryId!==null)sql('INSERT INTO channel_category_sync VALUES(?,?)',[$c['id'],$categoryId]);
+ audit_changes($c['server_id'],'channel-sync',channel_audit_label($c),['category'=>$old??'Independent'],['category'=>$categoryId??'Independent'],['category'=>'Synced category ID']);
+}
+function channel_sync_preview(array $c): array {
+ $category=one('SELECT id,name FROM explicit_categories WHERE server_id=? AND name=?',[$c['server_id'],$c['category']]);
+ $current=sql('SELECT kind,subject,permission,value FROM channel_overrides WHERE channel_id=? ORDER BY kind,subject,permission',[$c['id']])->fetchAll();
+ $target=$category?sql('SELECT kind,subject,permission,value FROM category_overrides WHERE category_id=? ORDER BY kind,subject,permission',[$category['id']])->fetchAll():[];
+ $synced=one('SELECT category_id FROM channel_category_sync WHERE channel_id=?',[$c['id']])['category_id']??null;
+ return ['category'=>$category,'current'=>$current,'target'=>$target,'synced'=>$synced,'snapshot'=>hash('sha256',json_encode([uid(),$c['id'],channel_audit_snapshot($c),$category,$current,$target,$synced]))];
+}
 function override_input(string $sid,array $in): array {
  $kind=$in['kind']??'';$subject=$in['subject']??'';$values=$in['values']??null;
  if(!is_string($subject)||!is_array($values)||count($values)!==4)fail(400,'Invalid override.');
@@ -58,7 +78,7 @@ function category_permission_snapshot(string $sid,string $name,string $id): arra
  require_permission($sid,'manage_channels');
  if(!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? AND id=?',[$sid,$name,$id]))fail(409,'This category changed. Reopen its permissions.');
  $channels=sql('SELECT * FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL ORDER BY id',[$sid,$name])->fetchAll();$data=[];
- foreach($channels as $c){channel($c['id']);$data[]=['id'=>$c['id'],'kind'=>$c['kind']]+channel_audit_snapshot($c)+['overrides'=>sql('SELECT kind,subject,permission,value FROM channel_overrides WHERE channel_id=? ORDER BY kind,subject,permission',[$c['id']])->fetchAll()];}
+ foreach($channels as &$c){channel($c['id']);$c['synced']=(bool)one('SELECT 1 FROM channel_category_sync WHERE channel_id=? AND category_id=?',[$c['id'],$id]);$data[]=['id'=>$c['id'],'kind'=>$c['kind'],'synced'=>$c['synced']]+channel_audit_snapshot($c)+['overrides'=>sql('SELECT kind,subject,permission,value FROM channel_overrides WHERE channel_id=? ORDER BY kind,subject,permission',[$c['id']])->fetchAll()];}unset($c);
  $overrides=sql('SELECT kind,subject,permission,value FROM category_overrides WHERE category_id=? ORDER BY kind,subject,permission',[$id])->fetchAll();
  return ['channels'=>$channels,'overrides'=>$overrides,'snapshot'=>hash('sha256',json_encode([uid(),$sid,$name,$id,$data,$overrides]))];
 }
@@ -70,6 +90,21 @@ function group_people(array $ids): array {
 }
 function conversation_actions(string $action,array $in): array {
  switch($action){
+ case 'channel_sync_preview':case 'channel_sync':
+  return transaction(function()use($action,$in){
+   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');$preview=channel_sync_preview($c);
+   if($action==='channel_sync_preview')return $preview;
+   if(!hash_equals($preview['snapshot'],text_field($in,'snapshot',64,64)))fail(409,'Channel or category permissions changed. Reopen the preview.');
+   $enabled=$in['enabled']??null;if(!is_bool($enabled))fail(400,'Choose whether to sync.');
+   if(!$enabled){set_channel_sync($c,null);return ['ok'=>true];}
+   if(!$preview['category'])fail(409,'Create or rename an explicit category first.');
+   $subjects=[];foreach($preview['current'] as $row)$subjects[$row['kind'].':'.$row['subject']]=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];
+   foreach($preview['target'] as $row){$key=$row['kind'].':'.$row['subject'];$subjects[$key]??=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];$subjects[$key][$row['permission']]=(int)$row['value'];}
+   $caps=channel_capabilities($c);
+   foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);foreach($values as $permission=>$value){$before=0;foreach($preview['current'] as $row)if($row['kind']===$kind&&$row['subject']===$subject&&$row['permission']===$permission)$before=(int)$row['value'];if(!$caps[$permission]&&$value>$before)fail(403,'You cannot broaden a permission you do not have.');}}
+   foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);save_channel_override($c,$kind,$subject,$values);}
+   set_channel_sync($c,$preview['category']['id']);return ['ok'=>true];
+  });
  case 'category_permissions':case 'category_permissions_apply':
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);$id=text_field($in,'id',32,32);
   return transaction(function()use($sid,$name,$id,$action,$in){
@@ -77,14 +112,16 @@ function conversation_actions(string $action,array $in): array {
    if($action==='category_permissions_apply'){
     $snapshot=text_field($in,'snapshot',64,64);if(!hash_equals($current['snapshot'],$snapshot))fail(409,'Category channels or permissions changed. Reopen the preview.');
     [$kind,$subject,$values]=override_input($sid,$in);
-    foreach($current['channels'] as $c){$caps=channel_capabilities($c);foreach($values as $p=>$v)if($v===1&&!$caps[$p])fail(403,'You cannot allow a permission you do not have in every affected channel.');}
+    $syncedOnly=$in['synced_only']??false;if(!is_bool($syncedOnly))fail(400,'Invalid apply scope.');
+    $affected=array_filter($current['channels'],fn($c)=>!$syncedOnly||$c['synced']);
+    foreach($affected as $c){$caps=channel_capabilities($c);foreach($values as $p=>$v)if($v===1&&!$caps[$p])fail(403,'You cannot allow a permission you do not have in every affected channel.');}
     $before=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0];foreach($current['overrides'] as $row)if($row['kind']===$kind&&$row['subject']===$subject)$before[$row['permission']]=(int)$row['value'];
     sql('DELETE FROM category_overrides WHERE category_id=? AND kind=? AND subject=?',[$id,$kind,$subject]);foreach($values as $p=>$v)if($v!==0)sql('INSERT INTO category_overrides VALUES(?,?,?,?,?)',[$id,$kind,$subject,$p,$v]);
-    foreach($current['channels'] as $c)save_channel_override($c,$kind,$subject,$values);
+    foreach($affected as $c)save_channel_override($c,$kind,$subject,$values);
     audit_changes($sid,'category-permissions','Category '.$name.' ['.$id.'] · '.$kind.' ['.$subject.'] · -1 deny / 0 inherit / 1 allow',$before,$values,['view'=>'View','send'=>'Send','connect'=>'Connect','attach'=>'Attach']);
     return ['ok'=>true];
    }
-   return ['snapshot'=>$current['snapshot'],'overrides'=>$current['overrides'],'channels'=>array_map(fn($c)=>array_intersect_key($c,array_flip(['id','name','kind','private'])),$current['channels'])];
+   return ['snapshot'=>$current['snapshot'],'overrides'=>$current['overrides'],'channels'=>array_map(fn($c)=>array_intersect_key($c,array_flip(['id','name','kind','private','synced'])),$current['channels'])];
   });
  case 'group_create':
   rate('group-create:'.uid(),10,3600);$name=text_field($in,'name',1,40);$ids=$in['user_ids']??null;if(!is_array($ids))fail(400,'Choose friends.');$all=group_people($ids);
@@ -105,7 +142,7 @@ function conversation_actions(string $action,array $in): array {
  case 'override_list':case 'override_save':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Threads inherit their parent channel permissions.');require_permission($c['server_id'],'manage_channels');
   if($action==='override_save'){
-   transaction(function()use($c,$in){$c=channel($c['id']);require_permission($c['server_id'],'manage_channels');[$kind,$subject,$values]=override_input($c['server_id'],$in);save_channel_override($c,$kind,$subject,$values);});
+   transaction(function()use($c,$in){$c=channel($c['id']);require_permission($c['server_id'],'manage_channels');[$kind,$subject,$values]=override_input($c['server_id'],$in);save_channel_override($c,$kind,$subject,$values);set_channel_sync($c,null);});
   }return ['overrides'=>sql('SELECT * FROM channel_overrides WHERE channel_id=?',[$c['id']])->fetchAll()];
  case 'attachment_upload':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');channel($cid,true);rate('attachment:'.uid(),20,3600);$name=text_field($in,'name',1,120);
