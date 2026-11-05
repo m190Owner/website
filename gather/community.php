@@ -116,7 +116,7 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
-function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen','channel-move','category-create','category-rename','category-delete','category-move'];}
+function audit_actions(): array {return ['mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','thread-create','thread-archive','thread-reopen','channel-move','category-create','category-rename','category-permissions','category-delete','category-move'];}
 function permission_names(): array {return ['manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log','mention_roles','mention_everyone'];}
 function permissions_for(string $sid): array {
  $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());
@@ -215,8 +215,9 @@ function community(string $action,array $in): array {
   });break;
  case 'category_delete':
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);
-  transaction(function()use($sid,$name){
+  transaction(function()use($sid,$name,$in){
    require_permission($sid,'manage_channels');
+   if(array_key_exists('id',$in)&&!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? AND id=?',[$sid,$name,text_field($in,'id',32,32)]))fail(409,'This category changed. Reopen Organize Channels.');
    if(!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=?',[$sid,$name]))fail(404,'Category unavailable.');
    if(one('SELECT 1 FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$name]))fail(409,'Move the channels before deleting this category.');
    sql('DELETE FROM explicit_categories WHERE server_id=? AND name=?',[$sid,$name]);
