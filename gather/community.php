@@ -61,11 +61,16 @@ function migrate_category_identity(): void {
    PRAGMA user_version=26;");
  });
 }
+function implicit_category_key(string $sid,string $name,array $rows): string {
+ $ids=array_column(array_filter($rows,fn($r)=>$r['category']===$name),'id');sort($ids,SORT_STRING);
+ return substr(hash('sha256',json_encode([$sid,$name,$ids])),0,32);
+}
 function server_categories(string $sid,bool $visible=true): array {
  $rows=server_channel_rows($sid);$names=array_column($rows,'category');$shown=array_column($visible?visible_channel_rows($rows):$rows,'category');
  $categories=sql("SELECT names.name,COALESCE(o.position,2147483647) AS position,e.id FROM
   (SELECT category AS name FROM channels WHERE server_id=? AND parent_id IS NULL AND category<>'' UNION SELECT name FROM explicit_categories WHERE server_id=?) names
   LEFT JOIN category_order o ON o.server_id=? AND o.name=names.name LEFT JOIN explicit_categories e ON e.server_id=? AND e.name=names.name ORDER BY position,names.name",[$sid,$sid,$sid,$sid])->fetchAll();
+ foreach($categories as &$c)$c['rename_key']=$c['id']??implicit_category_key($sid,$c['name'],$rows);unset($c);
  return array_values(array_filter($categories,fn($c)=>!$visible||!in_array($c['name'],$names,true)||in_array($c['name'],$shown,true)));
 }
 function visible_channel_rows(array $rows): array {
@@ -189,12 +194,17 @@ function community(string $action,array $in): array {
   $sid=text_field($in,'server_id',32,32);$name=text_field($in,'name',1,40);$next=text_field($in,'new_name',1,40);$id=text_field($in,'id',32,32);
   transaction(function()use($sid,$name,$next,$id){
    require_permission($sid,'manage_channels');
-   if(!one('SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? AND id=?',[$sid,$name,$id]))fail(409,'This category changed. Reopen Organize Channels.');
+   $explicit=one('SELECT id FROM explicit_categories WHERE server_id=? AND name=?',[$sid,$name]);
    $rows=sql('SELECT * FROM channels WHERE server_id=? AND category=? AND parent_id IS NULL',[$sid,$name])->fetchAll();
+   if(($explicit&&$explicit['id']!==$id)||(!$explicit&&(!$rows||implicit_category_key($sid,$name,$rows)!==$id)))fail(409,'This category changed. Reopen Organize Channels.');
    if(count(visible_channel_rows($rows))!==count($rows))fail(403,'You must be able to view every channel in this category.');
    if($name===$next)return;
    if(one("SELECT 1 FROM channels WHERE server_id=? AND parent_id IS NULL AND category=? COLLATE NOCASE AND category<>?
     UNION SELECT 1 FROM explicit_categories WHERE server_id=? AND name=? COLLATE NOCASE AND name<>?",[$sid,$next,$name,$sid,$next,$name]))fail(409,'Category name unavailable.');
+   if(!$explicit){$id=random_id();sql('INSERT INTO explicit_categories(server_id,name,id) VALUES(?,?,?)',[$sid,$name,$id]);}
+   if(!one('SELECT 1 FROM category_order WHERE server_id=? AND name=?',[$sid,$name])){
+    foreach(server_categories($sid,false) as $position=>$category)sql('INSERT INTO category_order VALUES(?,?,?) ON CONFLICT(server_id,name) DO UPDATE SET position=excluded.position',[$sid,$category['name'],$position]);
+   }
    // Keep the old explicit row until channels move so cleanup triggers preserve its settings.
    sql('UPDATE channels SET category=? WHERE server_id=? AND category=? AND parent_id IS NULL',[$next,$sid,$name]);
    foreach(['category_notification_preferences','category_notification_mutes'] as $table)sql('UPDATE '.$table.' SET category=? WHERE server_id=? AND category=?',[$next,$sid,$name]);
