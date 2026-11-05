@@ -69,6 +69,20 @@ function migrate_category_collapse(): void {
   $db->exec('PRAGMA user_version=29;');
  });
 }
+function migrate_profile_notes(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=31)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=31)return;$db->exec('CREATE TABLE profile_notes(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,note TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(user_id,target_id));CREATE INDEX profile_notes_target ON profile_notes(target_id);PRAGMA user_version=31;');});
+}
+function require_note_target(int $target): void {
+ if($target===uid()||!one('SELECT 1 FROM users WHERE id=?',[$target]))fail(404,'This person is unavailable.');
+ if(one('SELECT 1 FROM members a JOIN members b ON b.server_id=a.server_id WHERE a.user_id=? AND b.user_id=?',[uid(),$target]))return;
+ if(one('SELECT 1 FROM friendships WHERE a=? AND b=? AND accepted=1',[min(uid(),$target),max(uid(),$target)]))return;
+ if(one('SELECT 1 FROM channel_members a JOIN channel_members b ON b.channel_id=a.channel_id JOIN channels c ON c.id=a.channel_id WHERE a.user_id=? AND b.user_id=? AND c.server_id IS NULL',[uid(),$target]))return;
+ fail(403,'This person is no longer accessible.');
+}
+function profile_note(int $target): array {
+ $row=one('SELECT note,revision FROM profile_notes WHERE user_id=? AND target_id=?',[uid(),$target]);return ['note'=>$row['note']??'','revision'=>(int)($row['revision']??0)];
+}
 function migrate_server_layout(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=30)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=30)return;$db->exec('CREATE TABLE server_layout_preferences(user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,layout TEXT NOT NULL,revision INTEGER NOT NULL); PRAGMA user_version=30;');});
@@ -214,6 +228,10 @@ function community(string $action,array $in): array {
  case 'unban':
   $sid=text_field($in,'server_id',32,32);$target=positive_id($in['user_id']??null);$reason=array_key_exists('reason',$in)?text_field($in,'reason',0,300):'';
   $changed=transaction(function()use($sid,$target,$reason){require_permission($sid,'ban_members');$changed=sql('DELETE FROM bans WHERE server_id=? AND user_id=?',[$sid,$target])->rowCount()>0;if($changed)hierarchy_audit($sid,'unban',$target,$reason);return $changed;});return ['ok'=>true,'changed'=>$changed];
+ case 'profile_note':$target=positive_id($in['target_id']??null);require_note_target($target);return profile_note($target);
+ case 'profile_note_save':
+  $target=positive_id($in['target_id']??null);$note=text_field($in,'note',0,500);$revision=$in['revision']??null;if(!is_int($revision)||$revision<0)fail(400,'Invalid note revision.');
+  return transaction(function()use($target,$note,$revision){require_note_target($target);$old=profile_note($target);if($old['revision']!==$revision)fail(409,'This note changed on another device. Copy your draft and reopen the profile to review the saved note.');if($old['note']===$note)return $old;sql('INSERT INTO profile_notes VALUES(?,?,?,?) ON CONFLICT(user_id,target_id) DO UPDATE SET note=excluded.note,revision=excluded.revision',[uid(),$target,$note,$revision+1]);return ['note'=>$note,'revision'=>$revision+1];});
  case 'server_layout':
   $revision=$in['revision']??null;if(!is_int($revision)||$revision<0)fail(400,'Invalid layout revision.');
   return transaction(function()use($revision,$in){$old=server_layout_state();if($old['server_layout_revision']!==$revision)fail(409,'Server organization changed on another device. Refresh before editing again.');if($old['server_layout']&&($old['server_layout']['version']??null)!==1)fail(409,'Update Gather before editing this newer layout.');$layout=validated_server_layout($in['layout']??null);sql('INSERT INTO server_layout_preferences VALUES(?,?,?) ON CONFLICT(user_id) DO UPDATE SET layout=excluded.layout,revision=excluded.revision',[uid(),json_encode($layout),$revision+1]);return ['server_layout'=>$layout,'server_layout_revision'=>$revision+1];});
