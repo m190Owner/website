@@ -73,6 +73,16 @@ function migrate_profile_notes(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=31)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=31)return;$db->exec('CREATE TABLE profile_notes(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,target_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,note TEXT NOT NULL,revision INTEGER NOT NULL,PRIMARY KEY(user_id,target_id));CREATE INDEX profile_notes_target ON profile_notes(target_id);PRAGMA user_version=31;');});
 }
+function migrate_call_audio_state(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=32)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=32)return;$db->exec('ALTER TABLE calls ADD COLUMN audio_state TEXT; PRAGMA user_version=32;');});
+}
+function call_audio_state(array $in): ?string {
+ if(!array_key_exists('audio_state',$in))return null;
+ $s=$in['audio_state'];
+ if(!is_array($s)||count($s)!==3||array_diff(array_keys($s),['muted','deafened','input_mode'])||!is_bool($s['muted']??null)||!is_bool($s['deafened']??null)||!in_array($s['input_mode']??null,['voice','push'],true)||($s['deafened']&&!$s['muted']))fail(400,'Invalid call audio status.');
+ return json_encode(['muted'=>$s['muted'],'deafened'=>$s['deafened'],'input_mode'=>$s['input_mode']],JSON_THROW_ON_ERROR);
+}
 function require_note_target(int $target): void {
  if($target===uid()||!one('SELECT 1 FROM users WHERE id=?',[$target]))fail(404,'This person is unavailable.');
  if(one('SELECT 1 FROM members a JOIN members b ON b.server_id=a.server_id WHERE a.user_id=? AND b.user_id=?',[uid(),$target]))return;
