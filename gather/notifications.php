@@ -157,7 +157,7 @@ function inbox_summary(array $channels): array {
 function react_message(int $id,array $c,array $in): void {
  $emoji=$in['emoji']??'❤️';if(!is_string($emoji)||strlen($emoji)>50)fail(400,'Invalid reaction.');if(array_key_exists('selected',$in)&&!is_bool($in['selected']))fail(400,'Invalid reaction state.');
  transaction(function()use($id,$c,$in,$emoji){$exists=!!one('SELECT 1 FROM reactions WHERE message_id=? AND user_id=? AND emoji=?',[$id,uid(),$emoji]);$add=$in['selected']??!$exists;if(!$add){sql('DELETE FROM reactions WHERE message_id=? AND user_id=? AND emoji=?',[$id,uid(),$emoji]);return;}if($exists)return;
-  if(!in_array($emoji,['❤️','👍','👎','😂','🎉','😮','😢','🔥','✅','👀'],true)){
+  if(!in_array($emoji,['😀','😃','😂','😊','😍','🤔','😢','😴','😮','👋','👍','👎','👏','🙌','🙏','💪','🤝','👀','🐶','🐱','🐼','🦊','🌸','🌳','☀️','🌈','🍎','🍕','🍔','🍟','🍜','🍰','☕','🧋','⚽','🏀','🎮','🎲','🎨','🎸','🎬','🏆','💻','📱','💡','📚','🔑','🎁','🚀','📷','❤️','💜','✅','❌','⚠️','⭐','🔥','🎉'],true)){
    if(!preg_match('/^custom:([a-f0-9]{32})$/',$emoji,$match)||!$c['server_id']||!one("SELECT 1 FROM media WHERE id=? AND server_id=? AND slot LIKE 'emoji:%'",[$match[1],$c['server_id']]))fail(400,'Choose a reaction from this server.');
   }
   if(sql('SELECT count(*) FROM reactions WHERE message_id=? AND user_id=?',[$id,uid()])->fetchColumn()>=10)fail(409,'Use up to 10 reactions per message.');if(!one('SELECT 1 FROM reactions WHERE message_id=? AND emoji=?',[$id,$emoji])&&sql('SELECT count(DISTINCT emoji) FROM reactions WHERE message_id=?',[$id])->fetchColumn()>=20)fail(409,'This message already has 20 different reactions.');
