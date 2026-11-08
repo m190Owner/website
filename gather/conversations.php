@@ -1,5 +1,17 @@
 <?php
 declare(strict_types=1);
+function migrate_thread_lifecycle(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=36)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=36)return;
+  $db->exec("ALTER TABLE channels ADD COLUMN locked INTEGER NOT NULL DEFAULT 0; ALTER TABLE channels ADD COLUMN thread_revision INTEGER NOT NULL DEFAULT 0;
+   UPDATE channels SET locked=1 WHERE parent_id IS NOT NULL AND archived=1; PRAGMA user_version=36;");
+ });
+}
+function check_thread_revision(array $c,array $in): bool {
+ if(!array_key_exists('thread_version',$in)){if(array_key_exists('locked',$in)||array_key_exists('expected_revision',$in))fail(400,'Use a supported thread settings version.');return false;}
+ if($in['thread_version']!==1||!is_int($in['expected_revision']??null)||$in['expected_revision']<0)fail(400,'Invalid thread settings version or revision.');
+ if($in['expected_revision']!==(int)$c['thread_revision'])fail(409,'This thread changed. Refresh the conversation and reopen its settings before trying again.');return true;
+}
 function migrate_thread_slowmode(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=34)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=34)return;
@@ -171,11 +183,14 @@ function conversation_actions(string $action,array $in): array {
  case 'thread_settings':
   $cid=text_field($in,'channel_id',32,32);
   transaction(function()use($cid,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');if(!channel_capabilities($c)['manage_threads'])fail(403,'You do not have permission to manage threads in this channel.');$name=text_field($in,'name',1,32);$slow=$in['slowmode']??null;if(!is_int($slow)||$slow<0||$slow>21600)fail(400,'Slow mode must be 0–21600 seconds.');
-   $before=['name'=>$c['name'],'slowmode'=>(int)$c['slowmode']];$after=['name'=>$name,'slowmode'=>$slow];sql('UPDATE channels SET name=?,slowmode=? WHERE id=?',[$name,$slow,$cid]);audit_changes($c['server_id'],'thread-edit',thread_audit_label($c),$before,$after,['name'=>'Name','slowmode'=>'Slow mode (seconds)']);
+   check_thread_revision($c,$in);$locked=array_key_exists('locked',$in)?$in['locked']:(bool)$c['locked'];if(!is_bool($locked))fail(400,'Invalid thread lock state.');$before=['name'=>$c['name'],'slowmode'=>(int)$c['slowmode'],'locked'=>(bool)$c['locked']];$after=['name'=>$name,'slowmode'=>$slow,'locked'=>$locked];if($before===$after)return;sql('UPDATE channels SET name=?,slowmode=?,locked=?,thread_revision=thread_revision+1 WHERE id=?',[$name,$slow,(int)$locked,$cid]);audit_changes($c['server_id'],'thread-edit',thread_audit_label($c),$before,$after,['name'=>'Name','slowmode'=>'Slow mode (seconds)','locked'=>'Locked']);
   });return ['ok'=>true];
  case 'thread_archive':
   $cid=text_field($in,'channel_id',32,32);if(!is_bool($in['archived']??null))fail(400,'Invalid archive state.');$archived=$in['archived'];
-  transaction(function()use($cid,$archived){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');if(!channel_capabilities($c)['manage_threads'])fail(403,'You do not have permission to manage threads in this channel.');if((bool)$c['archived']===$archived)return;sql('UPDATE channels SET archived=? WHERE id=?',[$archived?1:0,$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),['archived'=>(bool)$c['archived']],['archived'=>$archived],['archived'=>'Archived']);});return ['ok'=>true];
+  transaction(function()use($cid,$archived,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');$manager=channel_capabilities($c)['manage_threads'];if(!$manager&&($archived||$c['locked']||($in['thread_version']??null)!==1))fail(403,'Only a thread manager can perform this action.');if(!$manager)channel($c['parent_id'],true);
+   $modern=check_thread_revision($c,$in);if(array_key_exists('locked',$in))fail(400,'Change the lock in Thread settings.');
+   // Old Archive buttons meant manager-only reopening; retain that protection.
+   $locked=(bool)$c['locked']||(!$modern&&$archived);$before=['archived'=>(bool)$c['archived'],'locked'=>(bool)$c['locked']];$after=['archived'=>$archived,'locked'=>$locked];if($before===$after)return;sql('UPDATE channels SET archived=?,locked=?,thread_revision=thread_revision+1 WHERE id=?',[(int)$archived,(int)$locked,$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),$before,$after,['archived'=>'Archived','locked'=>'Locked']);});return ['ok'=>true];
  case 'override_list':case 'override_save':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Threads inherit their parent channel permissions.');require_permission($c['server_id'],'manage_channels');
   if($action==='override_save'){
