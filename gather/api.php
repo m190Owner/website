@@ -23,10 +23,10 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();migrate_category_notification_mutes();migrate_everyone_alerts();migrate_empty_categories();migrate_category_identity();migrate_category_overrides();migrate_category_sync();migrate_category_collapse();migrate_server_layout();migrate_profile_notes();migrate_call_audio_state();
+ migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();migrate_category_notification_mutes();migrate_everyone_alerts();migrate_empty_categories();migrate_category_identity();migrate_category_overrides();migrate_category_sync();migrate_category_collapse();migrate_server_layout();migrate_profile_notes();migrate_call_audio_state();migrate_pin_permission();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.106.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.107.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -131,10 +131,16 @@ try {
    }
    sql('UPDATE messages SET body=?,edited=? WHERE id=?',[$body,time(),$id]);
   });break;
- case 'pin':case 'react':
+ case 'pin':
+  $id=positive_id($in['id']??null);rate('message-action:'.uid(),60,60);
+  transaction(function()use($id){
+   $msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);
+   if($c['server_id'])require_permission($c['server_id'],'pin_messages');elseif((int)$msg['user_id']!==uid())fail(403,'You can only pin your own direct message.');
+   sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);
+  });break;
+ case 'react':
   $id=positive_id($in['id']??null);$msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);rate('message-action:'.uid(),60,60);
-  if($action==='react')react_message($id,$c,$in);
-  else{if((int)$msg['user_id']!==uid()){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}sql('UPDATE messages SET pinned=1-pinned WHERE id=?',[$id]);}break;
+  react_message($id,$c,$in);break;
  case 'rtc':$cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);$result=rtc_config();break;
  case 'call_join':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true,'connect');if($c['kind']!=='voice'&&$c['server_id'])fail(400,'Choose a voice room or direct conversation.');relay_allowed($c);if(!rtc_ready()&&!$test)fail(503,'Calls are waiting for the server relay configuration.');rate('call-join:'.uid(),15,60);
