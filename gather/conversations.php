@@ -27,11 +27,11 @@ function migrate_conversations(): void {
 }
 function channel_capabilities(array $c): array {
  if($c['parent_id'])return channel_capabilities(one('SELECT * FROM channels WHERE id=?',[$c['parent_id']]));
- if(!$c['server_id'])return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true];
- $m=member($c['server_id']);if($m['role']==='owner')return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true];
+ if(!$c['server_id'])return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>false];
+ $m=member($c['server_id']);if($m['role']==='owner')return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>true];
  $roles=array_column(sql('SELECT role_id FROM member_roles WHERE server_id=? AND user_id=?',[$c['server_id'],uid()])->fetchAll(),'role_id');
  $visible=!$c['private']||one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$c['id'],uid()])||one('SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id=cr.role_id WHERE cr.channel_id=? AND mr.user_id=?',[$c['id'],uid()]);
- $p=['view'=>(bool)$visible,'send'=>!$c['readonly']||in_array('manage_messages',permissions_for($c['server_id']),true),'connect'=>true,'attach'=>true,'pin_messages'=>in_array('pin_messages',permissions_for($c['server_id']),true),'bypass_slowmode'=>in_array('bypass_slowmode',permissions_for($c['server_id']),true)];
+ $p=['view'=>(bool)$visible,'send'=>!$c['readonly']||in_array('manage_messages',permissions_for($c['server_id']),true),'connect'=>true,'attach'=>true,'pin_messages'=>in_array('pin_messages',permissions_for($c['server_id']),true),'bypass_slowmode'=>in_array('bypass_slowmode',permissions_for($c['server_id']),true),'manage_threads'=>in_array('manage_threads',permissions_for($c['server_id']),true)];
  $rows=sql('SELECT * FROM channel_overrides WHERE channel_id=?',[$c['id']])->fetchAll();
  // Discord-style precedence: everyone, combined roles (allow wins), then member.
  foreach(['everyone','role','member'] as $kind){$values=[];foreach($rows as $r){if($r['kind']!==$kind||($kind==='role'&&!in_array($r['subject'],$roles,true))||($kind==='member'&&$r['subject']!==(string)uid()))continue;$key=$r['permission'];$values[$key]=max($values[$key]??-1,(int)$r['value']);}foreach($values as $key=>$v)$p[$key]=$v===1;}
@@ -67,11 +67,11 @@ function channel_sync_preview(array $c): array {
  return ['category'=>$category,'current'=>$current,'target'=>$target,'synced'=>$synced,'snapshot'=>hash('sha256',json_encode([uid(),$c['id'],channel_audit_snapshot($c),$category,$current,$target,$synced]))];
 }
 function check_override_version(array $in,array ...$sets): void {
- $version=$in['override_version']??1;if(!in_array($version,[1,2,3],true))fail(400,'Invalid override version.');
- foreach($sets as $rows)foreach($rows as $row){if($version<2&&$row['permission']==='pin_messages')fail(409,'Update Gather before changing overrides that include Pin Messages.');if($version<3&&$row['permission']==='bypass_slowmode')fail(409,'Update Gather before changing overrides that include Bypass Slowmode.');}
+ $version=$in['override_version']??1;if(!in_array($version,[1,2,3,4],true))fail(400,'Invalid override version.');
+ foreach($sets as $rows)foreach($rows as $row){if($version<2&&$row['permission']==='pin_messages')fail(409,'Update Gather before changing overrides that include Pin Messages.');if($version<3&&$row['permission']==='bypass_slowmode')fail(409,'Update Gather before changing overrides that include Bypass Slowmode.');if($version<4&&$row['permission']==='manage_threads')fail(409,'Update Gather before changing overrides that include Manage Threads.');}
 }
 function override_input(string $sid,array $in): array {
- check_override_version($in);$keys=['view','send','connect','attach'];if(($in['override_version']??1)>=2)$keys[]='pin_messages';if(($in['override_version']??1)>=3)$keys[]='bypass_slowmode';
+ check_override_version($in);$keys=['view','send','connect','attach'];if(($in['override_version']??1)>=2)$keys[]='pin_messages';if(($in['override_version']??1)>=3)$keys[]='bypass_slowmode';if(($in['override_version']??1)>=4)$keys[]='manage_threads';
  $kind=$in['kind']??'';$subject=$in['subject']??'';$values=$in['values']??null;
  if(!is_string($subject)||!is_array($values)||count($values)!==count($keys))fail(400,'Invalid override.');
  if($kind==='everyone'){if($subject!=='*')fail(400,'Invalid everyone override.');}
@@ -79,15 +79,15 @@ function override_input(string $sid,array $in): array {
  elseif($kind==='member'){if(!ctype_digit($subject)||!one('SELECT 1 FROM members WHERE user_id=? AND server_id=?',[$subject,$sid]))fail(400,'Choose a server member.');}
  else fail(400,'Invalid subject.');
  foreach($keys as $p)if(!isset($values[$p])||!in_array($values[$p],[-1,0,1],true))fail(400,'Invalid permission.');
- return [$kind,$subject,$values+['pin_messages'=>0,'bypass_slowmode'=>0]];
+ return [$kind,$subject,$values+['pin_messages'=>0,'bypass_slowmode'=>0,'manage_threads'=>0]];
 }
 function save_channel_override(array $c,string $kind,string $subject,array $values): void {
- $before=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0];
+ $before=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0,'manage_threads'=>0];
  foreach(sql('SELECT permission,value FROM channel_overrides WHERE channel_id=? AND kind=? AND subject=?',[$c['id'],$kind,$subject])->fetchAll() as $row)$before[$row['permission']]=(int)$row['value'];
- foreach(['pin_messages','bypass_slowmode'] as $permission)if($values[$permission]>$before[$permission]&&!channel_capabilities($c)[$permission])fail(403,'You cannot broaden a permission you do not have.');
+ foreach(['pin_messages','bypass_slowmode','manage_threads'] as $permission)if($values[$permission]>$before[$permission]&&!channel_capabilities($c)[$permission])fail(403,'You cannot broaden a permission you do not have.');
  sql('DELETE FROM channel_overrides WHERE channel_id=? AND kind=? AND subject=?',[$c['id'],$kind,$subject]);
  foreach($values as $p=>$v)if($v!==0)sql('INSERT INTO channel_overrides VALUES(?,?,?,?,?)',[$c['id'],$kind,$subject,$p,$v]);
- if(audit_changes($c['server_id'],'channel-access',channel_audit_label($c).' · '.$kind.' ['.$subject.'] · -1 deny / 0 inherit / 1 allow',$before,$values,['view'=>'View','send'=>'Send','connect'=>'Connect','attach'=>'Attach','pin_messages'=>'Pin messages','bypass_slowmode'=>'Bypass slowmode']))sql('DELETE FROM calls WHERE channel_id=?',[$c['id']]);
+ if(audit_changes($c['server_id'],'channel-access',channel_audit_label($c).' · '.$kind.' ['.$subject.'] · -1 deny / 0 inherit / 1 allow',$before,$values,['view'=>'View','send'=>'Send','connect'=>'Connect','attach'=>'Attach','pin_messages'=>'Pin messages','bypass_slowmode'=>'Bypass slowmode','manage_threads'=>'Manage threads']))sql('DELETE FROM calls WHERE channel_id=?',[$c['id']]);
 }
 function category_permission_snapshot(string $sid,string $name,string $id): array {
  require_permission($sid,'manage_channels');
@@ -110,8 +110,8 @@ function channel_move_preview(array $c,string $name,string $id): array {
 function apply_channel_sync(array $c,array $preview,array $in): void {
  check_override_version($in,$preview['current'],$preview['target']);
  if(!$preview['category'])fail(409,'Create or rename an explicit category first.');
- $subjects=[];foreach($preview['current'] as $row)$subjects[$row['kind'].':'.$row['subject']]=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0];
- foreach($preview['target'] as $row){$key=$row['kind'].':'.$row['subject'];$subjects[$key]??=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0];$subjects[$key][$row['permission']]=(int)$row['value'];}
+ $subjects=[];foreach($preview['current'] as $row)$subjects[$row['kind'].':'.$row['subject']]=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0,'manage_threads'=>0];
+ foreach($preview['target'] as $row){$key=$row['kind'].':'.$row['subject'];$subjects[$key]??=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0,'manage_threads'=>0];$subjects[$key][$row['permission']]=(int)$row['value'];}
  $caps=channel_capabilities($c);
  foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);foreach($values as $permission=>$value){$before=0;foreach($preview['current'] as $row)if($row['kind']===$kind&&$row['subject']===$subject&&$row['permission']===$permission)$before=(int)$row['value'];if(!$caps[$permission]&&$value>$before)fail(403,'You cannot broaden a permission you do not have.');}}
  foreach($subjects as $key=>$values){[$kind,$subject]=explode(':',$key,2);save_channel_override($c,$kind,$subject,$values);}
@@ -142,11 +142,11 @@ function conversation_actions(string $action,array $in): array {
     foreach($affected as $c){$caps=channel_capabilities($c);foreach($values as $p=>$v)if($v===1&&!$caps[$p])fail(403,'You cannot allow a permission you do not have in every affected channel.');}
     check_override_version($in,$current['overrides']);
     foreach($affected as $c)check_override_version($in,sql('SELECT permission FROM channel_overrides WHERE channel_id=?',[$c['id']])->fetchAll());
-    $before=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0];foreach($current['overrides'] as $row)if($row['kind']===$kind&&$row['subject']===$subject)$before[$row['permission']]=(int)$row['value'];
-    foreach(['pin_messages','bypass_slowmode'] as $permission)if($values[$permission]>$before[$permission]&&!in_array($permission,permissions_for($sid),true))fail(403,'You need the server permission to broaden it in a category template.');
+    $before=['view'=>0,'send'=>0,'connect'=>0,'attach'=>0,'pin_messages'=>0,'bypass_slowmode'=>0,'manage_threads'=>0];foreach($current['overrides'] as $row)if($row['kind']===$kind&&$row['subject']===$subject)$before[$row['permission']]=(int)$row['value'];
+    foreach(['pin_messages','bypass_slowmode','manage_threads'] as $permission)if($values[$permission]>$before[$permission]&&!in_array($permission,permissions_for($sid),true))fail(403,'You need the server permission to broaden it in a category template.');
     sql('DELETE FROM category_overrides WHERE category_id=? AND kind=? AND subject=?',[$id,$kind,$subject]);foreach($values as $p=>$v)if($v!==0)sql('INSERT INTO category_overrides VALUES(?,?,?,?,?)',[$id,$kind,$subject,$p,$v]);
     foreach($affected as $c)save_channel_override($c,$kind,$subject,$values);
-    audit_changes($sid,'category-permissions','Category '.$name.' ['.$id.'] · '.$kind.' ['.$subject.'] · -1 deny / 0 inherit / 1 allow',$before,$values,['view'=>'View','send'=>'Send','connect'=>'Connect','attach'=>'Attach','pin_messages'=>'Pin messages','bypass_slowmode'=>'Bypass slowmode']);
+    audit_changes($sid,'category-permissions','Category '.$name.' ['.$id.'] · '.$kind.' ['.$subject.'] · -1 deny / 0 inherit / 1 allow',$before,$values,['view'=>'View','send'=>'Send','connect'=>'Connect','attach'=>'Attach','pin_messages'=>'Pin messages','bypass_slowmode'=>'Bypass slowmode','manage_threads'=>'Manage threads']);
     return ['ok'=>true];
    }
    return ['snapshot'=>$current['snapshot'],'overrides'=>$current['overrides'],'channels'=>array_map(fn($c)=>array_intersect_key($c,array_flip(['id','name','kind','private','synced'])),$current['channels'])];
@@ -170,12 +170,12 @@ function conversation_actions(string $action,array $in): array {
    if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$parent['id']])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,root_message,slowmode) VALUES(?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$parent['id'],$root,$parent['default_thread_slowmode']]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
  case 'thread_settings':
   $cid=text_field($in,'channel_id',32,32);
-  transaction(function()use($cid,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');require_permission($c['server_id'],'manage_threads');$name=text_field($in,'name',1,32);$slow=$in['slowmode']??null;if(!is_int($slow)||$slow<0||$slow>21600)fail(400,'Slow mode must be 0–21600 seconds.');
+  transaction(function()use($cid,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');if(!channel_capabilities($c)['manage_threads'])fail(403,'You do not have permission to manage threads in this channel.');$name=text_field($in,'name',1,32);$slow=$in['slowmode']??null;if(!is_int($slow)||$slow<0||$slow>21600)fail(400,'Slow mode must be 0–21600 seconds.');
    $before=['name'=>$c['name'],'slowmode'=>(int)$c['slowmode']];$after=['name'=>$name,'slowmode'=>$slow];sql('UPDATE channels SET name=?,slowmode=? WHERE id=?',[$name,$slow,$cid]);audit_changes($c['server_id'],'thread-edit',thread_audit_label($c),$before,$after,['name'=>'Name','slowmode'=>'Slow mode (seconds)']);
   });return ['ok'=>true];
  case 'thread_archive':
   $cid=text_field($in,'channel_id',32,32);if(!is_bool($in['archived']??null))fail(400,'Invalid archive state.');$archived=$in['archived'];
-  transaction(function()use($cid,$archived){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');require_permission($c['server_id'],'manage_threads');if((bool)$c['archived']===$archived)return;sql('UPDATE channels SET archived=? WHERE id=?',[$archived?1:0,$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),['archived'=>(bool)$c['archived']],['archived'=>$archived],['archived'=>'Archived']);});return ['ok'=>true];
+  transaction(function()use($cid,$archived){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');if(!channel_capabilities($c)['manage_threads'])fail(403,'You do not have permission to manage threads in this channel.');if((bool)$c['archived']===$archived)return;sql('UPDATE channels SET archived=? WHERE id=?',[$archived?1:0,$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),['archived'=>(bool)$c['archived']],['archived'=>$archived],['archived'=>'Archived']);});return ['ok'=>true];
  case 'override_list':case 'override_save':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Threads inherit their parent channel permissions.');require_permission($c['server_id'],'manage_channels');
   if($action==='override_save'){

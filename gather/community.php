@@ -441,7 +441,7 @@ function community(string $action,array $in): array {
  case 'channel_access':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],'manage_channels');return ['members'=>array_column(sql('SELECT user_id FROM channel_members WHERE channel_id=?',[$cid])->fetchAll(),'user_id'),'roles'=>array_column(sql('SELECT role_id FROM channel_roles WHERE channel_id=?',[$cid])->fetchAll(),'role_id')];
  case 'channel_delete':
-  $cid=text_field($in,'channel_id',32,32);transaction(function()use($cid){$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');require_permission($c['server_id'],$c['parent_id']?'manage_threads':'manage_channels');sql('DELETE FROM signals WHERE channel_id=?',[$cid]);sql('DELETE FROM channels WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'delete-channel',0,$c['parent_id']?thread_audit_label($c):channel_audit_label($c));});break;
+  $cid=text_field($in,'channel_id',32,32);transaction(function()use($cid){$c=channel($cid);if(!$c['server_id'])fail(400,'Choose a server channel.');if($c['parent_id']){if(!channel_capabilities($c)['manage_threads'])fail(403,'You do not have permission to manage threads in this channel.');}else require_permission($c['server_id'],'manage_channels');sql('DELETE FROM signals WHERE channel_id=?',[$cid]);sql('DELETE FROM channels WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'delete-channel',0,$c['parent_id']?thread_audit_label($c):channel_audit_label($c));});break;
  default:fail(404,'Unknown community action.');
  }return ['ok'=>true];
 }
