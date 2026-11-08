@@ -1,5 +1,23 @@
 <?php
 declare(strict_types=1);
+function migrate_thread_auto_archive(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=37)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=37)return;
+  $db->exec("ALTER TABLE channels ADD COLUMN auto_archive_minutes INTEGER NOT NULL DEFAULT 0; ALTER TABLE channels ADD COLUMN thread_activity INTEGER NOT NULL DEFAULT 0;
+   CREATE INDEX thread_expiration ON channels(thread_activity+auto_archive_minutes*60) WHERE parent_id IS NOT NULL AND archived=0 AND auto_archive_minutes>0;");
+  sql('UPDATE channels SET thread_activity=? WHERE parent_id IS NOT NULL',[time()]);$db->exec('PRAGMA user_version=37;');
+ });
+}
+function archive_due_threads(?string $id=null): void {
+ $now=time();$where='parent_id IS NOT NULL AND archived=0 AND auto_archive_minutes>0 AND thread_activity+auto_archive_minutes*60<=CAST(? AS INTEGER)';
+ if(!one('SELECT id FROM channels WHERE '.$where.' LIMIT 1',[$now]))return;
+ transaction(function()use($now,$where,$id){
+  // shortcut: request-driven batches bound shared-host work; use a worker if exact-time background archiving is needed.
+  $rows=sql('SELECT * FROM channels WHERE '.$where.' ORDER BY thread_activity+auto_archive_minutes*60,id LIMIT 50',[$now])->fetchAll();
+  if($id&&!in_array($id,array_column($rows,'id'),true)){$target=one('SELECT * FROM channels WHERE id=? AND '.$where,[$id,$now]);if($target)$rows[]=$target;}
+  foreach($rows as $c){sql('UPDATE channels SET archived=1,thread_revision=thread_revision+1 WHERE id=?',[$c['id']]);sql('INSERT INTO audit(actor,server_id,action,target,created,detail) VALUES(0,?,?,0,?,?)',[$c['server_id'],'thread-auto-archive',$now,thread_audit_label($c)."\nAutomatically archived after ".$c['auto_archive_minutes'].' minutes without a new message.']);}
+ });
+}
 function migrate_thread_lifecycle(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=36)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=36)return;
@@ -8,7 +26,7 @@ function migrate_thread_lifecycle(): void {
  });
 }
 function check_thread_revision(array $c,array $in): bool {
- if(!array_key_exists('thread_version',$in)){if(array_key_exists('locked',$in)||array_key_exists('expected_revision',$in))fail(400,'Use a supported thread settings version.');return false;}
+ if(!array_key_exists('thread_version',$in)){if(array_key_exists('locked',$in)||array_key_exists('auto_archive_minutes',$in)||array_key_exists('expected_revision',$in))fail(400,'Use a supported thread settings version.');return false;}
  if($in['thread_version']!==1||!is_int($in['expected_revision']??null)||$in['expected_revision']<0)fail(400,'Invalid thread settings version or revision.');
  if($in['expected_revision']!==(int)$c['thread_revision'])fail(409,'This thread changed. Refresh the conversation and reopen its settings before trying again.');return true;
 }
@@ -179,18 +197,18 @@ function conversation_actions(string $action,array $in): array {
    // Thread creation has its own sliding interval; only successful creates advance it.
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();
    if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
-   if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$parent['id']])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,root_message,slowmode) VALUES(?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$parent['id'],$root,$parent['default_thread_slowmode']]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
+   if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$parent['id']])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,root_message,slowmode,thread_activity) VALUES(?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$parent['id'],$root,$parent['default_thread_slowmode'],$now]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
  case 'thread_settings':
   $cid=text_field($in,'channel_id',32,32);
   transaction(function()use($cid,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');if(!channel_capabilities($c)['manage_threads'])fail(403,'You do not have permission to manage threads in this channel.');$name=text_field($in,'name',1,32);$slow=$in['slowmode']??null;if(!is_int($slow)||$slow<0||$slow>21600)fail(400,'Slow mode must be 0–21600 seconds.');
-   check_thread_revision($c,$in);$locked=array_key_exists('locked',$in)?$in['locked']:(bool)$c['locked'];if(!is_bool($locked))fail(400,'Invalid thread lock state.');$before=['name'=>$c['name'],'slowmode'=>(int)$c['slowmode'],'locked'=>(bool)$c['locked']];$after=['name'=>$name,'slowmode'=>$slow,'locked'=>$locked];if($before===$after)return;sql('UPDATE channels SET name=?,slowmode=?,locked=?,thread_revision=thread_revision+1 WHERE id=?',[$name,$slow,(int)$locked,$cid]);audit_changes($c['server_id'],'thread-edit',thread_audit_label($c),$before,$after,['name'=>'Name','slowmode'=>'Slow mode (seconds)','locked'=>'Locked']);
+   check_thread_revision($c,$in);$locked=array_key_exists('locked',$in)?$in['locked']:(bool)$c['locked'];if(!is_bool($locked))fail(400,'Invalid thread lock state.');$auto=array_key_exists('auto_archive_minutes',$in)?$in['auto_archive_minutes']:$c['auto_archive_minutes'];if(!is_int($auto)||!in_array($auto,[0,60,1440,4320,10080],true))fail(400,'Choose a valid automatic archive interval.');$before=['name'=>$c['name'],'slowmode'=>(int)$c['slowmode'],'locked'=>(bool)$c['locked'],'auto_archive_minutes'=>(int)$c['auto_archive_minutes']];$after=['name'=>$name,'slowmode'=>$slow,'locked'=>$locked,'auto_archive_minutes'=>$auto];if($before===$after)return;sql('UPDATE channels SET name=?,slowmode=?,locked=?,auto_archive_minutes=?,thread_activity=?,thread_revision=thread_revision+1 WHERE id=?',[$name,$slow,(int)$locked,$auto,$auto!==(int)$c['auto_archive_minutes']?time():$c['thread_activity'],$cid]);audit_changes($c['server_id'],'thread-edit',thread_audit_label($c),$before,$after,['name'=>'Name','slowmode'=>'Slow mode (seconds)','locked'=>'Locked','auto_archive_minutes'=>'Auto archive (minutes; 0 is off)']);
   });return ['ok'=>true];
  case 'thread_archive':
   $cid=text_field($in,'channel_id',32,32);if(!is_bool($in['archived']??null))fail(400,'Invalid archive state.');$archived=$in['archived'];
   transaction(function()use($cid,$archived,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');$manager=channel_capabilities($c)['manage_threads'];if(!$manager&&($archived||$c['locked']||($in['thread_version']??null)!==1))fail(403,'Only a thread manager can perform this action.');if(!$manager)channel($c['parent_id'],true);
    $modern=check_thread_revision($c,$in);if(array_key_exists('locked',$in))fail(400,'Change the lock in Thread settings.');
    // Old Archive buttons meant manager-only reopening; retain that protection.
-   $locked=(bool)$c['locked']||(!$modern&&$archived);$before=['archived'=>(bool)$c['archived'],'locked'=>(bool)$c['locked']];$after=['archived'=>$archived,'locked'=>$locked];if($before===$after)return;sql('UPDATE channels SET archived=?,locked=?,thread_revision=thread_revision+1 WHERE id=?',[(int)$archived,(int)$locked,$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),$before,$after,['archived'=>'Archived','locked'=>'Locked']);});return ['ok'=>true];
+   $locked=(bool)$c['locked']||(!$modern&&$archived);$before=['archived'=>(bool)$c['archived'],'locked'=>(bool)$c['locked']];$after=['archived'=>$archived,'locked'=>$locked];if($before===$after)return;sql('UPDATE channels SET archived=?,locked=?,thread_activity=?,thread_revision=thread_revision+1 WHERE id=?',[(int)$archived,(int)$locked,!$archived&&$c['archived']?time():$c['thread_activity'],$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),$before,$after,['archived'=>'Archived','locked'=>'Locked']);});return ['ok'=>true];
  case 'override_list':case 'override_save':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['server_id']||$c['parent_id'])fail(400,'Threads inherit their parent channel permissions.');require_permission($c['server_id'],'manage_channels');
   if($action==='override_save'){
@@ -217,6 +235,6 @@ function send_message(array $in): array {
   if($reply&&!one('SELECT 1 FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$reply,$cid]))fail(400,'Reply must reference a message in this conversation.');
   if($c['server_id']&&$c['slowmode']>0&&!in_array('manage_messages',permissions_for($c['server_id']),true)&&!channel_capabilities($c)['bypass_slowmode']&&one('SELECT 1 FROM messages WHERE channel_id=? AND user_id=? AND created>?',[$cid,uid(),time()-$c['slowmode']]))fail(429,'Slow mode is active. Please wait before sending another message.');
   if($ids)channel($cid,true,'attach');foreach($ids as $id)if(!one('SELECT 1 FROM attachments WHERE id=? AND user_id=? AND channel_id=? AND message_id IS NULL',[$id,uid(),$cid]))fail(403,'Choose your own unsent attachment from this conversation.');
-  sql('INSERT INTO messages(channel_id,user_id,body,created,client_id,reply_to) VALUES(?,?,?,?,?,?)',[$cid,uid(),$body,time(),$client,$reply]);global $db;$id=(int)$db->lastInsertId();foreach($ids as $a)sql('UPDATE attachments SET message_id=? WHERE id=?',[$id,$a]);sql('DELETE FROM typing WHERE user_id=? AND channel_id=?',[uid(),$cid]);notify_message($id,$c,$body,$reply,$broadcast);return ['id'=>$id];
+  sql('INSERT INTO messages(channel_id,user_id,body,created,client_id,reply_to) VALUES(?,?,?,?,?,?)',[$cid,uid(),$body,time(),$client,$reply]);global $db;$id=(int)$db->lastInsertId();if($c['parent_id'])sql('UPDATE channels SET thread_activity=? WHERE id=?',[time(),$cid]);foreach($ids as $a)sql('UPDATE attachments SET message_id=? WHERE id=?',[$id,$a]);sql('DELETE FROM typing WHERE user_id=? AND channel_id=?',[uid(),$cid]);notify_message($id,$c,$body,$reply,$broadcast);return ['id'=>$id];
  });
 }
