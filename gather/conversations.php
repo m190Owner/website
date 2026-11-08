@@ -1,5 +1,14 @@
 <?php
 declare(strict_types=1);
+function migrate_thread_slowmode(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=34)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=34)return;
+  $db->exec("ALTER TABLE channels ADD COLUMN default_thread_slowmode INTEGER NOT NULL DEFAULT 0;
+   UPDATE channels SET default_thread_slowmode=slowmode WHERE server_id IS NOT NULL AND parent_id IS NULL AND kind='text';
+   UPDATE channels SET slowmode=COALESCE((SELECT p.slowmode FROM channels p WHERE p.id=channels.parent_id),slowmode) WHERE parent_id IS NOT NULL;
+   PRAGMA user_version=34;");
+ });
+}
 function migrate_conversations(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=4)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=4)return;
@@ -158,7 +167,12 @@ function conversation_actions(string $action,array $in): array {
    // Thread creation has its own sliding interval; only successful creates advance it.
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();
    if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
-   if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$parent['id']])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,root_message) VALUES(?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$parent['id'],$root]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
+   if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$parent['id']])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,root_message,slowmode) VALUES(?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$parent['id'],$root,$parent['default_thread_slowmode']]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
+ case 'thread_settings':
+  $cid=text_field($in,'channel_id',32,32);
+  transaction(function()use($cid,$in){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');require_permission($c['server_id'],'manage_channels');$name=text_field($in,'name',1,32);$slow=$in['slowmode']??null;if(!is_int($slow)||$slow<0||$slow>21600)fail(400,'Slow mode must be 0–21600 seconds.');
+   $before=['name'=>$c['name'],'slowmode'=>(int)$c['slowmode']];$after=['name'=>$name,'slowmode'=>$slow];sql('UPDATE channels SET name=?,slowmode=? WHERE id=?',[$name,$slow,$cid]);audit_changes($c['server_id'],'thread-edit',thread_audit_label($c),$before,$after,['name'=>'Name','slowmode'=>'Slow mode (seconds)']);
+  });return ['ok'=>true];
  case 'thread_archive':
   $cid=text_field($in,'channel_id',32,32);if(!is_bool($in['archived']??null))fail(400,'Invalid archive state.');$archived=$in['archived'];
   transaction(function()use($cid,$archived){$c=channel($cid);if(!$c['parent_id'])fail(400,'Choose a thread.');require_permission($c['server_id'],'manage_channels');if((bool)$c['archived']===$archived)return;sql('UPDATE channels SET archived=? WHERE id=?',[$archived?1:0,$cid]);audit_changes($c['server_id'],$archived?'thread-archive':'thread-reopen',thread_audit_label($c),['archived'=>(bool)$c['archived']],['archived'=>$archived],['archived'=>'Archived']);});return ['ok'=>true];
