@@ -171,6 +171,10 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
+function migrate_audit_actor_index(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=45)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=45)return;$db->exec('CREATE INDEX audit_actor_page ON audit(server_id,actor,id DESC); PRAGMA user_version=45;');});
+}
 function audit_actions(): array {return ['call-disconnect','mute','unmute','kick','ban','unban','promote','demote','role-create','role-edit','role-move','role-delete','role-assign','role-remove','ownership-transfer','delete-channel','server-edit','channel-create','channel-edit','channel-access','invite-create','invite-revoke','server-image','emoji-create','emoji-edit','emoji-delete','message-delete','message-pin','message-unpin','thread-create','thread-members','thread-edit','thread-auto-archive','thread-archive','thread-reopen','channel-move','category-create','category-rename','category-permissions','channel-sync','category-delete','category-move'];}
 function migrate_pin_permission(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=33)return;
@@ -279,9 +283,12 @@ function community(string $action,array $in): array {
    hierarchy_audit($c['server_id'],'call-disconnect',$who,'Member at change: '.audit_value($person['name']).' (@'.$person['username'].') ['.$who."]\nChannel [".$cid."]\nCall [".$id.']');
    return ['changed'=>true];
   });
+ case 'audit_actors':
+  $sid=text_field($in,'server_id',32,32);require_permission($sid,'view_audit_log');$after=array_key_exists('after',$in)?$in['after']:-1;if(!is_int($after)||$after< -1||$after>9007199254740991)fail(400,'Invalid actor cursor.');$query=array_key_exists('query',$in)?text_field($in,'query',0,40):'';
+  $rows=sql("SELECT DISTINCT a.actor AS id,u.name,u.username FROM audit a LEFT JOIN users u ON u.id=a.actor WHERE a.server_id=? AND a.actor>? AND (?='' OR instr(lower(COALESCE(u.name,CASE WHEN a.actor=0 THEN 'Gather automatically' ELSE 'Unknown actor' END)),lower(?))>0 OR instr(lower(COALESCE(u.username,'')),lower(?))>0 OR CAST(a.actor AS TEXT)=?) ORDER BY a.actor LIMIT 51",[$sid,$after,$query,$query,$query,$query])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);return ['actors'=>$rows,'next'=>$more?(int)$rows[49]['id']:null];
  case 'audit_list':case 'ban_list':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,$action==='audit_list'?'view_audit_log':'ban_members');$before=$in['before']??0;if($before!==0)positive_id($before);
-  if($action==='audit_list'){$filter=$in['filter']??'';if(!is_string($filter)||($filter!==''&&!in_array($filter,audit_actions(),true)))fail(400,'Choose a valid audit action.');$where='a.server_id=?';$args=[$sid];if($before){$where.=' AND a.id<?';$args[]=$before;}if($filter!==''){$where.=' AND a.action=?';$args[]=$filter;}
+  if($action==='audit_list'){$filter=$in['filter']??'';if(!is_string($filter)||($filter!==''&&!in_array($filter,audit_actions(),true)))fail(400,'Choose a valid audit action.');$where='a.server_id=?';$args=[$sid];if($before){$where.=' AND a.id<?';$args[]=$before;}if($filter!==''){$where.=' AND a.action=?';$args[]=$filter;}if(array_key_exists('actor_id',$in)){$actor=$in['actor_id'];if(!is_int($actor)||$actor<0||$actor>9007199254740991)fail(400,'Choose a valid audit actor.');$where.=' AND a.actor=?';$args[]=$actor;}
    $rows=sql('SELECT a.id,a.action,a.target,a.created,a.detail,a.actor,u.name AS actor_name,u.username AS actor_username,t.name AS target_name,t.username AS target_username FROM audit a LEFT JOIN users u ON u.id=a.actor LEFT JOIN users t ON t.id=a.target WHERE '.$where.' ORDER BY a.id DESC LIMIT 51',$args)->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);return ['entries'=>$rows,'next'=>$more?$rows[49]['id']:null];
   }
   $rows=sql("SELECT b.user_id,u.name,u.username,a.detail AS reason,a.created AS banned_at,actor.name AS actor_name,actor.username AS actor_username FROM bans b JOIN users u ON u.id=b.user_id LEFT JOIN audit a ON a.id=(SELECT id FROM audit WHERE server_id=b.server_id AND target=b.user_id AND action='ban' ORDER BY id DESC LIMIT 1) LEFT JOIN users actor ON actor.id=a.actor WHERE b.server_id=?".($before?' AND b.user_id<?':'').' ORDER BY b.user_id DESC LIMIT 51',$before?[$sid,$before]:[$sid])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);return ['bans'=>$rows,'next'=>$more?$rows[49]['user_id']:null];
