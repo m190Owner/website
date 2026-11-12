@@ -275,12 +275,14 @@ function conversation_actions(string $action,array $in): array {
   if($action==='attachment_discard'){if((int)$a['user_id']!==uid()||$a['message_id'])fail(403,'Only your unsent attachments can be discarded.');sql('DELETE FROM attachments WHERE id=?',[$id]);return ['ok'=>true];}return array_intersect_key($a,array_flip(['name','size','sha256','data']));
  }fail(404,'Unknown conversation action.');
 }
+function thread_message_locked(array $c): bool {return (bool)($c['parent_id']&&!empty($c['locked'])&&!channel_capabilities($c)['manage_threads']);}
+function require_thread_message_write(array $c): void {if(thread_message_locked($c))fail(403,'This thread is locked. Only thread managers can send or edit messages.');}
 function send_channel(string $cid,array $in,string $permission='send'): array {
  $reopen=array_key_exists('reopen_thread',$in)?$in['reopen_thread']:false;if(!is_bool($reopen))fail(400,'Invalid thread reopening choice.');
- if(!$reopen)return channel($cid,true,$permission);
+ if(!$reopen){$c=channel($cid,true,$permission);require_thread_message_write($c);return $c;}
  $c=channel($cid);if(!$c['parent_id'])fail(400,'Only threads can be reopened while sending.');
  channel($c['parent_id'],true,'send_in_threads');if($permission!=='send')channel($c['parent_id'],true,$permission);
- if(($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time()))&&$c['locked']&&!channel_capabilities($c)['manage_threads'])fail(403,'Only a thread manager can reopen this locked thread.');return $c;
+ require_thread_message_write($c);return $c;
 }
 function send_message(array $in): array {
  $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in);if($c['kind']!=='text')fail(400,'Use a text channel.');rate('send:'.uid(),30,60);$ids=$in['attachments']??[];if(!is_array($ids)||count($ids)>3||count(array_unique($ids,SORT_REGULAR))!==count($ids))fail(400,'Attach up to 3 files.');foreach($ids as $id)if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/',$id))fail(400,'Invalid attachment.');$body=text_field($in,'body',$ids?0:1,4000);$client=text_field($in,'client_id',16,64);$reply=isset($in['reply_to'])?positive_id($in['reply_to']):null;

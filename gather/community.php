@@ -402,7 +402,7 @@ function community(string $action,array $in): array {
  case 'read':
   $cid=text_field($in,'channel_id',32,32);channel($cid);$id=$in['last_id']??null;if(!is_int($id)||$id<0)fail(400,'Invalid read position.');if($id&&!one('SELECT 1 FROM messages WHERE channel_id=? AND id=?',[$cid,$id]))fail(400,'Read position must belong to this channel.');sql('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=max(last_id,excluded.last_id)',[uid(),$cid,$id]);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id IN(SELECT id FROM messages WHERE channel_id=? AND id<=?)',[uid(),$cid,$id]);break;
  case 'typing':
-  $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);if($c['kind']!=='text')fail(400,'Choose a text channel.');rate('typing:'.uid(),30,60);sql('INSERT INTO typing VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET seen=excluded.seen',[uid(),$cid,time()]);break;
+  $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);require_thread_message_write($c);if($c['kind']!=='text')fail(400,'Choose a text channel.');rate('typing:'.uid(),30,60);sql('INSERT INTO typing VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET seen=excluded.seen',[uid(),$cid,time()]);break;
  case 'call_decline':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if($c['server_id'])fail(400,'Choose a direct call.');if(!$c['group_owner'])sql('DELETE FROM calls WHERE channel_id=?',[$cid]);else sql('DELETE FROM calls WHERE channel_id=? AND user_id=?',[$cid,uid()]);break;
  case 'server_thread_defaults':
