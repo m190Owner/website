@@ -10,6 +10,8 @@
   <meta property="og:description" content="A live demo of everything a website can learn about you the instant you visit. No permissions. No cookies. Built by a security engineer.">
   <meta name="theme-color" content="#05070d">
   <link rel="stylesheet" href="unmask.css">
+  <link rel="stylesheet" href="/signal/clue.css">
+  <script src="/signal/clue.js" defer></script>
 </head>
 <body>
   <canvas id="globe"></canvas>
@@ -17,6 +19,14 @@
   <a class="back" href="/">← logansandivar.com</a>
 
   <div class="wrap">
+    <aside id="signal-clue" class="signal-clue" hidden aria-labelledby="signal-clue-title">
+      <span class="signal-clue-tag">SIGNAL 01 / FICTIONAL FIELD NOTE</span>
+      <h2 id="signal-clue-title">Read between the traces.</h2>
+      <p>The callsign starts each line. Read down, not across.</p>
+      <p class="signal-lines"><span><b>B</b>eneath the surface,</span><span><b>E</b>very detail leaves a trace.</span><span><b>A</b>sk what is missing.</span><span><b>C</b>hange your point of view.</span><span><b>O</b>bserve the beginning.</span><span><b>N</b>ow follow it home.</span></p>
+      <a href="/signal/?trace=1">Return to the investigation ↗</a>
+      <small>This note is part of the game. No privacy probes run in this clue-only view.</small>
+    </aside>
     <div class="brand"><b>m190</b> · unmask</div>
     <h1 class="glitch" data-t="I can see you.">I can see you.</h1>
     <div class="sub" id="sub">No permission prompt. No cookie. Just what your browser hands over — watch.</div>

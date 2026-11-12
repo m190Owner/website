@@ -24,6 +24,8 @@
 
     <link rel="stylesheet" href="css/styles.css">
     <script src="js/noinspect.js"></script>
+    <link rel="stylesheet" href="/signal/invitation.css">
+    <script src="/signal/invitation.js" defer></script>
 </head>
 <body>
     <!-- Page Transition -->
@@ -162,6 +164,12 @@
         <div class="home-content">
             <h1 class="glitch" data-text="Logan Sandivar">Logan Sandivar</h1>
             <div class="typing-subtitle"><span id="typing-text"></span><span class="typing-cursor"></span></div>
+            <aside class="signal-invitation" id="signal-invitation" aria-label="Optional mystery game">
+                <span class="signal-invitation-tag">TRANSMISSION 01 / FICTIONAL MYSTERY</span>
+                <p>Unusual activity detected.<br><strong>Some things are hidden in plain sight.</strong></p>
+                <div><a href="/signal/">Investigate <span aria-hidden="true">↗</span></a><button type="button" id="signal-dismiss" hidden>Not now</button></div>
+                <small>An optional 3-minute puzzle. No real security incident.</small>
+            </aside>
         </div>
     </section>
 

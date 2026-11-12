@@ -3,6 +3,8 @@
 // a hardened browser that blocks a probe is shown as "blocked (good)", never an error.
 (function () {
   'use strict';
+  // The optional Signal trail is a clue-only visit: do not run privacy probes.
+  if (new URLSearchParams(location.search).get('signal') === '01') return;
   var $ = function (s) { return document.querySelector(s); };
   var stage = $('#stage'), sub = $('#sub');
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
