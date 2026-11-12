@@ -1,1 +1,12 @@
-.signal-invitation{position:relative;z-index:2;width:min(360px,calc(100vw - 48px));margin:28px 0 0;padding:18px 20px;border:1px solid #7aa2ff60;border-left:3px solid #7aa2ff;background:#080e1ce8;text-align:left;border-radius:4px;color:#e4eaff;font-family:monospace;cursor:auto}.signal-invitation-tag{font-size:10px;letter-spacing:1.3px;color:#94b5ff}.signal-invitation p{margin:12px 0;font-size:13px;line-height:1.7}.signal-invitation strong{font-weight:400;color:#b5c3de}.signal-invitation div{display:flex;align-items:center;gap:16px}.signal-invitation a,.signal-invitation button{font:inherit;font-size:12px;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;padding:0 10px}.signal-invitation a{color:#d6e3ff;text-decoration:none;border:1px solid #7aa2ff70;border-radius:3px}.signal-invitation button{background:none;border:0;color:#bdc7dc}.signal-invitation small{display:block;font-size:10px;line-height:1.6;color:#a4aec2;margin-top:10px}.signal-invitation [hidden],.signal-invitation[hidden]{display:none}.signal-invitation a:focus-visible,.signal-invitation button:focus-visible{outline:2px solid #c4d5ff;outline-offset:4px}@media(max-height:650px){.signal-invitation{margin-top:12px;padding:10px 14px}}
+.signal-invitation{position:relative;z-index:2;width:min(350px,calc(100vw - 44px));margin:30px 0 0;padding:16px 0 0;border-top:1px solid #a6aaa9;background:none;text-align:left;color:#eeeae2;cursor:auto}
+.signal-invitation-tag{font:10px/1.5 monospace;letter-spacing:.08em;color:#c3c5c3}
+.signal-invitation p{margin:10px 0 14px;font:24px/1.25 Georgia,'Times New Roman',serif;letter-spacing:-.025em}
+.signal-invitation strong{font-weight:400;color:inherit}
+.signal-invitation div{display:flex;align-items:center;gap:20px}
+.signal-invitation a,.signal-invitation button{font:12px/1.5 Arial,sans-serif;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;gap:7px;padding:0}
+.signal-invitation a{color:#eeeae2;text-decoration:underline;text-underline-offset:5px}
+.signal-invitation button{background:none;border:0;color:#c3c5c3}
+.signal-invitation small{display:block;font:10px/1.7 monospace;color:#c3c5c3;margin-top:6px}
+.signal-invitation [hidden],.signal-invitation[hidden]{display:none}
+.signal-invitation a:focus-visible,.signal-invitation button:focus-visible{outline:2px solid #b6c9e7;outline-offset:5px}
+@media(max-height:650px){.signal-invitation{margin-top:14px;padding-top:10px}.signal-invitation p{margin:6px 0;font-size:21px}}
