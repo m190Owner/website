@@ -1,7 +1,7 @@
 :root{color-scheme:dark;--bg:#17191a;--text:#eeeae2;--muted:#b4b3ac;--line:#444745;--accent:#b6c9e7}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
-body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 Arial,Helvetica,sans-serif;min-height:100vh}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.65 system-ui,sans-serif;min-height:100vh}
 a{color:inherit;text-underline-offset:5px}
 button,input{font:inherit}
 button,a,input{touch-action:manipulation}

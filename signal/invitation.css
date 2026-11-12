@@ -3,7 +3,7 @@
 .signal-invitation p{margin:10px 0 14px;font:24px/1.25 Georgia,'Times New Roman',serif;letter-spacing:-.025em}
 .signal-invitation strong{font-weight:400;color:inherit}
 .signal-invitation div{display:flex;align-items:center;gap:20px}
-.signal-invitation a,.signal-invitation button{font:12px/1.5 Arial,sans-serif;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;gap:7px;padding:0}
+.signal-invitation a,.signal-invitation button{font:12px/1.5 system-ui,sans-serif;cursor:pointer;min-height:44px;display:inline-flex;align-items:center;gap:7px;padding:0}
 .signal-invitation a{color:#eeeae2;text-decoration:underline;text-underline-offset:5px}
 .signal-invitation button{background:none;border:0;color:#c3c5c3}
 .signal-invitation small{display:block;font:10px/1.7 monospace;color:#c3c5c3;margin-top:6px}
