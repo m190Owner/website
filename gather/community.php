@@ -233,7 +233,7 @@ function channel_order_snapshot(array $c): array {
  $ids=array_column(sql('SELECT id FROM channels WHERE server_id=? AND parent_id IS NULL AND kind=? AND category=? ORDER BY position,created,id',[$c['server_id'],$c['kind'],$c['category']])->fetchAll(),'id');
  return ['category'=>$c['category'],'position'=>array_search($c['id'],$ids,true)+1];
 }
-function thread_audit_label(array $c): string {return 'Thread '.$c['name'].' ['.$c['id'].'] · Parent ['.$c['parent_id'].'] · Root message ['.$c['root_message'].']';}
+function thread_audit_label(array $c): string {return 'Thread '.(!empty($c['thread_private'])?'[private]':$c['name']).' ['.$c['id'].'] · Parent ['.$c['parent_id'].'] · Root message ['.$c['root_message'].']';}
 function role_audit_snapshot(array $role): array {
  $permissions=array_values(array_unique(json_decode($role['permissions'],true)));sort($permissions,SORT_STRING);
  return ['name'=>$role['name'],'color'=>$role['color'],'permissions'=>$permissions,'position'=>(int)$role['position']];
