@@ -1,45 +1,79 @@
 (() => {
   'use strict';
-  const key = 'm190.signal01.stage';
-  let stage = 1;
-  try { stage = Number(localStorage.getItem(key)) || 1; } catch (_) {}
-  if (![1, 2, 3].includes(stage)) stage = 1;
-  if (new URLSearchParams(location.search).get('trace') === '1') stage = Math.max(stage, 2);
+  const cases = window.SignalCases;
+  const params = new URLSearchParams(location.search);
+  const navigation = performance.getEntriesByType('navigation')[0];
+  const reload = navigation && navigation.type === 'reload';
+  const back = navigation && navigation.type === 'back_forward';
+  const key = 'm190.signal.lastCase';
+  let current, stage = 1;
+  const find = id => cases.find(c => c.id === id);
+  // Returning from the clue (or browser Back) preserves the trail.
+  // Explicit reload always starts a fresh case, even on a return URL.
+  if (!reload && params.get('trace') === '1') {
+    current = find(params.get('case'));
+    if (current) stage = 2;
+  }
+  if (!reload && back && history.state && history.state.signalCase) {
+    current = find(history.state.signalCase);
+    stage = history.state.signalStage === 2 ? 2 : 1;
+  }
+  const remember = () => {
+    try { localStorage.setItem(key, current.id); } catch (_) {}
+    try { history.replaceState({signalCase:current.id, signalStage:stage}, '', location.pathname); } catch (_) {}
+  };
+  const choose = () => {
+    let last = current && current.id;
+    if (!last && reload) last = (history.state && history.state.signalCase) || params.get('case');
+    if (!last) { try { last = localStorage.getItem(key); } catch (_) {} }
+    // URL also avoids an immediate repeat on reload if storage is blocked.
+    if (!last) last = params.get('case') || (history.state && history.state.signalCase);
+    const pool = cases.filter(c => c.id !== last);
+    current = pool[Math.floor(Math.random() * pool.length)];
+    stage = 1;
+  };
+  if (!current) choose();
   const feedback = document.getElementById('feedback');
-  const save = (next) => { stage = next; try { localStorage.setItem(key, String(stage)); } catch (_) {} };
-  const show = (focus = false) => {
-    // Completed visitors can revisit the trail without being forced away.
-    const shown = stage === 1 ? 'decode' : 'trace';
-    ['decode', 'trace'].forEach(id => { document.getElementById(id).hidden = id !== shown; });
-    [1, 2, 3].forEach(n => {
+  const respond = (text, error = false) => { feedback.textContent = text; feedback.classList.toggle('error', error); };
+  const render = (focus = false) => {
+    document.getElementById('case-number').textContent = 'Case ' + current.id.padStart(3, '0');
+    document.getElementById('case-label').textContent = 'CASE ' + current.id.padStart(3, '0') + ' / SIGNAL';
+    document.querySelector('#decode h2').textContent = current.title;
+    document.querySelector('#decode h2 + p').textContent = current.instruction;
+    const cipher = document.querySelector('.transmission');
+    cipher.textContent = current.cipher;
+    cipher.setAttribute('aria-label', 'Encoded transmission: ' + current.cipher);
+    document.querySelector('#decode details p').textContent = current.hint;
+    document.querySelector('#trace h2 + p').textContent = 'Open the clue-only field note for case ' + current.id + ' and bring back its ' + current.callsign.length + '-letter callsign.';
+    document.querySelector('#trace a.button').href = '/unmask/?signal=01&case=' + current.id;
+    document.querySelector('#trace details p').textContent = 'Read the first letter of each line in the field note. If you cannot open it, the callsign is ' + current.callsign + '.';
+    ['decode','trace'].forEach(id => { document.getElementById(id).hidden = id !== (stage === 1 ? 'decode' : 'trace'); });
+    [1,2,3].forEach(n => {
       const el = document.getElementById('progress-' + n);
-      el.classList.toggle('active', n === Math.min(stage, 2));
-      if (n === Math.min(stage, 2)) el.setAttribute('aria-current', 'step'); else el.removeAttribute('aria-current');
+      el.classList.toggle('active', n === stage);
+      if (n === stage) el.setAttribute('aria-current','step'); else el.removeAttribute('aria-current');
     });
     document.getElementById('case-status').textContent = stage === 1 ? 'AWAITING INPUT' : 'TRACE ACQUIRED';
     document.getElementById('reset').hidden = false;
-    if (focus) document.querySelector('#' + shown + ' h2').focus();
+    remember();
+    if (focus) document.querySelector(stage === 1 ? '#decode h2' : '#trace h2').focus();
   };
   const normalize = value => value.trim().toUpperCase();
-  const respond = (text, error = false) => { feedback.textContent = text; feedback.classList.toggle('error', error); };
   document.getElementById('decode-form').addEventListener('submit', event => {
     event.preventDefault();
-    if (normalize(document.getElementById('decode-answer').value) !== 'UNMASK') return respond('Not quite. Move each letter back three places. The hint can help.', true);
-    save(2); respond('Transmission decoded. Follow the trace.'); show(true);
+    if (normalize(document.getElementById('decode-answer').value) !== current.answer) return respond('Not quite. Check the instructions or open the hint.',true);
+    stage = 2; respond('Transmission decoded. Follow the trace.'); render(true);
   });
   document.getElementById('trace-form').addEventListener('submit', event => {
     event.preventDefault();
-    if (normalize(document.getElementById('trace-answer').value) !== 'BEACON') return respond('That callsign does not match. Read the first letter of each line in the field note.', true);
-    save(3);
-    // URL flag also completes the journey if browser storage is unavailable.
-    window.location.assign('/signal/archive.html?recovered=1');
+    if (normalize(document.getElementById('trace-answer').value) !== current.callsign) return respond('That callsign does not match this case. Read the first letter of each field-note line.',true);
+    window.location.assign('/signal/archive.html?recovered=1&case=' + current.id);
   });
   document.getElementById('reset').addEventListener('click', () => {
-    save(1);
-    try { history.replaceState(null, '', location.pathname); } catch (_) {}
+    choose();
     document.querySelectorAll('input').forEach(input => { input.value = ''; });
     document.querySelectorAll('details').forEach(detail => { detail.open = false; });
-    respond('Case restarted.'); show(true);
+    respond('New case selected.'); render(true);
   });
-  show();
+  render();
 })();

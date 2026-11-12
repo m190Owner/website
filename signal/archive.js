@@ -1,8 +1,10 @@
 (() => {
   'use strict';
-  let recovered = new URLSearchParams(location.search).get('recovered') === '1';
-  try { recovered = recovered || localStorage.getItem('m190.signal01.stage') === '3'; } catch (_) {}
-  if (!recovered) return;
+  const params = new URLSearchParams(location.search);
+  if (params.get('recovered') !== '1') return;
+  const current = window.SignalCases.find(c => c.id === params.get('case')) || window.SignalCases[0];
   document.getElementById('locked').hidden = true;
   document.getElementById('recovered').hidden = false;
+  document.querySelector('.intro .eyebrow').textContent = 'Case ' + current.id.padStart(3,'0') + ' / The hidden archive';
+  document.querySelector('.badge small').textContent = 'CASE ' + current.id.padStart(3,'0') + ' / ' + current.callsign + ' RECOVERED';
 })();
