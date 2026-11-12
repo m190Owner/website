@@ -26,7 +26,7 @@ try {
  migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();migrate_category_notification_mutes();migrate_everyone_alerts();migrate_empty_categories();migrate_category_identity();migrate_category_overrides();migrate_category_sync();migrate_category_collapse();migrate_server_layout();migrate_profile_notes();migrate_call_audio_state();migrate_pin_permission();migrate_thread_slowmode();migrate_thread_permission();migrate_thread_lifecycle();migrate_thread_auto_archive();migrate_thread_archive_default();migrate_thread_defaults();migrate_thread_creator();migrate_thread_membership();migrate_private_threads();migrate_thread_member_revision();migrate_private_thread_permission();migrate_audit_actor_index();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.141.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.142.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -147,7 +147,9 @@ try {
     if($c['parent_id']){if($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time()))fail(403,'Reopen this thread before changing pins.');if(thread_message_locked($c))fail(403,'Only thread managers can change pins in a locked thread.');}
    }else{channel($c['id'],true);if((int)$msg['user_id']!==uid())fail(403,'You can only pin your own direct message.');}
    // shortcut: legacy clients omit pinned and toggle; remove after retiring those clients.
-   $pinned=array_key_exists('pinned',$in)?(int)$in['pinned']:1-(int)$msg['pinned'];if($pinned===(int)$msg['pinned'])return;sql('UPDATE messages SET pinned=? WHERE id=?',[$pinned,$id]);
+   $pinned=array_key_exists('pinned',$in)?(int)$in['pinned']:1-(int)$msg['pinned'];if($pinned===(int)$msg['pinned'])return;
+   if($pinned&&(int)sql('SELECT count(*) FROM (SELECT 1 FROM messages WHERE channel_id=? AND pinned=1 AND deleted=0 LIMIT 250)',[$c['id']])->fetchColumn()>=250)fail(409,'This conversation has reached the 250-pin limit. Unpin a message before adding another.');
+   sql('UPDATE messages SET pinned=? WHERE id=?',[$pinned,$id]);
    if($c['server_id']){$actor=one('SELECT name,username FROM users WHERE id=?',[uid()]);hierarchy_audit($c['server_id'],$pinned?'message-pin':'message-unpin',(int)$msg['user_id'],'Actor at change: '.audit_value($actor['name']).' (@'.$actor['username'].') ['.uid()."]\nMessage [".$id.'] · Channel ['.$c['id'].'] · Server ['.$c['server_id'].'] · Author ['.$msg['user_id']."]\nPinned: ".($pinned?'false → true':'true → false'));}
   });break;
  case 'react':
