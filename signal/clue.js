@@ -2,7 +2,7 @@
   'use strict';
   const params = new URLSearchParams(location.search);
   if (params.get('signal') !== '01') return;
-  const current = window.SignalCases.find(c => c.id === params.get('case')) || window.SignalCases[0];
+  const current = window.SignalCases.find(c => c.id === params.get('case') && Array.isArray(c.lines)) || window.SignalCases[0];
   const clue = document.getElementById('signal-clue');
   clue.hidden = false;
   clue.querySelector('.signal-clue-tag').textContent = 'CASE ' + current.id.padStart(3,'0') + ' / FICTIONAL FIELD NOTE';

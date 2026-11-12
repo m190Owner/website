@@ -1,0 +1,15 @@
+dialog.signal-field-note{box-sizing:border-box;position:fixed;inset:0;margin:auto;width:min(740px,calc(100% - 32px));max-height:90vh;overflow:auto;border:1px solid #777b76;border-top:3px solid #eeeae2;border-radius:0;padding:32px;background:#17191a;color:#eeeae2;font:15px/1.7 system-ui,sans-serif;text-align:left;z-index:2147483647}
+dialog.signal-field-note::backdrop{background:#080a0beb}
+dialog.signal-field-note *{box-sizing:border-box}
+dialog.signal-field-note p{margin:12px 0;color:#d0cec7}
+dialog.signal-field-note h2{font:400 32px/1.2 Georgia,serif;color:#eeeae2;margin:16px 0}
+dialog.signal-field-note .field-note-tag{font:10px/1.7 monospace;letter-spacing:.07em}
+dialog.signal-field-note .field-note-body{padding:14px 0;margin:22px 0;border-block:1px solid #555a55;white-space:pre-wrap}
+dialog.signal-field-note nav{display:flex;flex-direction:column;gap:5px}
+dialog.signal-field-note a{color:#eeeae2;text-decoration:underline;text-underline-offset:4px;display:inline-block;padding:8px 0;min-height:40px;font:inherit}
+dialog.signal-field-note a[aria-current]{color:#b6c9e7}
+dialog.signal-field-note .field-note-return{margin:20px 0 0;font-weight:600}
+dialog.signal-field-note .field-note-small{font:11px/1.8 monospace;color:#b4b3ac}
+dialog.signal-field-note button{display:block;background:transparent;border:0;color:#b4b3ac;font:12px/1.6 system-ui;cursor:pointer;padding:12px 0;min-height:44px;text-decoration:underline}
+dialog.signal-field-note :focus-visible{outline:2px solid #b6c9e7;outline-offset:3px}
+@media(max-width:600px){dialog.signal-field-note{padding:22px}dialog.signal-field-note h2{font-size:27px}}

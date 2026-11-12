@@ -1,0 +1,51 @@
+(() => {
+  'use strict';
+  const params = new URLSearchParams(location.search);
+  const c = window.SignalCases.find(c => c.id === params.get('fieldcase'));
+  const index = Number(params.get('note'));
+  const locations = {projects:'/projects/field-note.html',map:'/map-field-note.html',canvas:'/canvas-field-note.html',room:'/room-field-note.html'};
+  if (!c || !c.evidence || !Number.isInteger(index) || !c.evidence[index]) return;
+  const note = c.evidence[index];
+  const path = location.pathname.replace(/index\.html$/, '');
+  if (path !== locations[note.location]) return;
+  const dialog = document.createElement('dialog');
+  dialog.className = 'signal-field-note';
+  dialog.setAttribute('aria-labelledby','field-note-heading');
+  const tag = document.createElement('p');
+  tag.className = 'field-note-tag';
+  tag.textContent = 'FICTIONAL CASE ' + c.id + ' / EVIDENCE ' + (index + 1) + ' OF ' + c.evidence.length;
+  const title = document.createElement('h2');
+  title.id = 'field-note-heading'; title.textContent = note.title;
+  const context = document.createElement('p');
+  context.textContent = c.title + ' · ' + note.location;
+  const body = document.createElement('div');
+  body.className = 'field-note-body';
+  note.body.split('\n').forEach(line => {
+    const p = document.createElement('p'); p.textContent = line; body.append(p);
+  });
+  const nav = document.createElement('nav');
+  nav.setAttribute('aria-label','Case evidence');
+  c.evidence.forEach((n,i) => {
+    const a = document.createElement('a');
+    a.href = locations[n.location] + '?fieldcase=' + c.id + '&note=' + i;
+    a.textContent = (i+1) + '. ' + n.title;
+    if (i === index) a.setAttribute('aria-current','page');
+    nav.append(a);
+  });
+  const back = document.createElement('a');
+  back.className = 'field-note-return';
+  back.href = '/signal/?trace=1&case=' + c.id;
+  back.textContent = 'Return to case ' + c.id;
+  const disclaimer = document.createElement('p');
+  disclaimer.className = 'field-note-small';
+  disclaimer.textContent = 'All case evidence is invented for this puzzle. It is not real visitor, project or security data. You never need to edit the live site.';
+  const close = document.createElement('button');
+  close.type = 'button'; close.textContent = 'Close note and view this page';
+  close.addEventListener('click', () => dialog.close());
+  dialog.append(tag,title,context,body,nav,back,disclaimer,close);
+  // Keep keyboard/pointer events inside the note, away from interactive demos.
+  ['click','pointerdown','keydown'].forEach(type => dialog.addEventListener(type, event => event.stopPropagation()));
+  const viewport = document.querySelector('meta[name="viewport"]');
+  if (viewport) viewport.setAttribute('content','width=device-width, initial-scale=1.0');
+  document.body.append(dialog); dialog.showModal();
+})();

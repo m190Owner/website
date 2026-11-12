@@ -7,5 +7,6 @@
   document.getElementById('locked').hidden = true;
   document.getElementById('recovered').hidden = false;
   document.querySelector('.intro .eyebrow').textContent = 'Case ' + current.id.padStart(3,'0') + ' / The hidden archive';
+  if (current.resolution) document.querySelector('#recovered h2 + p').textContent = current.resolution;
   document.querySelector('.badge small').textContent = 'CASE ' + current.id.padStart(3,'0') + ' / ' + current.callsign + ' RECOVERED';
 })();
