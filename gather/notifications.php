@@ -161,8 +161,7 @@ function react_message(int $id,array $c,array $in): void {
   $msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id']);
   if($c['server_id']){if(member($c['server_id'])['muted_until']>time())fail(403,'You cannot change reactions while timed out.');if($c['parent_id']&&($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time())))fail(403,'Reopen this thread before changing reactions.');}else channel($c['id'],true);
   $exists=!!one('SELECT 1 FROM reactions WHERE message_id=? AND user_id=? AND emoji=?',[$id,uid(),$emoji]);$add=$in['selected']??!$exists;if(!$add){sql('DELETE FROM reactions WHERE message_id=? AND user_id=? AND emoji=?',[$id,uid(),$emoji]);return;}if($exists)return;
-  // shortcut: new emoji types use sending permission until Add Reactions has versioned roles and overrides.
-  if(!one('SELECT 1 FROM reactions WHERE message_id=? AND emoji=?',[$id,$emoji]))channel($c['id'],true);
+  if(!one('SELECT 1 FROM reactions WHERE message_id=? AND emoji=?',[$id,$emoji])&&!channel_capabilities($c)['add_reactions'])fail(403,'You need Add Reactions to start a new emoji reaction.');
   if(!in_array($emoji,['😀','😃','😂','😊','😍','🤔','😢','😴','😮','👋','👋🏻','👋🏼','👋🏽','👋🏾','👋🏿','👍','👍🏻','👍🏼','👍🏽','👍🏾','👍🏿','👎','👎🏻','👎🏼','👎🏽','👎🏾','👎🏿','👏','👏🏻','👏🏼','👏🏽','👏🏾','👏🏿','🙌','🙌🏻','🙌🏼','🙌🏽','🙌🏾','🙌🏿','🙏','🙏🏻','🙏🏼','🙏🏽','🙏🏾','🙏🏿','💪','💪🏻','💪🏼','💪🏽','💪🏾','💪🏿','🤝','🤝🏻','🤝🏼','🤝🏽','🤝🏾','🤝🏿','👀','🐶','🐱','🐼','🦊','🌸','🌳','☀️','🌈','🍎','🍕','🍔','🍟','🍜','🍰','☕','🧋','⚽','🏀','🎮','🎲','🎨','🎸','🎬','🏆','💻','📱','💡','📚','🔑','🎁','🚀','📷','❤️','💜','✅','❌','⚠️','⭐','🔥','🎉'],true)){
    if(!preg_match('/^custom:([a-f0-9]{32})$/',$emoji,$match)||!$c['server_id']||!one("SELECT 1 FROM media WHERE id=? AND server_id=? AND slot LIKE 'emoji:%'",[$match[1],$c['server_id']]))fail(400,'Choose a reaction from this server.');
   }
