@@ -8,34 +8,36 @@
   const key = 'm190.signal.lastCase';
   let current, stage = 1;
   const find = id => cases.find(c => c.id === id);
-  // Returning from the clue (or browser Back) preserves the trail.
-  // Explicit reload always starts a fresh case, even on a return URL.
-  if (!reload && params.get('trace') === '1') {
+  const sessionKey = 'm190.signal.active';
+  let active;
+  try { active = JSON.parse(sessionStorage.getItem(sessionKey) || 'null'); } catch (_) {}
+  // A chosen replay and explicit clue return are intentional navigation.
+  if (window.SignalProgress.read().includes(params.get('replay'))) {
+    current = find(params.get('replay'));
+  } else if (params.get('trace') === '1') {
     current = find(params.get('case'));
     if (current) stage = 2;
-  }
-  if (!reload && back && history.state && history.state.signalCase) {
+  } else if ((reload || back) && history.state && find(history.state.signalCase)) {
     current = find(history.state.signalCase);
     stage = history.state.signalStage === 2 ? 2 : 1;
+  } else if (active && find(active.id)) {
+    current = find(active.id);
+    stage = active.stage === 2 ? 2 : 1;
   }
   const remember = () => {
     try { localStorage.setItem(key, current.id); } catch (_) {}
+    try {
+      sessionStorage.setItem(sessionKey, JSON.stringify({id:current.id, stage}));
+      sessionStorage.setItem('m190.signal.invitationSeen', '1');
+    } catch (_) {}
     try { history.replaceState({signalCase:current.id, signalStage:stage}, '', location.pathname); } catch (_) {}
   };
-  const choose = () => {
-    let last = current && current.id;
-    if (!last && reload) last = (history.state && history.state.signalCase) || params.get('case');
-    if (!last) { try { last = localStorage.getItem(key); } catch (_) {} }
-    // URL also avoids an immediate repeat on reload if storage is blocked.
-    if (!last) last = params.get('case') || (history.state && history.state.signalCase);
+  if (!current) {
+    let last;
+    try { last = localStorage.getItem(key); } catch (_) {}
     const pool = cases.filter(c => c.id !== last);
     current = pool[Math.floor(Math.random() * pool.length)];
-    stage = 1;
-  };
-  if (!current && !reload && window.SignalProgress.read().includes(params.get('replay'))) {
-    current = find(params.get('replay'));
   }
-  if (!current) choose();
   const feedback = document.getElementById('feedback');
   const respond = (text, error = false) => { feedback.textContent = text; feedback.classList.toggle('error', error); };
   const render = (focus = false) => {
@@ -74,10 +76,10 @@
     window.location.assign('/signal/archive.html?recovered=1&case=' + current.id + '&saved=' + (saved ? '1' : '0'));
   });
   document.getElementById('reset').addEventListener('click', () => {
-    choose();
+    stage = 1;
     document.querySelectorAll('input').forEach(input => { input.value = ''; });
     document.querySelectorAll('details').forEach(detail => { detail.open = false; });
-    respond('New case selected.'); render(true);
+    respond('This case restarted.'); render(true);
   });
   render();
 })();
