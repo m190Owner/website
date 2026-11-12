@@ -32,6 +32,9 @@
     current = pool[Math.floor(Math.random() * pool.length)];
     stage = 1;
   };
+  if (!current && !reload && window.SignalProgress.read().includes(params.get('replay'))) {
+    current = find(params.get('replay'));
+  }
   if (!current) choose();
   const feedback = document.getElementById('feedback');
   const respond = (text, error = false) => { feedback.textContent = text; feedback.classList.toggle('error', error); };
@@ -67,7 +70,8 @@
   document.getElementById('trace-form').addEventListener('submit', event => {
     event.preventDefault();
     if (normalize(document.getElementById('trace-answer').value) !== current.callsign) return respond('That callsign does not match this case. Read the first letter of each field-note line.',true);
-    window.location.assign('/signal/archive.html?recovered=1&case=' + current.id);
+    const saved = window.SignalProgress.complete(current.id);
+    window.location.assign('/signal/archive.html?recovered=1&case=' + current.id + '&saved=' + (saved ? '1' : '0'));
   });
   document.getElementById('reset').addEventListener('click', () => {
     choose();
