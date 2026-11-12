@@ -26,7 +26,7 @@ try {
  migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();migrate_category_notification_mutes();migrate_everyone_alerts();migrate_empty_categories();migrate_category_identity();migrate_category_overrides();migrate_category_sync();migrate_category_collapse();migrate_server_layout();migrate_profile_notes();migrate_call_audio_state();migrate_pin_permission();migrate_thread_slowmode();migrate_thread_permission();migrate_thread_lifecycle();migrate_thread_auto_archive();migrate_thread_archive_default();migrate_thread_defaults();migrate_thread_creator();migrate_thread_membership();migrate_private_threads();migrate_thread_member_revision();migrate_private_thread_permission();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.134.0']);exit;}
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.135.0']);exit;}
  if(in_array($action,['register','login','recover'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
@@ -121,7 +121,8 @@ try {
  case 'delete':
   $id=positive_id($in['id']??null);rate('message-action:'.uid(),60,60);
   transaction(function()use($id){
-   $msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id'],true);$other=(int)$msg['user_id']!==uid();
+   $msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id']);$other=(int)$msg['user_id']!==uid();
+   if($c['server_id']){if(member($c['server_id'])['muted_until']>time())fail(403,'You cannot delete messages while timed out.');if($c['parent_id']&&($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time()))&&thread_message_locked($c))fail(403,'Only thread managers can delete messages in a locked archived thread.');}else channel($c['id'],true);
    if($other){if(!$c['server_id'])fail(403,'You can only change your own message.');require_permission($c['server_id'],'manage_messages');}
    sql("UPDATE messages SET deleted=1,body='' WHERE id=?",[$id]);sql('DELETE FROM attachments WHERE message_id=?',[$id]);sql('DELETE FROM notifications WHERE message_id=?',[$id]);
    if($other)hierarchy_audit($c['server_id'],'message-delete',(int)$msg['user_id'],'Message ['.$id.'] · Channel ['.$c['id'].'] · Server ['.$c['server_id'].']');
