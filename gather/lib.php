@@ -117,7 +117,7 @@ function migrate_status_expiry(): void {
  });
 }
 function custom_status(array $u): string {return $u['custom_status_expires_at']>0&&$u['custom_status_expires_at']<=time()?'':$u['custom_status'];}
-function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'bio'=>$u['bio'],'pronouns'=>$u['pronouns'],'presence'=>presence($u),'custom_status'=>custom_status($u),'last_seen'=>$u['status']==='invisible'?0:(int)$u['last_seen']];}
+function public_user(array $u): array {return ['id'=>(int)$u['id'],'username'=>$u['username'],'name'=>$u['name'],'avatar'=>$u['avatar'],'banner'=>$u['banner'],'accent_color'=>$u['accent_color']??'','bio'=>$u['bio'],'pronouns'=>$u['pronouns'],'presence'=>presence($u),'custom_status'=>custom_status($u),'last_seen'=>$u['status']==='invisible'?0:(int)$u['last_seen']];}
 function configuration(): array {global $privateDir;$p=$privateDir.'/config.php';return is_file($p)?require $p:[];}
 function relay_allowed(array $channel): void {
  if(getenv('GATHER_TEST')==='1')return;
@@ -178,10 +178,10 @@ function account_export(array $in): array {
   $cursor??=['section'=>'profile','after'=>'','through'=>(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE user_id=?',[uid()])->fetchColumn(),'part'=>1];
   $section=$cursor['section'];$after=$cursor['after'];$rows=[];$records=[];$more=false;$access=[];
   $visible=function($id)use(&$access){if(!array_key_exists($id,$access)){try{$access[$id]=channel($id);}catch(ApiError $e){if(!in_array($e->status,[403,404],true))throw $e;$access[$id]=null;}}return $access[$id];};
-  if($section==='profile')$records[]=['profile'=>array_intersect_key($user,array_flip(['id','username','name','created','avatar','banner','bio','pronouns'])),'preferences'=>array_intersect_key($user,array_flip(['status','custom_status','custom_status_expires_at']))];
+  if($section==='profile')$records[]=['profile'=>array_intersect_key($user,array_flip(['id','username','name','created','avatar','banner','bio','pronouns','accent_color'])),'preferences'=>array_intersect_key($user,array_flip(['status','custom_status','custom_status_expires_at']))];
   elseif($section==='servers'){
    $limit=$version>=3?1:50;
-   $rows=sql('SELECT s.id,s.name,m.role,m.nickname,m.server_bio,m.server_pronouns,m.server_avatar,m.server_banner FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=? AND s.id>? ORDER BY s.id LIMIT '.($limit+1),[uid(),$after])->fetchAll();$more=count($rows)>$limit;$rows=array_slice($rows,0,$limit);
+   $rows=sql('SELECT s.id,s.name,m.role,m.nickname,m.server_bio,m.server_pronouns,m.server_avatar,m.server_banner,m.server_accent_color FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=? AND s.id>? ORDER BY s.id LIMIT '.($limit+1),[uid(),$after])->fetchAll();$more=count($rows)>$limit;$rows=array_slice($rows,0,$limit);
    foreach($rows as $row){$row['notifications']=one('SELECT mode,suppress_roles,suppress_everyone FROM server_notification_preferences WHERE user_id=? AND server_id=?',[uid(),$row['id']]);$row['mute']=one('SELECT muted_until FROM server_notification_mutes WHERE user_id=? AND server_id=?',[uid(),$row['id']]);
     if($version>=3){
      $modes=array_column(sql('SELECT category,mode FROM category_notification_preferences WHERE user_id=? AND server_id=?',[uid(),$row['id']])->fetchAll(),'mode','category');

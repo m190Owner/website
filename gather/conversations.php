@@ -223,9 +223,9 @@ function conversation_actions(string $action,array $in): array {
    }return ['ok'=>true];});
  case 'thread_member_profile':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['parent_id']||!$c['server_id'])fail(400,'Choose a server thread.');$target=positive_id($in['user_id']??null);
-  $m=one('SELECT u.*,m.nickname,m.role,m.server_avatar,m.server_banner,m.server_bio,m.server_pronouns FROM thread_members t JOIN members m ON m.server_id=t.server_id AND m.user_id=t.user_id JOIN users u ON u.id=t.user_id WHERE t.channel_id=? AND t.server_id=? AND t.user_id=?',[$c['id'],$c['server_id'],$target]);
+  $m=one('SELECT u.*,m.nickname,m.role,m.server_avatar,m.server_banner,m.server_bio,m.server_pronouns,m.server_accent_color FROM thread_members t JOIN members m ON m.server_id=t.server_id AND m.user_id=t.user_id JOIN users u ON u.id=t.user_id WHERE t.channel_id=? AND t.server_id=? AND t.user_id=?',[$c['id'],$c['server_id'],$target]);
   if(!$m||blocked($target)||!can_view_as($c['id'],$target))fail(404,'This thread member is no longer available.');
-  foreach(['avatar','banner','bio','pronouns'] as $key)if($m['server_'.$key]!=='')$m[$key]=$m['server_'.$key];return ['member'=>public_user($m)+['nickname'=>$m['nickname'],'role'=>$m['role']]];
+  foreach(['avatar','banner','bio','pronouns','accent_color'] as $key)if($m['server_'.$key]!=='')$m[$key]=$m['server_'.$key];return ['member'=>public_user($m)+['nickname'=>$m['nickname'],'role'=>$m['role']]];
  case 'thread_members':
   $c=channel(text_field($in,'channel_id',32,32));if(!$c['parent_id']||!$c['server_id'])fail(400,'Choose a server thread.');$after=array_key_exists('after',$in)?$in['after']:0;if(!is_int($after)||$after<0||$after>9007199254740991)fail(400,'Invalid cursor.');
   $rows=sql("SELECT u.id,u.username,u.name,COALESCE(NULLIF(m.server_avatar,''),u.avatar) AS avatar,m.nickname,t.joined FROM thread_members t JOIN members m ON m.server_id=t.server_id AND m.user_id=t.user_id JOIN users u ON u.id=t.user_id WHERE t.channel_id=? AND t.server_id=? AND u.id>? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=u.id) OR (b.target=? AND b.user_id=u.id)) ORDER BY u.id LIMIT 51",[$c['id'],$c['server_id'],$after,uid(),uid()])->fetchAll();
