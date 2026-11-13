@@ -35,6 +35,14 @@ function migrate_sessions(): void {
   $db->exec('CREATE UNIQUE INDEX sessions_public_id ON sessions(public_id); PRAGMA user_version=12;');
  });
 }
+function migrate_session_devices(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=48)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=48)return;$db->exec("ALTER TABLE sessions ADD COLUMN device_label TEXT NOT NULL DEFAULT ''; PRAGMA user_version=48;");});
+}
+function session_device_label(array $in): string {
+ if(!array_key_exists('device_label',$in))return '';
+ $label=text_field($in,'device_label',1,80);if(preg_match('/[\x00-\x1F\x7F-\x9F\x{202A}-\x{202E}\x{2066}-\x{2069}]/u',$in['device_label']))fail(400,'Invalid device label.');return $label;
+}
 function session_actions(string $action,array $in): array {
  global $tokenHash;
  if($action==='session_list'){
@@ -52,9 +60,11 @@ function session_actions(string $action,array $in): array {
   refresh_presence(uid());return ['ok'=>true,'revoked'=>$deleted];
  });
 }
-function session_for(int $id): string {
+function session_for(int $id,string $deviceLabel=''): string {
  $token=bin2hex(random_bytes(32));sql('DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT hash FROM sessions WHERE user_id=? ORDER BY expires DESC LIMIT 4)',[$id,$id]);
- sql('INSERT INTO sessions(hash,user_id,expires,public_id,created) VALUES(?,?,?,?,?)',[hash('sha256',$token),$id,time()+30*86400,random_id(),time()]);return $token;
+ sql('INSERT INTO sessions(hash,user_id,expires,public_id,created) VALUES(?,?,?,?,?)',[hash('sha256',$token),$id,time()+30*86400,random_id(),time()]);
+ // Omitted labels keep older API callers compatible during the staged migration.
+ if($deviceLabel!=='')sql('UPDATE sessions SET device_label=? WHERE hash=?',[$deviceLabel,hash('sha256',$token)]);return $token;
 }
 function migrate_status_expiry(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=13)return;
