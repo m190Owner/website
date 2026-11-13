@@ -49,6 +49,16 @@ function session_actions(string $action,array $in): array {
   $rows=sql('SELECT public_id AS id,device_label,created,seen,expires,hash=? AS current FROM sessions WHERE user_id=? AND expires>? ORDER BY current DESC,created DESC,public_id',[$tokenHash,uid(),time()])->fetchAll();
   foreach($rows as &$row)$row['current']=(bool)$row['current'];return ['sessions'=>$rows];
  }
+ if($action==='session_label'){
+  if(array_diff(array_keys($in),['action','session_id','device_label','expected_label'])||!array_key_exists('device_label',$in))fail(400,'Invalid session label request.');
+  $id=$in['session_id']??null;$expected=$in['expected_label']??null;if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/',$id)||!is_string($expected)||strlen($expected)>320)fail(400,'Choose a session and its current label.');
+  $label=$in['device_label']===''?'':session_device_label($in);
+  return transaction(function()use($id,$label,$expected,$tokenHash){
+   $now=time();if(!one('SELECT 1 FROM sessions WHERE hash=? AND user_id=? AND expires>?',[$tokenHash,uid(),$now]))fail(401,'Session expired. Please sign in.');
+   $target=one('SELECT device_label FROM sessions WHERE public_id=? AND user_id=? AND expires>?',[$id,uid(),$now]);if(!$target)fail(404,'Session is no longer available.');if($target['device_label']!==$expected)fail(409,'The device name changed. Refresh sessions before editing it.');
+   sql('UPDATE sessions SET device_label=? WHERE public_id=? AND user_id=?',[$label,$id,uid()]);return ['ok'=>true];
+  });
+ }
  $all=array_key_exists('all_others',$in)?$in['all_others']:false;$id=$in['session_id']??null;
  if(!is_bool($all)||($all&&array_key_exists('session_id',$in))||(!$all&&(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/',$id))))fail(400,'Choose a session or all other sessions.');
  rate('session-revoke:'.uid(),10,60);
