@@ -119,3 +119,41 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  $roleNames=array_column(sql('SELECT r.id,r.name FROM roles r JOIN channels c ON c.server_id=r.server_id WHERE c.id=?',[$cid])->fetchAll(),'name','id');
  foreach($messages as &$m){$m['preview']=role_preview($m['body'],$roleNames);$m['role_mentions']=[];foreach(mention_roles($m['body']) as $role)$m['role_mentions'][]=['id'=>$role,'name'=>$roleNames[$role]??'Deleted role'];$m['reactions']=sql('SELECT emoji,count(*) AS count,max(CASE WHEN user_id=? THEN 1 ELSE 0 END) AS selected FROM reactions WHERE message_id=? GROUP BY emoji ORDER BY min(rowid)',[uid(),$m['id']])->fetchAll();$m['attachments']=sql('SELECT id,name,size FROM attachments WHERE message_id=?',[$m['id']])->fetchAll();$m['reply']=$m['reply_to']?one('SELECT m.id,u.name,substr(m.body,1,180) AS body,m.body AS preview FROM messages m JOIN users u ON u.id=m.user_id WHERE m.id=? AND m.channel_id=? AND m.deleted=0',[$m['reply_to'],$cid]):null;if($m['reply'])$m['reply']['preview']=role_preview($m['reply']['preview'],$roleNames);$m['thread']=one('SELECT id,name,archived FROM channels WHERE root_message=?',[$m['id']]);}unset($m);return $messages;
 }
+
+function migrate_account_export(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=49)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=49)return;$db->exec('CREATE INDEX messages_export ON messages(user_id,id); PRAGMA user_version=49;');});
+}
+function account_export(array $in): array {
+ global $user,$db,$tokenHash;
+ if(array_diff(array_keys($in),['action','export_id','cursor']))fail(400,'Invalid export request.');
+ $export=$in['export_id']??null;if(!is_string($export)||!preg_match('/^[a-f0-9]{32}$/D',$export))fail(400,'Invalid export ID.');
+ $cursor=$in['cursor']??null;$phases=['profile','servers','channels','messages'];
+ if($cursor!==null){if(!is_array($cursor)||array_diff(array_keys($cursor),['section','after','through','part'])||count($cursor)!==4||!in_array($cursor['section']??null,$phases,true)||!is_int($cursor['through']??null)||$cursor['through']<0||$cursor['through']>9007199254740991||!is_int($cursor['part']??null)||$cursor['part']<1||$cursor['part']>999999)fail(400,'Invalid export cursor.');
+  if($cursor['section']==='messages'){if(!is_int($cursor['after'])||$cursor['after']<0||$cursor['after']>$cursor['through'])fail(400,'Invalid export cursor.');}elseif(!is_string($cursor['after'])||!preg_match('/^(?:[a-f0-9]{32})?$/D',$cursor['after']))fail(400,'Invalid export cursor.');
+ }
+ rate('account-export:'.uid(),40,60);
+ // Each part is a bounded read snapshot; access is checked again for every later part.
+ $db->beginTransaction();try{
+  if(!one('SELECT 1 FROM sessions WHERE user_id=? AND hash=? AND expires>?',[uid(),$tokenHash,time()]))fail(401,'Session expired. Please sign in.');
+  $cursor??=['section'=>'profile','after'=>'','through'=>(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE user_id=?',[uid()])->fetchColumn(),'part'=>1];
+  $section=$cursor['section'];$after=$cursor['after'];$rows=[];$records=[];$more=false;$access=[];
+  $visible=function($id)use(&$access){if(!array_key_exists($id,$access)){try{$access[$id]=channel($id);}catch(ApiError $e){if(!in_array($e->status,[403,404],true))throw $e;$access[$id]=null;}}return $access[$id];};
+  if($section==='profile')$records[]=['profile'=>array_intersect_key($user,array_flip(['id','username','name','created','avatar','banner','bio','pronouns'])),'preferences'=>array_intersect_key($user,array_flip(['status','custom_status','custom_status_expires_at']))];
+  elseif($section==='servers'){
+   $rows=sql('SELECT s.id,s.name,m.role,m.nickname,m.server_bio,m.server_pronouns,m.server_avatar,m.server_banner FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=? AND s.id>? ORDER BY s.id LIMIT 51',[uid(),$after])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
+   foreach($rows as $row){$row['notifications']=one('SELECT mode,suppress_roles,suppress_everyone FROM server_notification_preferences WHERE user_id=? AND server_id=?',[uid(),$row['id']]);$row['mute']=one('SELECT muted_until FROM server_notification_mutes WHERE user_id=? AND server_id=?',[uid(),$row['id']]);$records[]=$row;}
+  }elseif($section==='channels'){
+   $rows=sql('SELECT c.id FROM channels c WHERE c.id>? AND (EXISTS(SELECT 1 FROM members m WHERE m.server_id=c.server_id AND m.user_id=?) OR EXISTS(SELECT 1 FROM channel_members cm WHERE cm.channel_id=c.id AND cm.user_id=?)) ORDER BY c.id LIMIT 51',[$after,uid(),uid()])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
+   foreach($rows as $row){$c=$visible($row['id']);if(!$c)continue;$item=array_intersect_key($c,array_flip(['id','server_id','name','kind','parent_id','category']));$item['notifications']=one('SELECT mode FROM notification_preferences WHERE user_id=? AND channel_id=?',[uid(),$c['id']]);$item['mute']=one('SELECT muted_until FROM notification_mutes WHERE user_id=? AND channel_id=?',[uid(),$c['id']]);if($c['server_id']){$item['category_notifications']=one('SELECT mode FROM category_notification_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$c['server_id'],$c['category']]);$item['category_mute']=one('SELECT muted_until FROM category_notification_mutes WHERE user_id=? AND server_id=? AND category=?',[uid(),$c['server_id'],$c['category']]);$item['category_collapse']=one('SELECT collapsed FROM category_collapse_preferences WHERE user_id=? AND server_id=? AND category=?',[uid(),$c['server_id'],$c['category']]);}$records[]=$item;}
+  }else{
+   $rows=sql("SELECT id,channel_id,body,created,edited,pinned,reply_to,deleted,system_type FROM messages WHERE user_id=? AND id>? AND id<=? ORDER BY id LIMIT 51",[uid(),$after,$cursor['through']])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
+   foreach($rows as $row){if($row['deleted']||$row['system_type']!==''||!$visible($row['channel_id']))continue;unset($row['deleted'],$row['system_type']);$row['attachments']=sql('SELECT id,name,size FROM attachments WHERE message_id=? AND channel_id=? AND user_id=? ORDER BY rowid LIMIT 3',[$row['id'],$row['channel_id'],uid()])->fetchAll();$records[]=$row;}
+  }
+  if($cursor['part']>=999999)fail(413,'Export part limit reached.');
+  if($more)$next=[...$cursor,'after'=>end($rows)['id'],'part'=>$cursor['part']+1];else{$position=array_search($section,$phases,true)+1;$next=$position<count($phases)?['section'=>$phases[$position],'after'=>$phases[$position]==='messages'?0:'','through'=>$cursor['through'],'part'=>$cursor['part']+1]:null;}
+  $document=['format'=>'gather-account-export','version'=>1,'export_id'=>$export,'part'=>$cursor['part'],'section'=>$section,'account_id'=>uid(),'exported_at'=>gmdate('c'),'scope'=>'Profile/status, current memberships/profile overrides, accessible channel/category notification preferences, and your non-deleted authored messages up to the initial message ID. Each part is a separate read snapshot; earlier saved files cannot be revoked.','omissions'=>['Credentials and sessions','Other authors and system notices','Inaccessible/deleted content','Image/file contents','Device-local settings, server layout, empty-category preferences, relationships, reactions and private notes'],'message_ceiling'=>$cursor['through'],'records'=>$records,'next'=>$next];
+  $json=json_encode($document,JSON_THROW_ON_ERROR|JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);if(strlen($json)>4194304)fail(413,'Export part is too large.');$db->commit();
+  return ['export_id'=>$export,'section'=>$section,'records'=>count($records),'next'=>$next,'file'=>['name'=>'gather-export-'.$export.'-'.$cursor['part'].'.json','data'=>base64_encode($json),'size'=>strlen($json),'sha256'=>hash('sha256',$json)]];
+ }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
+}
