@@ -46,7 +46,7 @@ function session_device_label(array $in): string {
 function session_actions(string $action,array $in): array {
  global $tokenHash;
  if($action==='session_list'){
-  $rows=sql('SELECT public_id AS id,created,seen,expires,hash=? AS current FROM sessions WHERE user_id=? AND expires>? ORDER BY current DESC,created DESC,public_id',[$tokenHash,uid(),time()])->fetchAll();
+  $rows=sql('SELECT public_id AS id,device_label,created,seen,expires,hash=? AS current FROM sessions WHERE user_id=? AND expires>? ORDER BY current DESC,created DESC,public_id',[$tokenHash,uid(),time()])->fetchAll();
   foreach($rows as &$row)$row['current']=(bool)$row['current'];return ['sessions'=>$rows];
  }
  $all=array_key_exists('all_others',$in)?$in['all_others']:false;$id=$in['session_id']??null;
