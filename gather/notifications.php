@@ -214,6 +214,10 @@ function notification_actions(string $action,array $in): array {
    $c=reaction_channel($id);if(!$c['server_id'])fail(403,'Reaction moderation is only available in servers.');require_permission($c['server_id'],'manage_messages');
    $query='DELETE FROM reactions WHERE message_id=?';$args=[$id];if($scope!=='all'){$query.=' AND emoji=?';$args[]=$emoji;}if($scope==='user'){$query.=' AND user_id=?';$args[]=$target;}sql($query,$args);return ['ok'=>true];
   });
+ case 'pin_list':
+  $cid=text_field($in,'channel_id',32,32);channel($cid);$where='m.channel_id=? AND m.pinned=1 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE b.user_id=? AND b.target=m.user_id)';$args=[$cid,uid()];
+  if(array_key_exists('before',$in)){$cursor=$in['before'];if(!is_array($cursor)||count($cursor)!==2||!array_key_exists('at',$cursor)||!array_key_exists('id',$cursor)||!is_int($cursor['at'])||$cursor['at']<0||$cursor['at']>8640000000000000)fail(400,'Invalid pin cursor.');$id=positive_id($cursor['id']);$where.=' AND (m.pinned_at<? OR (m.pinned_at=? AND m.id<?))';array_push($args,$cursor['at'],$cursor['at'],$id);}
+  $rows=sql("SELECT m.id,m.user_id,substr(m.body,1,300) AS body,m.created,m.pinned_at,u.name,u.username,(SELECT count(*) FROM attachments a WHERE a.message_id=m.id) AS attachments FROM messages m JOIN users u ON u.id=m.user_id WHERE $where ORDER BY m.pinned_at DESC,m.id DESC LIMIT 51",$args)->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);$last=end($rows);return ['pins'=>$rows,'next'=>$more?['at'=>(int)$last['pinned_at'],'id'=>(int)$last['id']]:null];
  case 'reaction_members':
   $id=positive_id($in['message_id']??null);$emoji=text_field($in,'emoji',1,50);if(strlen($emoji)>50)fail(400,'Invalid reaction.');$after=$in['after']??0;if(!is_int($after)||$after<0||$after>9007199254740991)fail(400,'Invalid cursor.');
   $m=one('SELECT channel_id,user_id FROM messages WHERE id=? AND deleted=0',[$id]);if(!$m)fail(404,'Message no longer available.');$c=channel($m['channel_id']);if(blocked((int)$m['user_id']))fail(403,'This message is unavailable.');
