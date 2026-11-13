@@ -23,11 +23,11 @@ try {
  $db=new PDO('sqlite:'.$privateDir.'/gather.sqlite',null,null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
  $db->exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;');
  if((int)$db->query('PRAGMA user_version')->fetchColumn()===0)$db->exec(file_get_contents(__DIR__.'/schema.sql'));
- migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();migrate_category_notification_mutes();migrate_everyone_alerts();migrate_empty_categories();migrate_category_identity();migrate_category_overrides();migrate_category_sync();migrate_category_collapse();migrate_server_layout();migrate_profile_notes();migrate_call_audio_state();migrate_pin_permission();migrate_thread_slowmode();migrate_thread_permission();migrate_thread_lifecycle();migrate_thread_auto_archive();migrate_thread_archive_default();migrate_thread_defaults();migrate_thread_creator();migrate_thread_membership();migrate_private_threads();migrate_thread_member_revision();migrate_private_thread_permission();migrate_audit_actor_index();migrate_pin_timestamps();migrate_system_messages();migrate_session_devices();migrate_account_export();migrate_social_export();
+ migrate_customization();migrate_community();migrate_conversations();migrate_notifications();migrate_presence();migrate_navigation();migrate_hierarchy();migrate_moderation_history();migrate_moderation_permissions();migrate_automatic_presence();migrate_sessions();migrate_status_expiry();migrate_server_profiles();migrate_server_avatars();migrate_server_profile_details();migrate_notification_preferences();migrate_server_notifications();migrate_notification_mutes();migrate_server_notification_mutes();migrate_category_notifications();migrate_role_alerts();migrate_category_notification_mutes();migrate_everyone_alerts();migrate_empty_categories();migrate_category_identity();migrate_category_overrides();migrate_category_sync();migrate_category_collapse();migrate_server_layout();migrate_profile_notes();migrate_call_audio_state();migrate_pin_permission();migrate_thread_slowmode();migrate_thread_permission();migrate_thread_lifecycle();migrate_thread_auto_archive();migrate_thread_archive_default();migrate_thread_defaults();migrate_thread_creator();migrate_thread_membership();migrate_private_threads();migrate_thread_member_revision();migrate_private_thread_permission();migrate_audit_actor_index();migrate_pin_timestamps();migrate_system_messages();migrate_session_devices();migrate_account_export();migrate_social_export();migrate_account_disable();
  $ip=$_SERVER['REMOTE_ADDR']??'unknown';
  if(random_int(1,100)===1){sql('DELETE FROM sessions WHERE expires<?',[time()]);sql('DELETE FROM signals WHERE created<?',[time()-180]);sql('DELETE FROM calls WHERE seen<?',[time()-45]);sql('DELETE FROM limits WHERE window<?',[time()-172800]);sql('DELETE FROM typing WHERE seen<?',[time()-30]);}
- if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.156.0']);exit;}
- if(in_array($action,['register','login','recover'],true)){
+ if($action==='health'){echo json_encode(['ok'=>true,'version'=>'0.157.0']);exit;}
+ if(in_array($action,['register','login','recover','reactivate'],true)){
   rate('auth-ip:'.$ip,30,600);$username=strtolower(text_field($in,'username',3,24));if(!preg_match('/^[a-z0-9_]+$/',$username))fail(400,'Username may contain letters, numbers and underscores.');rate('auth-name:'.$username,15,600);
   $password=$in['password']??'';if(!is_string($password)||strlen($password)<12||strlen($password)>128)fail(400,'Use a password of 12–128 bytes.');
   $deviceLabel=session_device_label($in);
@@ -35,16 +35,29 @@ try {
    rate('signup:'.$ip,5,3600);$name=text_field($in,'name',1,32);$recovery=bin2hex(random_bytes(20));
    $result=transaction(function()use($username,$password,$name,$recovery,$deviceLabel){if(one('SELECT 1 FROM users WHERE username=?',[$username]))fail(409,'Username unavailable.');sql('INSERT INTO users(username,name,password,recovery,created) VALUES(?,?,?,?,?)',[$username,$name,password_hash($password,PASSWORD_DEFAULT),hash('sha256',$recovery),time()]);global $db;$id=(int)$db->lastInsertId();return ['token'=>session_for($id,$deviceLabel),'recovery'=>$recovery,'user'=>['id'=>$id,'username'=>$username,'name'=>$name]];});
   }else{
-   $u=one('SELECT * FROM users WHERE username=?',[$username]);
-   if($action==='recover'){$code=$in['recovery']??'';if(!$u||!is_string($code)||!hash_equals($u['recovery'],hash('sha256',$code)))fail(401,'Invalid username or recovery code.');$newRecovery=bin2hex(random_bytes(20));transaction(function()use($password,$newRecovery,$u){sql('UPDATE users SET password=?,recovery=? WHERE id=?',[password_hash($password,PASSWORD_DEFAULT),hash('sha256',$newRecovery),$u['id']]);sql('DELETE FROM sessions WHERE user_id=?',[$u['id']]);});$result=['token'=>session_for((int)$u['id'],$deviceLabel),'recovery'=>$newRecovery,'user'=>public_user($u)];}
-   else{if(!$u||!password_verify($password,$u['password']))fail(401,'Invalid username or password.');$result=['token'=>session_for((int)$u['id'],$deviceLabel),'user'=>public_user($u)];}
+   $result=transaction(function()use($action,$username,$password,$deviceLabel,$in){
+    $u=one('SELECT * FROM users WHERE username=?',[$username]);$code=$in['recovery']??'';
+    $withRecovery=$action==='recover'||($action==='reactivate'&&$code!=='');
+    if($withRecovery){if(!$u||!is_string($code)||!hash_equals($u['recovery'],hash('sha256',$code)))fail(401,'Invalid username or recovery code.');}
+    elseif(!$u||!password_verify($password,$u['password']))fail(401,'Invalid username or password.');
+    if($action==='reactivate'){
+     if(($in['confirmation']??null)!=='RESTORE')fail(400,'Confirm that you want to restore your account.');
+     if(!$u['disabled_at'])fail(409,'This account is active. Sign in normally.');
+     sql('UPDATE users SET disabled_at=0 WHERE id=?',[$u['id']]);
+    }elseif($u['disabled_at'])fail(409,'This account is disabled. Choose Restore account in Gather 0.157.0 or newer.');
+    $result=[];
+    if($withRecovery){$newRecovery=bin2hex(random_bytes(20));sql('UPDATE users SET password=?,recovery=? WHERE id=?',[password_hash($password,PASSWORD_DEFAULT),hash('sha256',$newRecovery),$u['id']]);sql('DELETE FROM sessions WHERE user_id=?',[$u['id']]);$result['recovery']=$newRecovery;}
+    return $result+['token'=>session_for((int)$u['id'],$deviceLabel),'user'=>public_user($u)];
+   });
   }echo json_encode($result,JSON_THROW_ON_ERROR);exit;
  }
  $authorization=$_SERVER['HTTP_AUTHORIZATION']??$_SERVER['REDIRECT_HTTP_AUTHORIZATION']??'';
  if(!preg_match('/^Bearer ([a-f0-9]{64})$/',$authorization,$match))fail(401,'Please sign in.');$tokenHash=hash('sha256',$match[1]);
- $user=one('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.hash=? AND s.expires>?',[$tokenHash,time()]);if(!$user)fail(401,'Session expired. Please sign in.');
+ $user=one('SELECT u.* FROM users u JOIN sessions s ON s.user_id=u.id WHERE s.hash=? AND s.expires>? AND u.disabled_at=0',[$tokenHash,time()]);if(!$user)fail(401,'Session expired. Please sign in.');
+ $authenticated=true;
  rate('requests:'.uid(),240,60);archive_due_threads(is_string($in['channel_id']??null)?$in['channel_id']:null);$result=['ok'=>true];
  switch($action){
+ case 'account_disable':$result=disable_account($in);break;
  case 'account_export':$result=account_export($in);break;
  case 'session_list':case 'session_label':case 'session_revoke':$result=session_actions($action,$in);break;
  case 'category_notification_preference':case 'server_notification_preference':case 'notification_preference':case 'inbox':case 'inbox_read':case 'mention_members':case 'pin_list':case 'reaction_remove':case 'reaction_members':case 'message_context':$result=notification_actions($action,$in);break;
