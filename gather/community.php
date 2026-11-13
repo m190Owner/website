@@ -171,6 +171,10 @@ function migrate_moderation_permissions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=10)return;foreach(sql('SELECT id,permissions FROM roles')->fetchAll() as $role){$old=json_decode($role['permissions'],true);$next=expand_moderation($old);if($old!==$next)sql('UPDATE roles SET permissions=? WHERE id=?',[json_encode($next),$role['id']]);}$db->exec('PRAGMA user_version=10;');});
 }
+function migrate_system_messages(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=47)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=47)return;$db->exec("ALTER TABLE messages ADD COLUMN system_type TEXT NOT NULL DEFAULT ''; ALTER TABLE messages ADD COLUMN system_target INTEGER; PRAGMA user_version=47;");});
+}
 function migrate_pin_timestamps(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=46)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=46)return;$db->exec('ALTER TABLE messages ADD COLUMN pinned_at INTEGER NOT NULL DEFAULT 0; CREATE INDEX messages_pin_order ON messages(channel_id,pinned_at DESC,id DESC) WHERE pinned=1 AND deleted=0; PRAGMA user_version=46;');});
