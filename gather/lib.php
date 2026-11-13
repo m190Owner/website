@@ -32,6 +32,14 @@ function migrate_account_disable(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=51)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=51)return;$db->exec('ALTER TABLE users ADD COLUMN disabled_at INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=51;');});
 }
+function replace_recovery_code(array $in): array {
+ if(array_diff(array_keys($in),['action','password','confirmation'])||($in['confirmation']??null)!=='REPLACE')fail(400,'Confirm replacement of your recovery code.');
+ $password=$in['password']??null;if(!is_string($password)||strlen($password)>128)fail(400,'Enter your current password.');rate('recovery-replace:'.uid(),5,600);
+ return transaction(function()use($password){
+  $current=one('SELECT password FROM users WHERE id=?',[uid()]);if(!password_verify($password,$current['password']))fail(403,'Current password is incorrect.');
+  $code=bin2hex(random_bytes(20));sql('UPDATE users SET recovery=? WHERE id=?',[hash('sha256',$code),uid()]);return ['recovery'=>$code];
+ });
+}
 function disable_account(array $in): array {
  if(array_diff(array_keys($in),['action','password','confirmation'])||($in['confirmation']??null)!=='DISABLE')fail(400,'Type DISABLE to confirm.');
  $password=$in['password']??null;if(!is_string($password)||strlen($password)>128)fail(400,'Enter your current password.');rate('account-disable:'.uid(),5,600);
