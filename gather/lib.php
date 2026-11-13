@@ -124,14 +124,18 @@ function migrate_account_export(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=49)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=49)return;$db->exec('CREATE INDEX messages_export ON messages(user_id,id); PRAGMA user_version=49;');});
 }
+function migrate_social_export(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=50)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=50)return;$db->exec('CREATE INDEX friendships_export_recipient ON friendships(b,a); CREATE INDEX reactions_export_author ON reactions(user_id); PRAGMA user_version=50;');});
+}
 function account_export(array $in): array {
  global $user,$db,$tokenHash;
  if(array_diff(array_keys($in),['action','export_id','cursor','format_version']))fail(400,'Invalid export request.');
  $export=$in['export_id']??null;if(!is_string($export)||!preg_match('/^[a-f0-9]{32}$/D',$export))fail(400,'Invalid export ID.');
- $version=array_key_exists('format_version',$in)?$in['format_version']:1;if(!is_int($version)||!in_array($version,[1,2,3],true))fail(400,'Unsupported export format.');
- $cursor=$in['cursor']??null;$phases=$version>=2?['profile','servers','channels','layout','notes','messages']:['profile','servers','channels','messages'];
+ $version=array_key_exists('format_version',$in)?$in['format_version']:1;if(!is_int($version)||!in_array($version,[1,2,3,4],true))fail(400,'Unsupported export format.');
+ $cursor=$in['cursor']??null;$phases=$version===4?['profile','servers','channels','layout','notes','friends','blocks','reactions','messages']:($version>=2?['profile','servers','channels','layout','notes','messages']:['profile','servers','channels','messages']);
  if($cursor!==null){if(!is_array($cursor)||array_diff(array_keys($cursor),['section','after','through','part'])||count($cursor)!==4||!in_array($cursor['section']??null,$phases,true)||!is_int($cursor['through']??null)||$cursor['through']<0||$cursor['through']>9007199254740991||!is_int($cursor['part']??null)||$cursor['part']<1||$cursor['part']>999999)fail(400,'Invalid export cursor.');
-  if(in_array($cursor['section'],['messages','notes'],true)){if(!is_int($cursor['after'])||$cursor['after']<0||$cursor['after']>($cursor['section']==='messages'?$cursor['through']:9007199254740991))fail(400,'Invalid export cursor.');}elseif(!is_string($cursor['after'])||!preg_match('/^(?:[a-f0-9]{32})?$/D',$cursor['after']))fail(400,'Invalid export cursor.');
+  if(in_array($cursor['section'],['messages','notes','friends','blocks','reactions'],true)){if(!is_int($cursor['after'])||$cursor['after']<0||$cursor['after']>($cursor['section']==='messages'?$cursor['through']:9007199254740991))fail(400,'Invalid export cursor.');}elseif(!is_string($cursor['after'])||!preg_match('/^(?:[a-f0-9]{32})?$/D',$cursor['after']))fail(400,'Invalid export cursor.');
  }
  rate('account-export:'.uid(),40,60);
  // Each part is a bounded read snapshot; access is checked again for every later part.
@@ -142,10 +146,10 @@ function account_export(array $in): array {
   $visible=function($id)use(&$access){if(!array_key_exists($id,$access)){try{$access[$id]=channel($id);}catch(ApiError $e){if(!in_array($e->status,[403,404],true))throw $e;$access[$id]=null;}}return $access[$id];};
   if($section==='profile')$records[]=['profile'=>array_intersect_key($user,array_flip(['id','username','name','created','avatar','banner','bio','pronouns'])),'preferences'=>array_intersect_key($user,array_flip(['status','custom_status','custom_status_expires_at']))];
   elseif($section==='servers'){
-   $limit=$version===3?1:50;
+   $limit=$version>=3?1:50;
    $rows=sql('SELECT s.id,s.name,m.role,m.nickname,m.server_bio,m.server_pronouns,m.server_avatar,m.server_banner FROM members m JOIN servers s ON s.id=m.server_id WHERE m.user_id=? AND s.id>? ORDER BY s.id LIMIT '.($limit+1),[uid(),$after])->fetchAll();$more=count($rows)>$limit;$rows=array_slice($rows,0,$limit);
    foreach($rows as $row){$row['notifications']=one('SELECT mode,suppress_roles,suppress_everyone FROM server_notification_preferences WHERE user_id=? AND server_id=?',[uid(),$row['id']]);$row['mute']=one('SELECT muted_until FROM server_notification_mutes WHERE user_id=? AND server_id=?',[uid(),$row['id']]);
-    if($version===3){
+    if($version>=3){
      $modes=array_column(sql('SELECT category,mode FROM category_notification_preferences WHERE user_id=? AND server_id=?',[uid(),$row['id']])->fetchAll(),'mode','category');
      $mutes=array_column(sql('SELECT category,muted_until,revision,silent_through FROM category_notification_mutes WHERE user_id=? AND server_id=?',[uid(),$row['id']])->fetchAll(),null,'category');
      $collapse=array_column(sql('SELECT category,collapsed,revision FROM category_collapse_preferences WHERE user_id=? AND server_id=?',[uid(),$row['id']])->fetchAll(),null,'category');
@@ -160,13 +164,23 @@ function account_export(array $in): array {
   }elseif($section==='notes'){
    $rows=sql('SELECT target_id AS id,note,revision FROM profile_notes WHERE user_id=? AND target_id>? ORDER BY target_id LIMIT 51',[uid(),$after])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
    foreach($rows as $row){try{require_note_target((int)$row['id']);}catch(ApiError $e){if(!in_array($e->status,[403,404],true))throw $e;continue;}$records[]=['target_id'=>(int)$row['id'],'note'=>$row['note'],'revision'=>(int)$row['revision']];}
+  }elseif($section==='friends'){
+   $rows=sql('SELECT b AS id,sender,accepted FROM friendships WHERE a=? AND b>? UNION ALL SELECT a AS id,sender,accepted FROM friendships WHERE b=? AND a>? ORDER BY id LIMIT 51',[uid(),$after,uid(),$after])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
+   foreach($rows as $row)if(one('SELECT 1 FROM users WHERE id=?',[$row['id']])&&!blocked((int)$row['id']))$records[]=['target_id'=>(int)$row['id'],'state'=>$row['accepted']?'friend':((int)$row['sender']===uid()?'outgoing':'incoming')];
+  }elseif($section==='blocks'){
+   $rows=sql('SELECT target AS id FROM blocks WHERE user_id=? AND target>? ORDER BY target LIMIT 51',[uid(),$after])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
+   foreach($rows as $row)if(one('SELECT 1 FROM users WHERE id=?',[$row['id']]))$records[]=['target_id'=>(int)$row['id'],'state'=>'blocked'];
+  }elseif($section==='reactions'){
+   // Reaction row IDs paginate live snapshots; additions/removals between parts can change later output.
+   $rows=sql('SELECT rowid AS id,message_id,emoji FROM reactions WHERE user_id=? AND rowid>? ORDER BY rowid LIMIT 51',[uid(),$after])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
+   foreach($rows as $row){$m=one('SELECT channel_id,user_id FROM messages WHERE id=? AND deleted=0',[$row['message_id']]);if(!$m||blocked((int)$m['user_id']))continue;$c=$visible($m['channel_id']);if(!$c)continue;if(!$c['server_id']&&$c['pair_key']){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>? LIMIT 1',[$c['id'],uid()])->fetchColumn();if(blocked($other))continue;}$records[]=['message_id'=>(int)$row['message_id'],'channel_id'=>$m['channel_id'],'emoji'=>$row['emoji']];}
   }else{
    $rows=sql("SELECT id,channel_id,body,created,edited,pinned,reply_to,deleted,system_type FROM messages WHERE user_id=? AND id>? AND id<=? ORDER BY id LIMIT 51",[uid(),$after,$cursor['through']])->fetchAll();$more=count($rows)>50;$rows=array_slice($rows,0,50);
    foreach($rows as $row){if($row['deleted']||$row['system_type']!==''||!$visible($row['channel_id']))continue;unset($row['deleted'],$row['system_type']);$row['attachments']=sql('SELECT id,name,size FROM attachments WHERE message_id=? AND channel_id=? AND user_id=? ORDER BY rowid LIMIT 3',[$row['id'],$row['channel_id'],uid()])->fetchAll();$records[]=$row;}
   }
   if($cursor['part']>=999999)fail(413,'Export part limit reached.');
-  if($more)$next=[...$cursor,'after'=>end($rows)['id'],'part'=>$cursor['part']+1];else{$position=array_search($section,$phases,true)+1;$next=$position<count($phases)?['section'=>$phases[$position],'after'=>in_array($phases[$position],['messages','notes'],true)?0:'','through'=>$cursor['through'],'part'=>$cursor['part']+1]:null;}
-  $document=['format'=>'gather-account-export','version'=>$version,'export_id'=>$export,'part'=>$cursor['part'],'section'=>$section,'account_id'=>uid(),'exported_at'=>gmdate('c'),'scope'=>($version===3?'Visible category preferences, including empty categories. ':'').($version>=2?'Saved server layout and private notes for currently accessible people. Reference only; Gather cannot import this archive. ':'').'Profile/status, current memberships/profile overrides, accessible channel/category notification preferences, and your non-deleted authored messages up to the initial message ID. Each part is a separate read snapshot; earlier saved files cannot be revoked.','omissions'=>['Credentials and sessions','Other authors and system notices','Inaccessible/deleted content','Image/file contents',$version>=2?($version===3?'Device-local settings, relationships and reactions':'Device-local settings, empty-category preferences, relationships and reactions'):'Device-local settings, server layout, empty-category preferences, relationships, reactions and private notes'],'message_ceiling'=>$cursor['through'],'records'=>$records,'next'=>$next];
+  if($more)$next=[...$cursor,'after'=>end($rows)['id'],'part'=>$cursor['part']+1];else{$position=array_search($section,$phases,true)+1;$next=$position<count($phases)?['section'=>$phases[$position],'after'=>in_array($phases[$position],['messages','notes','friends','blocks','reactions'],true)?0:'','through'=>$cursor['through'],'part'=>$cursor['part']+1]:null;}
+  $document=['format'=>'gather-account-export','version'=>$version,'export_id'=>$export,'part'=>$cursor['part'],'section'=>$section,'account_id'=>uid(),'exported_at'=>gmdate('c'),'scope'=>($version===4?'Your friendship/request states, your own blocks, and your reactions on currently accessible unblocked messages. Relationship and reaction records are live snapshots and may change between parts. ':'').($version>=3?'Visible category preferences, including empty categories. ':'').($version>=2?'Saved server layout and private notes for currently accessible people. Reference only; Gather cannot import this archive. ':'').'Profile/status, current memberships/profile overrides, accessible channel/category notification preferences, and your non-deleted authored messages up to the initial message ID. Each part is a separate read snapshot; earlier saved files cannot be revoked.','omissions'=>['Credentials and sessions','Other authors and system notices','Inaccessible/deleted content','Image/file contents',$version>=2?($version===4?'Device-local settings':($version>=3?'Device-local settings, relationships and reactions':'Device-local settings, empty-category preferences, relationships and reactions')):'Device-local settings, server layout, empty-category preferences, relationships, reactions and private notes'],'message_ceiling'=>$cursor['through'],'records'=>$records,'next'=>$next];
   $json=json_encode($document,JSON_THROW_ON_ERROR|JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);if(strlen($json)>4194304)fail(413,'Export part is too large.');$db->commit();
   return ['export_id'=>$export,'section'=>$section,'records'=>count($records),'next'=>$next,'file'=>['name'=>'gather-export-'.$export.'-'.$cursor['part'].'.json','data'=>base64_encode($json),'size'=>strlen($json),'sha256'=>hash('sha256',$json)]];
  }catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
