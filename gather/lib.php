@@ -2,7 +2,12 @@
 declare(strict_types=1);
 final class ApiError extends RuntimeException { public function __construct(public int $status,string $message){parent::__construct($message);} }
 function fail(int $status,string $message): never {throw new ApiError($status,$message);}
-function sql(string $query,array $args=[]): PDOStatement {global $db;$s=$db->prepare($query);$s->execute($args);return $s;}
+function sql(string $query,array $args=[]): PDOStatement {
+ global $db,$authenticated,$writeTransaction;
+ // Recheck the caller under the write lock, including routes with a single autocommit write.
+ if(!empty($authenticated)&&empty($writeTransaction)&&preg_match('/^\s*(INSERT|UPDATE|DELETE|REPLACE)\b/i',$query))return transaction(fn()=>sql($query,$args));
+ $s=$db->prepare($query);$s->execute($args);return $s;
+}
 function one(string $query,array $args=[]): ?array {return sql($query,$args)->fetch() ?: null;}
 function uid(): int {global $user;return (int)$user['id'];}
 function random_id(): string {return bin2hex(random_bytes(16));}
@@ -13,10 +18,31 @@ function text_field(array $input,string $key,int $min,int $max): string {
 function positive_id(mixed $value): int {if(!is_int($value)||$value<1)fail(400,'Invalid ID.');return $value;}
 function rate(string $key,int $max,int $seconds): void {
  $key=hash('sha256',$key);$window=(int)floor(time()/$seconds)*$seconds;
- $r=sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN window=excluded.window THEN hits+1 ELSE 1 END,window=excluded.window RETURNING hits',[$key,$window])->fetch();
+ $fetch=fn()=>sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET hits=CASE WHEN window=excluded.window THEN hits+1 ELSE 1 END,window=excluded.window RETURNING hits',[$key,$window])->fetch();
+ global $authenticated,$writeTransaction;$r=!empty($authenticated)&&empty($writeTransaction)?transaction($fetch):$fetch();
  if($r['hits']>$max)fail(429,'Too many attempts. Please wait and try again.');
 }
-function transaction(callable $fn): mixed {global $db;$db->exec('BEGIN IMMEDIATE');try{$value=$fn();$db->exec('COMMIT');return $value;}catch(Throwable $e){$db->exec('ROLLBACK');throw $e;}}
+function transaction(callable $fn): mixed {
+ global $db,$authenticated,$writeTransaction,$tokenHash;
+ $db->exec('BEGIN IMMEDIATE');$writeTransaction=true;
+ try{if(!empty($authenticated)&&!one('SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.user_id=? AND s.expires>? AND u.disabled_at=0',[$tokenHash,uid(),time()]))fail(401,'Session expired. Please sign in.');$value=$fn();$db->exec('COMMIT');return $value;}
+ catch(Throwable $e){$db->exec('ROLLBACK');throw $e;}finally{$writeTransaction=false;}
+}
+function migrate_account_disable(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=51)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=51)return;$db->exec('ALTER TABLE users ADD COLUMN disabled_at INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=51;');});
+}
+function disable_account(array $in): array {
+ if(array_diff(array_keys($in),['action','password','confirmation'])||($in['confirmation']??null)!=='DISABLE')fail(400,'Type DISABLE to confirm.');
+ $password=$in['password']??null;if(!is_string($password)||strlen($password)>128)fail(400,'Enter your current password.');rate('account-disable:'.uid(),5,600);
+ return transaction(function()use($password){
+  $current=one('SELECT password FROM users WHERE id=?',[uid()]);if(!password_verify($password,$current['password']))fail(403,'Current password is incorrect.');
+  if(one('SELECT 1 FROM servers WHERE owner_id=?',[uid()]))fail(409,'Transfer ownership of every server you own before disabling your account.');
+  sql('UPDATE users SET disabled_at=?,last_seen=0,auto_idle=1 WHERE id=?',[time(),uid()]);
+  sql('DELETE FROM sessions WHERE user_id=?',[uid()]);sql('DELETE FROM signals WHERE from_call IN (SELECT id FROM calls WHERE user_id=?) OR to_call IN (SELECT id FROM calls WHERE user_id=?)',[uid(),uid()]);sql('DELETE FROM calls WHERE user_id=?',[uid()]);sql('DELETE FROM typing WHERE user_id=?',[uid()]);
+  return ['ok'=>true];
+ });
+}
 function member(string $server,bool $moderate=false): array {
  $m=one('SELECT m.*,s.owner_id FROM members m JOIN servers s ON s.id=m.server_id WHERE m.server_id=? AND m.user_id=?',[$server,uid()]);
  if(!$m)fail(403,'You do not belong to this server.');if($moderate&&!in_array($m['role'],['owner','moderator'],true))fail(403,'Moderator permission required.');return $m;
