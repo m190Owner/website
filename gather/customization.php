@@ -28,6 +28,10 @@ function migrate_server_profile_details(): void {
   $db->exec("ALTER TABLE members ADD COLUMN server_banner TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN server_pronouns TEXT NOT NULL DEFAULT ''; CREATE TRIGGER member_banner_cleanup AFTER DELETE ON members BEGIN DELETE FROM media WHERE server_id=OLD.server_id AND slot='member-banner:'||OLD.user_id; END; PRAGMA user_version=16;");
  });
 }
+function migrate_profile_colors(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=52)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=52)return;$db->exec("ALTER TABLE users ADD COLUMN accent_color TEXT NOT NULL DEFAULT ''; ALTER TABLE members ADD COLUMN server_accent_color TEXT NOT NULL DEFAULT ''; PRAGMA user_version=52;");});
+}
 function validate_image(mixed $data): void {
   if(!is_string($data))fail(400,'Invalid image.');
   if($data!==''){
@@ -37,13 +41,14 @@ function validate_image(mixed $data): void {
   }
 }
 function color_field(array $in,string $key): string {
- $color=$in[$key]??'';if(!is_string($color)||($color!==''&&!preg_match('/^#[0-9a-fA-F]{6}$/D',$color)))fail(400,'Choose a valid role color.');return $color;
+ $color=array_key_exists($key,$in)?$in[$key]:'';if(!is_string($color)||($color!==''&&!preg_match('/^#[0-9a-fA-F]{6}$/D',$color)))fail(400,'Choose a valid six-digit hex color.');return $color;
 }
 function customization(string $action,array $in): array {
  switch($action){
  case 'profile':
   global $user;
-  sql('UPDATE users SET name=?,bio=?,pronouns=? WHERE id=?',[text_field($in,'name',1,32),text_field($in+['bio'=>$user['bio']],'bio',0,190),text_field($in+['pronouns'=>$user['pronouns']],'pronouns',0,40),uid()]);return ['ok'=>true];
+  $values=[text_field($in,'name',1,32),text_field($in+['bio'=>$user['bio']],'bio',0,190),text_field($in+['pronouns'=>$user['pronouns']],'pronouns',0,40)];$accent=array_key_exists('accent_color',$in);if($accent)$values[]=color_field($in,'accent_color');$values[]=uid();
+  sql('UPDATE users SET name=?,bio=?,pronouns=?'.($accent?',accent_color=?':'').' WHERE id=?',$values);return ['ok'=>true];
  case 'nickname':
   $sid=text_field($in,'server_id',32,32);$nickname=text_field($in,'nickname',0,32);
   if(array_key_exists('profile_revision',$in)&&(!is_int($in['profile_revision'])||$in['profile_revision']<0))fail(400,'Invalid profile revision.');
@@ -52,12 +57,14 @@ function customization(string $action,array $in): array {
    if(array_key_exists('profile_revision',$in)&&$in['profile_revision']!==(int)$m['profile_revision'])fail(409,'Your server profile changed elsewhere. Close and reopen Server Profile before saving.');
    $bio=text_field($in+['server_bio'=>$m['server_bio']],'server_bio',0,190);
    $pronouns=text_field($in+['server_pronouns'=>$m['server_pronouns']],'server_pronouns',0,40);
+   $accent=array_key_exists('server_accent_color',$in);$color=$accent?color_field($in,'server_accent_color'):'';
    foreach(['avatar','banner'] as $kind)if(array_key_exists($kind.'_data',$in)){
     $slot='member-'.$kind.':'.uid();sql('DELETE FROM media WHERE server_id=? AND slot=?',[$sid,$slot]);
     $id=$in[$kind.'_data']!==''?random_id():'';if($id)sql('INSERT INTO media VALUES(?,NULL,?,?,?)',[$id,$sid,$slot,$in[$kind.'_data']]);
     $m['server_'.$kind]=$id;
    }
-   sql('UPDATE members SET nickname=?,server_bio=?,server_avatar=?,server_banner=?,server_pronouns=?,profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',[$nickname,$bio,$m['server_avatar'],$m['server_banner'],$pronouns,$sid,uid()]);
+   $values=[$nickname,$bio,$m['server_avatar'],$m['server_banner'],$pronouns];if($accent)$values[]=$color;$values[]=$sid;$values[]=uid();
+   sql('UPDATE members SET nickname=?,server_bio=?,server_avatar=?,server_banner=?,server_pronouns=?'.($accent?',server_accent_color=?':'').',profile_revision=profile_revision+1 WHERE server_id=? AND user_id=?',$values);
   });return ['ok'=>true];
  case 'server_settings':
   $sid=text_field($in,'server_id',32,32);require_permission($sid,'manage_server');
