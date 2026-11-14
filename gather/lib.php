@@ -147,16 +147,21 @@ function attachment_type_extensions($type): array {
  $types=['all'=>[],'image'=>['png','jpg','jpeg','webp','gif'],'audio'=>['mp3','wav','ogg'],'video'=>['mp4','webm'],'document'=>['pdf','txt','csv','md','json','zip','docx','xlsx','pptx']];
  if(!is_string($type)||!array_key_exists($type,$types))fail(400,'Invalid attachment type.');return $types[$type];
 }
-function message_search_filters(string $cid,array $in): array {
+function message_search_dates(array $in): array {
  $filters=[];
- if(array_key_exists('file_type',$in)){attachment_type_extensions($in['file_type']);$filters['file_type']=$in['file_type'];}
- if(array_key_exists('author_id',$in)){$id=positive_id($in['author_id']);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id)||!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
  foreach(['after_date','before_date'] as $key)if(array_key_exists($key,$in)){
   $value=$in[$key];if(!is_string($value)||!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$value)||(int)substr($value,0,4)<1970)fail(400,'Use dates from 1970 in YYYY-MM-DD format.');
   $date=DateTimeImmutable::createFromFormat('!Y-m-d',$value,new DateTimeZone('UTC'));if(!$date||$date->format('Y-m-d')!==$value)fail(400,'Choose a valid calendar date.');$filters[$key]=$date->getTimestamp();
  }
  if(isset($filters['after_date'],$filters['before_date'])&&$filters['after_date']>=$filters['before_date'])fail(400,'The before date must follow the on-or-after date.');return $filters;
 }
+function message_search_filters(string $cid,array $in): array {
+ $filters=message_search_dates($in);
+ if(array_key_exists('file_type',$in)){attachment_type_extensions($in['file_type']);$filters['file_type']=$in['file_type'];}
+ if(array_key_exists('author_id',$in)){$id=positive_id($in['author_id']);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id)||!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
+ return $filters;
+}
+
 function messages_for(string $cid,int $before=0,string $search='',bool $pins=false,int $after=0,array $filters=[]): array {
  $where='m.channel_id=? AND m.deleted=0';$args=[$cid];
  if(isset($filters['author_id'])){$where.=' AND m.user_id=?';$args[]=$filters['author_id'];}
