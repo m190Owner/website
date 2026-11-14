@@ -1,5 +1,37 @@
 <?php
 declare(strict_types=1);
+function migrate_message_search(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=55)return;
+ transaction(function()use($db){
+  if((int)$db->query('PRAGMA user_version')->fetchColumn()>=55)return;
+  try{$db->exec("CREATE VIRTUAL TABLE message_search USING fts5(body,content='message_search_content',content_rowid='id',tokenize='trigram case_sensitive 1',detail=none,columnsize=0)");}
+  catch(PDOException $e){
+   // Older SQLite hosts keep the existing literal scan, without write triggers.
+   if(!preg_match('/no such module: fts5|no such tokenizer: trigram/i',$e->getMessage()))throw $e;
+   $db->exec('PRAGMA user_version=55');return;
+  }
+  $db->exec("CREATE VIEW message_search_content AS SELECT id,lower(body) AS body FROM messages WHERE deleted=0;
+   CREATE TRIGGER message_search_insert AFTER INSERT ON messages WHEN new.deleted=0 BEGIN
+    INSERT INTO message_search(rowid,body) VALUES(new.id,lower(new.body)); END;
+   CREATE TRIGGER message_search_delete AFTER DELETE ON messages WHEN old.deleted=0 BEGIN
+    INSERT INTO message_search(message_search,rowid,body) VALUES('delete',old.id,lower(old.body)); END;
+   CREATE TRIGGER message_search_update AFTER UPDATE OF id,body,deleted ON messages BEGIN
+    INSERT INTO message_search(message_search,rowid,body) SELECT 'delete',old.id,lower(old.body) WHERE old.deleted=0;
+    INSERT INTO message_search(rowid,body) SELECT new.id,lower(new.body) WHERE new.deleted=0; END;
+   INSERT INTO message_search(message_search) VALUES('rebuild'); PRAGMA user_version=55;");
+ });
+}
+function message_search_phrase(string $query): ?string {
+ // One- and two-character queries have no trigram; retain the literal scan.
+ if(preg_match_all('/./us',$query)<3||!one("SELECT 1 FROM sqlite_master WHERE type='table' AND name='message_search'"))return null;
+ // Positions are unnecessary: the original literal predicate verifies candidate rows.
+ $chars=preg_split('//u',strtr($query,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),-1,PREG_SPLIT_NO_EMPTY);$tokens=[];
+ for($i=0;$i<count($chars)-2;$i++)$tokens[]='"'.str_replace('"','""',$chars[$i].$chars[$i+1].$chars[$i+2]).'"';
+ $phrase=implode(' AND ',array_unique($tokens));
+ // Common text would materialize a large global candidate list; use the scoped scan instead.
+ if((int)sql('SELECT count(*) FROM (SELECT rowid FROM message_search WHERE message_search MATCH ? LIMIT 1001)',[$phrase])->fetchColumn()>1000)return null;
+ return $phrase;
+}
 function require_pin_channel(array $c): void {
    if($c['server_id']){if(member($c['server_id'])['muted_until']>time())fail(403,'You cannot change pins while timed out.');if(!channel_capabilities($c)['pin_messages'])fail(403,'You do not have permission to pin messages in this channel.');
     if($c['parent_id']){if($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time()))fail(403,'Reopen this thread before changing pins.');if(thread_message_locked($c))fail(403,'Only thread managers can change pins in a locked thread.');}
@@ -239,10 +271,11 @@ function notification_actions(string $action,array $in): array {
   if($direct)$visible=[$conversation['id']];
   elseif(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');$visible=[$selected['id']];}
   else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid())&&($author===null||can_view_as($c['id'],$author)))$visible[]=$c['id'];}
-  $rows=[];
+  $rows=[];$phrase=message_search_phrase($query);
   // Keep SQLite parameter counts bounded even when a server has many threads.
   foreach(array_chunk($visible,500) as $ids){
    $where='m.channel_id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND m.deleted=0 AND instr(lower(m.body),lower(?))>0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$sid],$ids,[$query,uid(),uid()]);if($cursor){$where.=' AND m.id'.($oldest?'>':'<').'?';$args[]=$cursor;}
+   if($phrase!==null){$where.=' AND m.id IN (SELECT rowid FROM message_search WHERE message_search MATCH ?)';$args[]=$phrase;}
    if($author!==null){$where.=' AND m.user_id=?';$args[]=$author;}
    if(isset($dates['after_date'])){$where.=' AND m.created>=?';$args[]=$dates['after_date'];}if(isset($dates['before_date'])){$where.=' AND m.created<?';$args[]=$dates['before_date'];}
    if($extensions!==null){$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}$where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';}
