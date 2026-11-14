@@ -178,6 +178,10 @@ function react_message(int $id,array $c,array $in): void {
   sql('INSERT INTO reactions VALUES(?,?,?)',[$id,uid(),$emoji]);
  });
 }
+function search_conversation(string $id): array {
+ $c=channel($id);if($c['server_id']||$c['kind']!=='text')fail(400,'Choose a direct or group conversation.');
+ if(!$c['group_owner']){$peer=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if($peer&&blocked($peer))fail(403,'This conversation is unavailable.');}return $c;
+}
 function notification_actions(string $action,array $in): array {
  switch($action){
  case 'category_notification_preference':
@@ -219,16 +223,20 @@ function notification_actions(string $action,array $in): array {
    $c=reaction_channel($id);if(!$c['server_id'])fail(403,'Reaction moderation is only available in servers.');require_permission($c['server_id'],'manage_messages');
    $query='DELETE FROM reactions WHERE message_id=?';$args=[$id];if($scope!=='all'){$query.=' AND emoji=?';$args[]=$emoji;}if($scope==='user'){$query.=' AND user_id=?';$args[]=$target;}sql($query,$args);return ['ok'=>true];
   });
+ case 'conversation_search_authors':
+  if(array_diff(array_keys($in),['action','channel_id']))fail(400,'Invalid author request.');$c=search_conversation(text_field($in,'channel_id',32,32));
+  return ['members'=>sql("SELECT u.id,u.name,u.username,'' AS nickname FROM channel_members m JOIN users u ON u.id=m.user_id WHERE m.channel_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=u.id) OR (b.target=? AND b.user_id=u.id)) ORDER BY u.name,u.id",[$c['id'],uid(),uid()])->fetchAll()];
  case 'server_search_authors':
   if(array_diff(array_keys($in),['action','server_id']))fail(400,'Invalid author request.');
   $sid=text_field($in,'server_id',32,32);member($sid);
   return ['members'=>sql('SELECT u.id,u.name,u.username,m.nickname FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=u.id) OR (b.target=? AND b.user_id=u.id)) ORDER BY u.name,u.id',[$sid,uid(),uid()])->fetchAll()];
- case 'server_search':
-  if(array_diff(array_keys($in),['action','server_id','search','before','channel_id','after_date','before_date','file_type','author_id']))fail(400,'Invalid server search request.');
-  $sid=text_field($in,'server_id',32,32);member($sid);$query=text_field($in,'search',1,100);$before=0;if(array_key_exists('before',$in)){$before=positive_id($in['before']);if($before>9007199254740991)fail(400,'Invalid search cursor.');}
+ case 'conversation_search':case 'server_search':
+  $direct=$action==='conversation_search';$keys=['action','search','before','channel_id','after_date','before_date','file_type','author_id'];if(!$direct)$keys[]='server_id';if(array_diff(array_keys($in),$keys))fail(400,'Invalid search request.');
+  $sid=null;if($direct)$conversation=search_conversation(text_field($in,'channel_id',32,32));else{$sid=text_field($in,'server_id',32,32);member($sid);}$query=text_field($in,'search',1,100);$before=0;if(array_key_exists('before',$in)){$before=positive_id($in['before']);if($before>9007199254740991)fail(400,'Invalid search cursor.');if($direct&&!one('SELECT 1 FROM messages WHERE id=? AND channel_id=?',[$before,$conversation['id']]))fail(400,'Search cursor must belong to this conversation.');}
   $dates=message_search_dates($in);$extensions=array_key_exists('file_type',$in)?attachment_type_extensions($in['file_type']):null;
-  $author=null;if(array_key_exists('author_id',$in)){$author=message_search_author($in['author_id']);if(!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$sid,$author]))fail(403,'Choose a current author in this server.');}
-  if(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');$visible=[$selected['id']];}
+  $author=null;if(array_key_exists('author_id',$in)){$author=message_search_author($in['author_id']);if($direct?!can_view_as($conversation['id'],$author):!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$sid,$author]))fail(403,'Choose a current author in this search.');}
+  if($direct)$visible=[$conversation['id']];
+  elseif(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');$visible=[$selected['id']];}
   else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid())&&($author===null||can_view_as($c['id'],$author)))$visible[]=$c['id'];}
   $rows=[];
   // Keep SQLite parameter counts bounded even when a server has many threads.
@@ -239,7 +247,7 @@ function notification_actions(string $action,array $in): array {
    if($extensions!==null){$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}$where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';}
    $rows=array_merge($rows,sql("SELECT m.id,m.channel_id,c.name AS channel_name,m.created,u.name,COALESCE(mb.nickname,'') AS nickname,CASE WHEN length(m.body)<=1000 THEN m.body END AS content FROM messages m JOIN channels c ON c.id=m.channel_id JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where ORDER BY m.id DESC LIMIT 31",$args)->fetchAll());
   }
-  usort($rows,fn($a,$b)=>$b['id']<=>$a['id']);$more=count($rows)>30;$rows=array_slice($rows,0,30);$names=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');
+  usort($rows,fn($a,$b)=>$b['id']<=>$a['id']);$more=count($rows)>30;$rows=array_slice($rows,0,30);$names=$sid?array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id'):[];
   foreach($rows as &$row){$row['role_mentions']=[];if($row['content']!==null)foreach(mention_roles($row['content']) as $role)$row['role_mentions'][]=['id'=>$role,'name'=>$names[$role]??'Deleted role'];}unset($row);$last=end($rows);return ['messages'=>$rows,'next'=>$more?(int)$last['id']:null];
  case 'pin_list':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);$canUnpin=true;try{require_pin_channel($c);}catch(ApiError $e){if($e->status!==403)throw $e;$canUnpin=false;}$where='m.channel_id=? AND m.pinned=1 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE b.user_id=? AND b.target=m.user_id)';$args=[$cid,uid()];
