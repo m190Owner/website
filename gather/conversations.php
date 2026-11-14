@@ -1,5 +1,10 @@
 <?php
 declare(strict_types=1);
+function attachment_name(array $in): string {
+ $name=text_field($in,'name',1,120);
+ if(preg_match('/[\\\\\/:*?"<>|\x00-\x1F]/',$name)||str_ends_with($name,'.')||str_ends_with($name,' ')||!preg_match('/\.(png|jpe?g|webp|gif|pdf|txt|csv|md|json|zip|docx|xlsx|pptx|mp3|wav|ogg|mp4|webm)$/i',$name))fail(400,'Unsupported file name or type. Use images, documents, ZIP, audio or video.');
+ return $name;
+}
 function migrate_thread_member_revision(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=43)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=43)return;$db->exec('ALTER TABLE channels ADD COLUMN thread_membership_revision INTEGER NOT NULL DEFAULT 0; CREATE TRIGGER thread_member_added AFTER INSERT ON thread_members BEGIN UPDATE channels SET thread_membership_revision=thread_membership_revision+1 WHERE id=NEW.channel_id AND thread_private=1; END; CREATE TRIGGER thread_member_removed AFTER DELETE ON thread_members BEGIN UPDATE channels SET thread_membership_revision=thread_membership_revision+1 WHERE id=OLD.channel_id AND thread_private=1; END; PRAGMA user_version=43;');});
@@ -268,10 +273,21 @@ function conversation_actions(string $action,array $in): array {
    transaction(function()use($c,$in){$c=channel($c['id']);require_permission($c['server_id'],'manage_channels');[$kind,$subject,$values]=override_input($c['server_id'],$in);check_override_version($in,sql('SELECT permission FROM channel_overrides WHERE channel_id=? AND kind=? AND subject=?',[$c['id'],$kind,$subject])->fetchAll());save_channel_override($c,$kind,$subject,$values);set_channel_sync($c,null);});
   }return ['overrides'=>sql('SELECT * FROM channel_overrides WHERE channel_id=?',[$c['id']])->fetchAll()];
  case 'attachment_upload':
-  $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');send_channel($cid,$in);rate('attachment:'.uid(),20,3600);$name=text_field($in,'name',1,120);
-  if(preg_match('/[\\\\\/:*?"<>|\x00-\x1F]/',$name)||str_ends_with($name,'.')||str_ends_with($name,' ')||!preg_match('/\.(png|jpe?g|webp|gif|pdf|txt|csv|md|json|zip|docx|xlsx|pptx|mp3|wav|ogg|mp4|webm)$/i',$name))fail(400,'Unsupported file name or type. Use images, documents, ZIP, audio or video.');
+  $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');send_channel($cid,$in);rate('attachment:'.uid(),20,3600);$name=attachment_name($in);
   $encoded=$in['data']??null;if(!is_string($encoded)||strlen($encoded)>5592408)fail(413,'Files must be at most 4 MB.');$bytes=base64_decode($encoded,true);if($bytes===false||base64_encode($bytes)!==$encoded||strlen($bytes)<1||strlen($bytes)>4194304)fail(400,'Invalid file or size.');
   return transaction(function()use($cid,$in,$name,$bytes,$encoded){send_channel($cid,$in,'attach');send_channel($cid,$in);sql('DELETE FROM attachments WHERE message_id IS NULL AND created<?',[time()-86400]);$size=strlen($bytes);if((int)sql('SELECT COALESCE(sum(size),0) FROM attachments WHERE user_id=?',[uid()])->fetchColumn()+$size>104857600||(int)sql('SELECT COALESCE(sum(size),0) FROM attachments')->fetchColumn()+$size>536870912)fail(409,'Attachment storage is full. Delete old attachments to free space.');$id=random_id();$hash=hash('sha256',$bytes);sql('INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?,?)',[$id,$cid,uid(),null,$name,$size,$hash,$encoded,time()]);return ['id'=>$id,'name'=>$name,'size'=>$size,'sha256'=>$hash];});
+ case 'attachment_rename':
+  if(array_diff(array_keys($in),['action','id','name','expected_name']))fail(400,'Invalid rename request.');
+  $id=text_field($in,'id',32,32);$name=attachment_name($in);$expected=text_field($in,'expected_name',1,120);
+  return transaction(function()use($id,$name,$expected){
+   $a=one('SELECT id,channel_id,user_id,message_id,name,created FROM attachments WHERE id=?',[$id]);if(!$a)fail(404,'Attachment not found.');$c=channel($a['channel_id']);
+   if((int)$a['user_id']!==uid())fail(403,'Only your unsent attachments can be renamed.');if($a['message_id']||(int)$a['created']<time()-86400)fail(404,'This attachment is no longer in your draft.');
+   $scope=['reopen_thread'=>(bool)$c['parent_id']];send_channel($a['channel_id'],$scope,'attach');send_channel($a['channel_id'],$scope);
+   if($name===$a['name'])return ['id'=>$id,'name'=>$name];
+   if($a['name']!==$expected)fail(409,'This filename changed. Remove the attachment and attach it again.');
+   if(strtolower(pathinfo($name,PATHINFO_EXTENSION))!==strtolower(pathinfo($a['name'],PATHINFO_EXTENSION)))fail(400,'Keep the original file extension.');
+   sql('UPDATE attachments SET name=? WHERE id=?',[$name,$id]);return ['id'=>$id,'name'=>$name];
+  });
  case 'attachment_get':case 'attachment_preview':case 'attachment_discard':
   if($action==='attachment_preview'&&(array_diff(array_keys($in),['action','id','check_only','draft'])||(array_key_exists('check_only',$in)&&!is_bool($in['check_only']))||(array_key_exists('draft',$in)&&!is_bool($in['draft']))))fail(400,'Invalid preview request.');
   if($action==='attachment_get'&&array_key_exists('draft',$in)&&!is_bool($in['draft']))fail(400,'Invalid attachment request.');
