@@ -219,6 +219,18 @@ function notification_actions(string $action,array $in): array {
    $c=reaction_channel($id);if(!$c['server_id'])fail(403,'Reaction moderation is only available in servers.');require_permission($c['server_id'],'manage_messages');
    $query='DELETE FROM reactions WHERE message_id=?';$args=[$id];if($scope!=='all'){$query.=' AND emoji=?';$args[]=$emoji;}if($scope==='user'){$query.=' AND user_id=?';$args[]=$target;}sql($query,$args);return ['ok'=>true];
   });
+ case 'server_search':
+  if(array_diff(array_keys($in),['action','server_id','search','before']))fail(400,'Invalid server search request.');
+  $sid=text_field($in,'server_id',32,32);member($sid);$query=text_field($in,'search',1,100);$before=0;if(array_key_exists('before',$in)){$before=positive_id($in['before']);if($before>9007199254740991)fail(400,'Invalid search cursor.');}
+  $visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid()))$visible[]=$c['id'];
+  $rows=[];
+  // Keep SQLite parameter counts bounded even when a server has many threads.
+  foreach(array_chunk($visible,500) as $ids){
+   $where='m.channel_id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND m.deleted=0 AND instr(lower(m.body),lower(?))>0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$sid],$ids,[$query,uid(),uid()]);if($before){$where.=' AND m.id<?';$args[]=$before;}
+   $rows=array_merge($rows,sql("SELECT m.id,m.channel_id,c.name AS channel_name,m.created,u.name,COALESCE(mb.nickname,'') AS nickname,CASE WHEN length(m.body)<=1000 THEN m.body END AS content FROM messages m JOIN channels c ON c.id=m.channel_id JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where ORDER BY m.id DESC LIMIT 31",$args)->fetchAll());
+  }
+  usort($rows,fn($a,$b)=>$b['id']<=>$a['id']);$more=count($rows)>30;$rows=array_slice($rows,0,30);$names=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');
+  foreach($rows as &$row){$row['role_mentions']=[];if($row['content']!==null)foreach(mention_roles($row['content']) as $role)$row['role_mentions'][]=['id'=>$role,'name'=>$names[$role]??'Deleted role'];}unset($row);$last=end($rows);return ['messages'=>$rows,'next'=>$more?(int)$last['id']:null];
  case 'pin_list':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);$canUnpin=true;try{require_pin_channel($c);}catch(ApiError $e){if($e->status!==403)throw $e;$canUnpin=false;}$where='m.channel_id=? AND m.pinned=1 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE b.user_id=? AND b.target=m.user_id)';$args=[$cid,uid()];
   if(array_key_exists('before',$in)){$cursor=$in['before'];if(!is_array($cursor)||count($cursor)!==2||!array_key_exists('at',$cursor)||!array_key_exists('id',$cursor)||!is_int($cursor['at'])||$cursor['at']<0||$cursor['at']>8640000000000000)fail(400,'Invalid pin cursor.');$id=positive_id($cursor['id']);$where.=' AND (m.pinned_at<? OR (m.pinned_at=? AND m.id<?))';array_push($args,$cursor['at'],$cursor['at'],$id);}
