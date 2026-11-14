@@ -143,8 +143,22 @@ function rtc_config(): array {
 function call_record(string $id): array {
  $call=one('SELECT * FROM calls WHERE id=? AND user_id=? AND seen>?',[$id,uid(),time()-45]);if(!$call)fail(410,'Call expired. Join again.');channel($call['channel_id'],true,'connect');return $call;
 }
-function messages_for(string $cid,int $before=0,string $search='',bool $pins=false,int $after=0): array {
+function message_search_filters(string $cid,array $in): array {
+ $filters=[];
+ if(array_key_exists('author_id',$in)){$id=positive_id($in['author_id']);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id)||!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
+ foreach(['after_date','before_date'] as $key)if(array_key_exists($key,$in)){
+  $value=$in[$key];if(!is_string($value)||!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$value)||(int)substr($value,0,4)<1970)fail(400,'Use dates from 1970 in YYYY-MM-DD format.');
+  $date=DateTimeImmutable::createFromFormat('!Y-m-d',$value,new DateTimeZone('UTC'));if(!$date||$date->format('Y-m-d')!==$value)fail(400,'Choose a valid calendar date.');$filters[$key]=$date->getTimestamp();
+ }
+ if(isset($filters['after_date'],$filters['before_date'])&&$filters['after_date']>=$filters['before_date'])fail(400,'The before date must follow the on-or-after date.');return $filters;
+}
+function messages_for(string $cid,int $before=0,string $search='',bool $pins=false,int $after=0,array $filters=[]): array {
  $where='m.channel_id=? AND m.deleted=0';$args=[$cid];
+ if(isset($filters['author_id'])){$where.=' AND m.user_id=?';$args[]=$filters['author_id'];}
+ if(isset($filters['after_date'])){$where.=' AND m.created>=?';$args[]=$filters['after_date'];}
+ if(isset($filters['before_date'])){$where.=' AND m.created<?';$args[]=$filters['before_date'];}
+ if($filters){$where.=' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';array_push($args,uid(),uid());}
+
  if($before){$where.=' AND m.id<?';$args[]=$before;}if($after){$where.=' AND m.id>?';$args[]=$after;}if($search!==''){$where.=' AND instr(lower(m.body),lower(?))>0';$args[]=$search;}if($pins)$where.=' AND m.pinned=1';
  $args[]=uid();
  // Put the user parameter before the WHERE parameters to match the reaction subquery.
