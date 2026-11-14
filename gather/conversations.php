@@ -280,6 +280,14 @@ function conversation_actions(string $action,array $in): array {
   if($action==='override_save'){
    transaction(function()use($c,$in){$c=channel($c['id']);require_permission($c['server_id'],'manage_channels');[$kind,$subject,$values]=override_input($c['server_id'],$in);check_override_version($in,sql('SELECT permission FROM channel_overrides WHERE channel_id=? AND kind=? AND subject=?',[$c['id'],$kind,$subject])->fetchAll());save_channel_override($c,$kind,$subject,$values);set_channel_sync($c,null);});
   }return ['overrides'=>sql('SELECT * FROM channel_overrides WHERE channel_id=?',[$c['id']])->fetchAll()];
+ case 'attachment_list':
+  if(array_diff(array_keys($in),['action','channel_id','before']))fail(400,'Invalid attachment list request.');
+  $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if($c['kind']!=='text')fail(400,'Choose a text channel.');
+  $where='m.channel_id=? AND m.deleted=0 AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=[$c['server_id'],$cid,uid(),uid()];
+  if(array_key_exists('before',$in)){$before=positive_id($in['before']);if($before>9007199254740991)fail(400,'Invalid attachment cursor.');$where.=' AND m.id<?';$args[]=$before;}
+  $rows=sql("SELECT m.id,m.created,u.name,COALESCE(mb.nickname,'') AS nickname FROM messages m JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where ORDER BY m.id DESC LIMIT 31",$args)->fetchAll();$more=count($rows)>30;$rows=array_slice($rows,0,30);
+  foreach($rows as &$row)$row['attachments']=sql('SELECT id,name,size,description,spoiler FROM attachments WHERE message_id=? AND channel_id=? ORDER BY created,id LIMIT 3',[$row['id'],$cid])->fetchAll();unset($row);$last=end($rows);
+  return ['messages'=>$rows,'next'=>$more?(int)$last['id']:null];
  case 'attachment_upload':
   $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');send_channel($cid,$in);rate('attachment:'.uid(),20,3600);$name=attachment_name($in);
   $encoded=$in['data']??null;if(!is_string($encoded)||strlen($encoded)>5592408)fail(413,'Files must be at most 4 MB.');$bytes=base64_decode($encoded,true);if($bytes===false||base64_encode($bytes)!==$encoded||strlen($bytes)<1||strlen($bytes)>4194304)fail(400,'Invalid file or size.');
