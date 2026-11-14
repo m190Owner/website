@@ -1,5 +1,9 @@
 <?php
 declare(strict_types=1);
+function migrate_attachment_descriptions(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=53)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=53)return;$db->exec("ALTER TABLE attachments ADD COLUMN description TEXT NOT NULL DEFAULT ''; PRAGMA user_version=53;");});
+}
 function attachment_name(array $in): string {
  $name=text_field($in,'name',1,120);
  if(preg_match('/[\\\\\/:*?"<>|\x00-\x1F]/',$name)||str_ends_with($name,'.')||str_ends_with($name,' ')||!preg_match('/\.(png|jpe?g|webp|gif|pdf|txt|csv|md|json|zip|docx|xlsx|pptx|mp3|wav|ogg|mp4|webm)$/i',$name))fail(400,'Unsupported file name or type. Use images, documents, ZIP, audio or video.');
@@ -275,7 +279,7 @@ function conversation_actions(string $action,array $in): array {
  case 'attachment_upload':
   $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');send_channel($cid,$in);rate('attachment:'.uid(),20,3600);$name=attachment_name($in);
   $encoded=$in['data']??null;if(!is_string($encoded)||strlen($encoded)>5592408)fail(413,'Files must be at most 4 MB.');$bytes=base64_decode($encoded,true);if($bytes===false||base64_encode($bytes)!==$encoded||strlen($bytes)<1||strlen($bytes)>4194304)fail(400,'Invalid file or size.');
-  return transaction(function()use($cid,$in,$name,$bytes,$encoded){send_channel($cid,$in,'attach');send_channel($cid,$in);sql('DELETE FROM attachments WHERE message_id IS NULL AND created<?',[time()-86400]);$size=strlen($bytes);if((int)sql('SELECT COALESCE(sum(size),0) FROM attachments WHERE user_id=?',[uid()])->fetchColumn()+$size>104857600||(int)sql('SELECT COALESCE(sum(size),0) FROM attachments')->fetchColumn()+$size>536870912)fail(409,'Attachment storage is full. Delete old attachments to free space.');$id=random_id();$hash=hash('sha256',$bytes);sql('INSERT INTO attachments VALUES(?,?,?,?,?,?,?,?,?)',[$id,$cid,uid(),null,$name,$size,$hash,$encoded,time()]);return ['id'=>$id,'name'=>$name,'size'=>$size,'sha256'=>$hash];});
+  return transaction(function()use($cid,$in,$name,$bytes,$encoded){send_channel($cid,$in,'attach');send_channel($cid,$in);sql('DELETE FROM attachments WHERE message_id IS NULL AND created<?',[time()-86400]);$size=strlen($bytes);if((int)sql('SELECT COALESCE(sum(size),0) FROM attachments WHERE user_id=?',[uid()])->fetchColumn()+$size>104857600||(int)sql('SELECT COALESCE(sum(size),0) FROM attachments')->fetchColumn()+$size>536870912)fail(409,'Attachment storage is full. Delete old attachments to free space.');$id=random_id();$hash=hash('sha256',$bytes);sql('INSERT INTO attachments(id,channel_id,user_id,message_id,name,size,sha256,data,created) VALUES(?,?,?,?,?,?,?,?,?)',[$id,$cid,uid(),null,$name,$size,$hash,$encoded,time()]);return ['id'=>$id,'name'=>$name,'size'=>$size,'sha256'=>$hash];});
  case 'attachment_rename':
   if(array_diff(array_keys($in),['action','id','name','expected_name']))fail(400,'Invalid rename request.');
   $id=text_field($in,'id',32,32);$name=attachment_name($in);$expected=text_field($in,'expected_name',1,120);
