@@ -4,6 +4,10 @@ function migrate_attachment_descriptions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=53)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=53)return;$db->exec("ALTER TABLE attachments ADD COLUMN description TEXT NOT NULL DEFAULT ''; PRAGMA user_version=53;");});
 }
+function migrate_attachment_spoilers(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=54)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=54)return;$db->exec("ALTER TABLE attachments ADD COLUMN spoiler INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=54;");});
+}
 function attachment_name(array $in): string {
  $name=text_field($in,'name',1,120);
  if(preg_match('/[\\\\\/:*?"<>|\x00-\x1F]/',$name)||str_ends_with($name,'.')||str_ends_with($name,' ')||!preg_match('/\.(png|jpe?g|webp|gif|pdf|txt|csv|md|json|zip|docx|xlsx|pptx|mp3|wav|ogg|mp4|webm)$/i',$name))fail(400,'Unsupported file name or type. Use images, documents, ZIP, audio or video.');
