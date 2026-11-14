@@ -219,16 +219,22 @@ function notification_actions(string $action,array $in): array {
    $c=reaction_channel($id);if(!$c['server_id'])fail(403,'Reaction moderation is only available in servers.');require_permission($c['server_id'],'manage_messages');
    $query='DELETE FROM reactions WHERE message_id=?';$args=[$id];if($scope!=='all'){$query.=' AND emoji=?';$args[]=$emoji;}if($scope==='user'){$query.=' AND user_id=?';$args[]=$target;}sql($query,$args);return ['ok'=>true];
   });
+ case 'server_search_authors':
+  if(array_diff(array_keys($in),['action','server_id']))fail(400,'Invalid author request.');
+  $sid=text_field($in,'server_id',32,32);member($sid);
+  return ['members'=>sql('SELECT u.id,u.name,u.username,m.nickname FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=u.id) OR (b.target=? AND b.user_id=u.id)) ORDER BY u.name,u.id',[$sid,uid(),uid()])->fetchAll()];
  case 'server_search':
-  if(array_diff(array_keys($in),['action','server_id','search','before','channel_id','after_date','before_date','file_type']))fail(400,'Invalid server search request.');
+  if(array_diff(array_keys($in),['action','server_id','search','before','channel_id','after_date','before_date','file_type','author_id']))fail(400,'Invalid server search request.');
   $sid=text_field($in,'server_id',32,32);member($sid);$query=text_field($in,'search',1,100);$before=0;if(array_key_exists('before',$in)){$before=positive_id($in['before']);if($before>9007199254740991)fail(400,'Invalid search cursor.');}
   $dates=message_search_dates($in);$extensions=array_key_exists('file_type',$in)?attachment_type_extensions($in['file_type']):null;
-  if(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');$visible=[$selected['id']];}
-  else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid()))$visible[]=$c['id'];}
+  $author=null;if(array_key_exists('author_id',$in)){$author=message_search_author($in['author_id']);if(!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$sid,$author]))fail(403,'Choose a current author in this server.');}
+  if(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');$visible=[$selected['id']];}
+  else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid())&&($author===null||can_view_as($c['id'],$author)))$visible[]=$c['id'];}
   $rows=[];
   // Keep SQLite parameter counts bounded even when a server has many threads.
   foreach(array_chunk($visible,500) as $ids){
    $where='m.channel_id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND m.deleted=0 AND instr(lower(m.body),lower(?))>0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$sid],$ids,[$query,uid(),uid()]);if($before){$where.=' AND m.id<?';$args[]=$before;}
+   if($author!==null){$where.=' AND m.user_id=?';$args[]=$author;}
    if(isset($dates['after_date'])){$where.=' AND m.created>=?';$args[]=$dates['after_date'];}if(isset($dates['before_date'])){$where.=' AND m.created<?';$args[]=$dates['before_date'];}
    if($extensions!==null){$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}$where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';}
    $rows=array_merge($rows,sql("SELECT m.id,m.channel_id,c.name AS channel_name,m.created,u.name,COALESCE(mb.nickname,'') AS nickname,CASE WHEN length(m.body)<=1000 THEN m.body END AS content FROM messages m JOIN channels c ON c.id=m.channel_id JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where ORDER BY m.id DESC LIMIT 31",$args)->fetchAll());

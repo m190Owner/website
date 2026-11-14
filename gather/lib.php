@@ -155,10 +155,13 @@ function message_search_dates(array $in): array {
  }
  if(isset($filters['after_date'],$filters['before_date'])&&$filters['after_date']>=$filters['before_date'])fail(400,'The before date must follow the on-or-after date.');return $filters;
 }
+function message_search_author($value): int {
+ $id=positive_id($value);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id))fail(403,'This author is not available.');return $id;
+}
 function message_search_filters(string $cid,array $in): array {
  $filters=message_search_dates($in);
  if(array_key_exists('file_type',$in)){attachment_type_extensions($in['file_type']);$filters['file_type']=$in['file_type'];}
- if(array_key_exists('author_id',$in)){$id=positive_id($in['author_id']);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id)||!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
+ if(array_key_exists('author_id',$in)){$id=message_search_author($in['author_id']);if(!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
  return $filters;
 }
 
