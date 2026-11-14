@@ -283,9 +283,9 @@ function conversation_actions(string $action,array $in): array {
  case 'attachment_list':
   if(array_diff(array_keys($in),['action','channel_id','before','type','search']))fail(400,'Invalid attachment list request.');
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid);if($c['kind']!=='text')fail(400,'Choose a text channel.');
-  $types=['all'=>[],'image'=>['png','jpg','jpeg','webp','gif'],'audio'=>['mp3','wav','ogg'],'video'=>['mp4','webm'],'document'=>['pdf','txt','csv','md','json','zip','docx','xlsx','pptx']];$type=array_key_exists('type',$in)?$in['type']:'all';if(!is_string($type)||!array_key_exists($type,$types))fail(400,'Invalid attachment type.');
+  $extensions=attachment_type_extensions(array_key_exists('type',$in)?$in['type']:'all');
   $search=array_key_exists('search',$in)?text_field($in,'search',0,120):'';$filter='';$filterArgs=[];
-  if($types[$type]){$filter.=' AND ('.implode(' OR ',array_fill(0,count($types[$type]),'lower(a.name) LIKE ?')).')';foreach($types[$type] as $extension)$filterArgs[]='%.'.$extension;}
+  if($extensions){$filter.=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$filterArgs[]='%.'.$extension;}
   // shortcut: SQLite lower folds ASCII only; add Unicode case folding when internationalized filename search is required.
   if($search!==''){$filter.=' AND instr(lower(a.name),lower(?))>0';$filterArgs[]=$search;}
   $where='m.channel_id=? AND m.deleted=0 AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$filter.') AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$c['server_id'],$cid],$filterArgs,[uid(),uid()]);

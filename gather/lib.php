@@ -143,8 +143,13 @@ function rtc_config(): array {
 function call_record(string $id): array {
  $call=one('SELECT * FROM calls WHERE id=? AND user_id=? AND seen>?',[$id,uid(),time()-45]);if(!$call)fail(410,'Call expired. Join again.');channel($call['channel_id'],true,'connect');return $call;
 }
+function attachment_type_extensions($type): array {
+ $types=['all'=>[],'image'=>['png','jpg','jpeg','webp','gif'],'audio'=>['mp3','wav','ogg'],'video'=>['mp4','webm'],'document'=>['pdf','txt','csv','md','json','zip','docx','xlsx','pptx']];
+ if(!is_string($type)||!array_key_exists($type,$types))fail(400,'Invalid attachment type.');return $types[$type];
+}
 function message_search_filters(string $cid,array $in): array {
  $filters=[];
+ if(array_key_exists('file_type',$in)){attachment_type_extensions($in['file_type']);$filters['file_type']=$in['file_type'];}
  if(array_key_exists('author_id',$in)){$id=positive_id($in['author_id']);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id)||!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
  foreach(['after_date','before_date'] as $key)if(array_key_exists($key,$in)){
   $value=$in[$key];if(!is_string($value)||!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$value)||(int)substr($value,0,4)<1970)fail(400,'Use dates from 1970 in YYYY-MM-DD format.');
@@ -157,6 +162,10 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  if(isset($filters['author_id'])){$where.=' AND m.user_id=?';$args[]=$filters['author_id'];}
  if(isset($filters['after_date'])){$where.=' AND m.created>=?';$args[]=$filters['after_date'];}
  if(isset($filters['before_date'])){$where.=' AND m.created<?';$args[]=$filters['before_date'];}
+ if(isset($filters['file_type'])){
+  $extensions=attachment_type_extensions($filters['file_type']);$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}
+  $where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';
+ }
  if($filters){$where.=' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';array_push($args,uid(),uid());}
 
  if($before){$where.=' AND m.id<?';$args[]=$before;}if($after){$where.=' AND m.id>?';$args[]=$after;}if($search!==''){$where.=' AND instr(lower(m.body),lower(?))>0';$args[]=$search;}if($pins)$where.=' AND m.pinned=1';
@@ -165,7 +174,7 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  $userId=array_pop($args);array_unshift($args,$userId);
  $order=$after?'ASC':'DESC';$messages=sql("SELECT m.reply_to,m.id,m.user_id,m.body,m.created,m.edited,m.pinned,m.system_type,CASE WHEN EXISTS(SELECT 1 FROM messages target WHERE target.id=m.system_target AND target.channel_id=m.channel_id AND target.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks bl WHERE bl.user_id=".uid()." AND bl.target=target.user_id)) THEN m.system_target END AS system_target,u.name,u.username,COALESCE(NULLIF(mb.server_avatar,''),u.avatar) AS avatar,CASE WHEN EXISTS(SELECT 1 FROM blocks bl WHERE bl.user_id=".uid()." AND bl.target=m.user_id) THEN 1 ELSE 0 END AS blocked,COALESCE(mb.nickname,'') AS nickname,mb.role,(SELECT r.color FROM roles r JOIN member_roles mr ON mr.role_id=r.id WHERE mr.user_id=u.id AND mr.server_id=ch.server_id AND length(r.color)>0 ORDER BY r.position DESC,r.id LIMIT 1) AS role_color,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.emoji='❤️') AS hearts,(SELECT count(*) FROM reactions r WHERE r.message_id=m.id AND r.emoji='❤️' AND r.user_id=?) AS reacted FROM messages m JOIN users u ON u.id=m.user_id JOIN channels ch ON ch.id=m.channel_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=ch.server_id WHERE $where ORDER BY m.id $order LIMIT 60",$args)->fetchAll();if(!$after)$messages=array_reverse($messages);
  $roleNames=array_column(sql('SELECT r.id,r.name FROM roles r JOIN channels c ON c.server_id=r.server_id WHERE c.id=?',[$cid])->fetchAll(),'name','id');
- foreach($messages as &$m){$m['preview']=role_preview($m['body'],$roleNames);$m['role_mentions']=[];foreach(mention_roles($m['body']) as $role)$m['role_mentions'][]=['id'=>$role,'name'=>$roleNames[$role]??'Deleted role'];$m['reactions']=sql('SELECT emoji,count(*) AS count,max(CASE WHEN user_id=? THEN 1 ELSE 0 END) AS selected FROM reactions WHERE message_id=? GROUP BY emoji ORDER BY min(rowid)',[uid(),$m['id']])->fetchAll();$m['attachments']=blocked((int)$m['user_id'])?[]:sql('SELECT id,name,size,description,spoiler FROM attachments WHERE message_id=?',[$m['id']])->fetchAll();$m['reply']=$m['reply_to']?one('SELECT m.id,u.name,substr(m.body,1,180) AS body,m.body AS preview FROM messages m JOIN users u ON u.id=m.user_id WHERE m.id=? AND m.channel_id=? AND m.deleted=0',[$m['reply_to'],$cid]):null;if($m['reply'])$m['reply']['preview']=role_preview($m['reply']['preview'],$roleNames);$m['thread']=one('SELECT id,name,archived FROM channels WHERE root_message=?',[$m['id']]);}unset($m);return $messages;
+ foreach($messages as &$m){$m['preview']=role_preview($m['body'],$roleNames);$m['role_mentions']=[];foreach(mention_roles($m['body']) as $role)$m['role_mentions'][]=['id'=>$role,'name'=>$roleNames[$role]??'Deleted role'];$m['reactions']=sql('SELECT emoji,count(*) AS count,max(CASE WHEN user_id=? THEN 1 ELSE 0 END) AS selected FROM reactions WHERE message_id=? GROUP BY emoji ORDER BY min(rowid)',[uid(),$m['id']])->fetchAll();$m['attachments']=blocked((int)$m['user_id'])?[]:sql('SELECT id,name,size,description,spoiler FROM attachments WHERE message_id=? AND channel_id=?',[$m['id'],$cid])->fetchAll();$m['reply']=$m['reply_to']?one('SELECT m.id,u.name,substr(m.body,1,180) AS body,m.body AS preview FROM messages m JOIN users u ON u.id=m.user_id WHERE m.id=? AND m.channel_id=? AND m.deleted=0',[$m['reply_to'],$cid]):null;if($m['reply'])$m['reply']['preview']=role_preview($m['reply']['preview'],$roleNames);$m['thread']=one('SELECT id,name,archived FROM channels WHERE root_message=?',[$m['id']]);}unset($m);return $messages;
 }
 
 function migrate_account_export(): void {
