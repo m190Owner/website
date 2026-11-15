@@ -147,6 +147,14 @@ function attachment_type_extensions($type): array {
  $types=['all'=>[],'image'=>['png','jpg','jpeg','webp','gif'],'audio'=>['mp3','wav','ogg'],'video'=>['mp4','webm'],'document'=>['pdf','txt','csv','md','json','zip','docx','xlsx','pptx']];
  if(!is_string($type)||!array_key_exists($type,$types))fail(400,'Invalid attachment type.');return $types[$type];
 }
+function message_casefold(string $text): string {
+ if(!preg_match('/[\x80-\xFF]/',$text))return strtr($text,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz');
+ static $map=null;$map??=require __DIR__.'/casefold.php';return strtr($text,$map);
+}
+function register_casefold_search(): void {
+ global $db;$method=method_exists($db,'createFunction')?'createFunction':'sqliteCreateFunction';
+ if(!$db->$method('gather_casefold','message_casefold',1))throw new RuntimeException('Unicode search is unavailable.');
+}
 function message_search_dates(array $in): array {
  $filters=[];
  foreach(['after_date','before_date','on_date'] as $key)if(array_key_exists($key,$in)){
@@ -181,7 +189,7 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  }
  if($filters){$where.=' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';array_push($args,uid(),uid());}
 
- if($before){$where.=' AND m.id<?';$args[]=$before;}if($after){$where.=' AND m.id>?';$args[]=$after;}if($search!==''){$where.=' AND instr(lower(m.body),lower(?))>0';$args[]=$search;}if($pins)$where.=' AND m.pinned=1';
+ if($before){$where.=' AND m.id<?';$args[]=$before;}if($after){$where.=' AND m.id>?';$args[]=$after;}if($search!==''){register_casefold_search();$where.=' AND instr(gather_casefold(m.body),?)>0';$args[]=message_casefold($search);}if($pins)$where.=' AND m.pinned=1';
  $args[]=uid();
  // Put the user parameter before the WHERE parameters to match the reaction subquery.
  $userId=array_pop($args);array_unshift($args,$userId);

@@ -312,22 +312,23 @@ function notification_actions(string $action,array $in): array {
   if($direct)$visible=[$conversation['id']];
   elseif(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');if($mentioned!==null&&!can_view_as($selected['id'],$mentioned))fail(403,'This mentioned person is not available in this conversation.');$visible=[$selected['id']];}
   else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid())&&($author===null||can_view_as($c['id'],$author))&&($mentioned===null||can_view_as($c['id'],$mentioned)))$visible[]=$c['id'];}
-  $rows=[];$phrase=$query!==''?message_search_phrase($query):null;
+  $rows=[];$folded=message_casefold($query);if($query!=='')register_casefold_search();$phrase=$query!==''?message_search_phrase($folded):null;
   // Keep SQLite parameter counts bounded even when a server has many threads.
   foreach(array_chunk($visible,500) as $ids){
    $where='m.channel_id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$sid],$ids,[uid(),uid()]);if($cursor&&!$ranked){$where.=' AND m.id'.($oldest?'>':'<').'?';$args[]=$cursor;}
-   if($query!==''){$where.=' AND instr(lower(m.body),lower(?))>0';$args[]=$query;}
-   if($phrase!==null){$where.=' AND m.id IN (SELECT rowid FROM message_search WHERE message_search MATCH ?)';$args[]=$phrase;}
+   if($query!==''){$where.=' AND instr(gather_casefold(m.body),?)>0';$args[]=$folded;}
+   // shortcut: Non-ASCII bodies bypass the ASCII index; migrate to a folded index if profiling warrants it.
+   if($phrase!==null){$where.=" AND (m.id IN (SELECT rowid FROM message_search WHERE message_search MATCH ?) OR m.body GLOB '*[^ -~]*')";$args[]=$phrase;}
    if($author!==null){$where.=' AND m.user_id=?';$args[]=$author;}
    if($pins)$where.=' AND m.pinned=1';
    if($hasLink)$where.=' AND gather_has_link(m.body)=1';
    if($mentionName!==null){$where.=' AND gather_mentions(m.body,?)=1';$args[]=$mentionName;}
    if(isset($dates['after_date'])){$where.=' AND m.created>=?';$args[]=$dates['after_date'];}if(isset($dates['before_date'])){$where.=' AND m.created<?';$args[]=$dates['before_date'];}
    if($extensions!==null){$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}$where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';}
-   $rankFields=$ranked?"CASE WHEN lower(m.body)=lower(?) THEN 0 WHEN instr(lower(m.body),lower(?))=1 THEN 1 ELSE 2 END AS search_rank,length(m.body) AS search_length,":'';
+   $rankFields=$ranked?"CASE WHEN gather_casefold(m.body)=? THEN 0 WHEN instr(gather_casefold(m.body),?)=1 THEN 1 ELSE 2 END AS search_rank,length(m.body) AS search_length,":'';
    $select="SELECT $rankFields m.id,m.channel_id,c.name AS channel_name,m.created,u.name,COALESCE(mb.nickname,'') AS nickname,CASE WHEN length(m.body)<=1000 THEN m.body END AS content FROM messages m JOIN channels c ON c.id=m.channel_id JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where";
    if($ranked){
-    array_unshift($args,$query,$query);$boundary='';if($cursor){$boundary=' WHERE search_rank>CAST(? AS INTEGER) OR (search_rank=CAST(? AS INTEGER) AND (search_length>CAST(? AS INTEGER) OR (search_length=CAST(? AS INTEGER) AND id<?)))';array_push($args,$cursor['rank'],$cursor['rank'],$cursor['length'],$cursor['length'],$cursor['id']);}
+    array_unshift($args,$folded,$folded);$boundary='';if($cursor){$boundary=' WHERE search_rank>CAST(? AS INTEGER) OR (search_rank=CAST(? AS INTEGER) AND (search_length>CAST(? AS INTEGER) OR (search_length=CAST(? AS INTEGER) AND id<?)))';array_push($args,$cursor['rank'],$cursor['rank'],$cursor['length'],$cursor['length'],$cursor['id']);}
     // Rank the filtered candidates identically with or without the optional text index.
     $select="SELECT * FROM ($select)$boundary ORDER BY search_rank,search_length,id DESC LIMIT 31";
    }else $select.=" ORDER BY m.id $direction LIMIT 31";
