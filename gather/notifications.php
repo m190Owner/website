@@ -338,7 +338,8 @@ function notification_actions(string $action,array $in): array {
   $sid=text_field($in,'server_id',32,32);member($sid);
   return ['members'=>sql('SELECT u.id,u.name,u.username,m.nickname FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=u.id) OR (b.target=? AND b.user_id=u.id)) ORDER BY u.name,u.id',[$sid,uid(),uid()])->fetchAll()];
  case 'conversation_search':case 'server_search':
-  $direct=$action==='conversation_search';$keys=['action','search','before','after','order','channel_id','after_date','before_date','on_date','file_type','author_id','mention_id','has_link','pins','rank_cursor'];if(!$direct)$keys[]='server_id';if(array_diff(array_keys($in),$keys))fail(400,'Invalid search request.');
+  $direct=$action==='conversation_search';$keys=['action','search','before','after','order','channel_id','after_date','before_date','on_date','file_type','author_id','mention_id','has_link','pins','rank_cursor','match_mode'];if(!$direct)$keys[]='server_id';if(array_diff(array_keys($in),$keys))fail(400,'Invalid search request.');
+  $mode=array_key_exists('match_mode',$in)?$in['match_mode']:'literal';if(!is_string($mode)||!in_array($mode,['literal','accents'],true))fail(400,'Choose a text matching mode.');$accents=$mode==='accents';$matchFunction=$accents?'gather_search_fold':'gather_casefold';
   $ordering=array_key_exists('order',$in)?$in['order']:'newest';if(!in_array($ordering,['newest','oldest','relevant'],true))fail(400,'Choose newest, oldest or most relevant order.');$oldest=$ordering==='oldest';$ranked=$ordering==='relevant';$direction=$oldest?'ASC':'DESC';$cursorKey=$ranked?'rank_cursor':($oldest?'after':'before');
   if($ranked?(array_key_exists('before',$in)||array_key_exists('after',$in)):(array_key_exists('rank_cursor',$in)||array_key_exists($oldest?'before':'after',$in)))fail(400,'Cursor direction must match search order.');
   $sid=null;if($direct)$conversation=search_conversation(text_field($in,'channel_id',32,32));else{$sid=text_field($in,'server_id',32,32);member($sid);}$rawSearch=$in['search']??null;if(is_string($rawSearch)&&preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/',$rawSearch))fail(400,'Invalid search text.');$query=text_field($in,'search',0,100);if($ranked&&$query==='')fail(400,'Enter message text for most relevant order.');$cursor=0;
@@ -359,11 +360,11 @@ function notification_actions(string $action,array $in): array {
   if($direct)$visible=[$conversation['id']];
   elseif(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');if($mentioned!==null&&!can_view_as($selected['id'],$mentioned))fail(403,'This mentioned person is not available in this conversation.');$visible=[$selected['id']];}
   else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid())&&($author===null||can_view_as($c['id'],$author))&&($mentioned===null||can_view_as($c['id'],$mentioned)))$visible[]=$c['id'];}
-  $rows=[];$folded=message_casefold($query);if($query!=='')register_casefold_search();$phrase=$query!==''?message_search_phrase($folded):null;
+  $rows=[];$folded=$accents?message_search_fold($query):message_casefold($query);if($query!=='')register_casefold_search($accents);$phrase=$query!==''?message_search_phrase($folded):null;
   // Keep SQLite parameter counts bounded even when a server has many threads.
   foreach(array_chunk($visible,500) as $ids){
    $where='m.channel_id IN ('.implode(',',array_fill(0,count($ids),'?')).') AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$sid],$ids,[uid(),uid()]);if($cursor&&!$ranked){$where.=' AND m.id'.($oldest?'>':'<').'?';$args[]=$cursor;}
-   if($query!==''){$where.=' AND instr(gather_casefold(m.body),?)>0';$args[]=$folded;}
+   if($query!==''){$where.=' AND instr('.$matchFunction.'(m.body),?)>0';$args[]=$folded;}
    // shortcut: Non-ASCII bodies bypass the ASCII index; migrate to a folded index if profiling warrants it.
    if($phrase!==null){$where.=" AND (m.id IN (SELECT rowid FROM message_search WHERE message_search MATCH ?) OR m.body GLOB '*[^ -~]*')";$args[]=$phrase;}
    if($author!==null){$where.=' AND m.user_id=?';$args[]=$author;}
@@ -372,7 +373,7 @@ function notification_actions(string $action,array $in): array {
    if($mentionName!==null){$where.=' AND gather_mentions(m.body,?)=1';$args[]=$mentionName;}
    if(isset($dates['after_date'])){$where.=' AND m.created>=?';$args[]=$dates['after_date'];}if(isset($dates['before_date'])){$where.=' AND m.created<?';$args[]=$dates['before_date'];}
    if($extensions!==null){$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}$where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';}
-   $rankFields=$ranked?"CASE WHEN gather_casefold(m.body)=? THEN 0 WHEN instr(gather_casefold(m.body),?)=1 THEN 1 ELSE 2 END AS search_rank,length(m.body) AS search_length,":'';
+   $rankFields=$ranked?"CASE WHEN $matchFunction(m.body)=? THEN 0 WHEN instr($matchFunction(m.body),?)=1 THEN 1 ELSE 2 END AS search_rank,length(m.body) AS search_length,":'';
    $select="SELECT $rankFields m.id,m.channel_id,c.name AS channel_name,m.created,u.name,COALESCE(mb.nickname,'') AS nickname,CASE WHEN length(m.body)<=1000 THEN m.body END AS content FROM messages m JOIN channels c ON c.id=m.channel_id JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where";
    if($ranked){
     array_unshift($args,$folded,$folded);$boundary='';if($cursor){$boundary=' WHERE search_rank>CAST(? AS INTEGER) OR (search_rank=CAST(? AS INTEGER) AND (search_length>CAST(? AS INTEGER) OR (search_length=CAST(? AS INTEGER) AND id<?)))';array_push($args,$cursor['rank'],$cursor['rank'],$cursor['length'],$cursor['length'],$cursor['id']);}

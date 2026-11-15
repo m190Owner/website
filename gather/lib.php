@@ -151,8 +151,18 @@ function message_casefold(string $text): string {
  if(!preg_match('/[\x80-\xFF]/',$text))return strtr($text,'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz');
  static $map=null;$map??=require __DIR__.'/casefold.php';return strtr($text,$map);
 }
-function register_casefold_search(): void {
+function message_search_fold(string $text): string {
+ $folded=message_casefold($text);if(!preg_match('/[\x80-\xFF]/',$folded))return $folded;
+ require_once __DIR__.'/vendor/autoload.php';
+ $normalizer=Symfony\Polyfill\Intl\Normalizer\Normalizer::class;
+ $decomposed=$normalizer::normalize($folded,Normalizer::NFD);if($decomposed===false)throw new RuntimeException('Search normalization is unavailable.');
+ // Preserve marks used by other scripts and emoji variation selectors.
+ $stripped=preg_replace('/(\p{Latin})(?:(?![\x{FE00}-\x{FE0F}\x{E0100}-\x{E01EF}])\p{M})+/u','$1',$decomposed);
+ $result=$stripped===null?false:$normalizer::normalize($stripped,Normalizer::NFC);if($result===false)throw new RuntimeException('Search normalization is unavailable.');return $result;
+}
+function register_casefold_search(bool $accents=false): void {
  global $db;$method=method_exists($db,'createFunction')?'createFunction':'sqliteCreateFunction';
+ if($accents&&!$db->$method('gather_search_fold','message_search_fold',1))throw new RuntimeException('Search normalization is unavailable.');
  if(!$db->$method('gather_casefold','message_casefold',1))throw new RuntimeException('Unicode search is unavailable.');
 }
 function message_search_dates(array $in): array {
