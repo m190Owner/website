@@ -286,8 +286,7 @@ function conversation_actions(string $action,array $in): array {
   $extensions=attachment_type_extensions(array_key_exists('type',$in)?$in['type']:'all');
   $search=array_key_exists('search',$in)?text_field($in,'search',0,120):'';$filter='';$filterArgs=[];
   if($extensions){$filter.=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$filterArgs[]='%.'.$extension;}
-  // shortcut: SQLite lower folds ASCII only; add Unicode case folding when internationalized filename search is required.
-  if($search!==''){$filter.=' AND instr(lower(a.name),lower(?))>0';$filterArgs[]=$search;}
+  if($search!==''){register_casefold_search();$filter.=' AND instr(gather_casefold(a.name),?)>0';$filterArgs[]=message_casefold($search);}
   $where='m.channel_id=? AND m.deleted=0 AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$filter.') AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';$args=array_merge([$c['server_id'],$cid],$filterArgs,[uid(),uid()]);
   if(array_key_exists('before',$in)){$before=positive_id($in['before']);if($before>9007199254740991)fail(400,'Invalid attachment cursor.');$where.=' AND m.id<?';$args[]=$before;}
   $rows=sql("SELECT m.id,m.created,u.name,COALESCE(mb.nickname,'') AS nickname FROM messages m JOIN users u ON u.id=m.user_id LEFT JOIN members mb ON mb.user_id=m.user_id AND mb.server_id=? WHERE $where ORDER BY m.id DESC LIMIT 31",$args)->fetchAll();$more=count($rows)>30;$rows=array_slice($rows,0,30);
