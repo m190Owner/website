@@ -145,9 +145,14 @@ function mention_names(string $body): array {
 }
 function search_web_link(string $url): bool {
  if(preg_match_all('/./us',$url)+preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$url)>2048||!preg_match('~^https?://~i',$url)||preg_match('/[\x00-\x20\x7f<>"\'\\\\]/',$url))return false;
- // shortcut: search accepts standard ASCII hosts and canonical IPs; use a shared WHATWG parser for IDNs and legacy numeric forms.
- // parse_url accepts numeric prefixes of malformed ports; check the original authority too.
- $parts=parse_url($url);if($parts===false||!isset($parts['host'])||!preg_match('~^https?://([^/?#]*)~i',$url,$authority)||!preg_match('~^(?:@|:@)?'.preg_quote($parts['host'],'~').'(?::[0-9]*)?$~D',$authority[1]))return false;if(isset($parts['host'])&&preg_match('/(?:^|\.)(?:[0-9]+|0x[0-9a-f]+)\.?$/i',$parts['host'])&&filter_var($parts['host'],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)===false)return false;return $parts!==false&&($parts['user']??'')===''&&($parts['pass']??'')===''&&isset($parts['host'])&&filter_var($parts['scheme'].'://'.$parts['host'].(isset($parts['port'])?':'.$parts['port']:''),FILTER_VALIDATE_URL)!==false;
+ // Reject malformed UTF-8 authority bytes before the IDNA polyfill; paths may contain arbitrary percent bytes.
+ preg_match('~^https?:///*([^/?#]*)~i',$url,$authority);if(!preg_match('//u',rawurldecode($authority[1])))return false;
+ // Bound per-request work for repeated URLs without retaining message bodies or fetching destinations.
+ static $cache=[];if(array_key_exists($url,$cache))return $cache[$url];if(count($cache)>=256)$cache=[];
+ // shortcut: Chromium accepts some nonstandard hosts this parser rejects; revisit the pinned Chromium exception corpus before claiming renderer parity.
+ require_once __DIR__.'/vendor/autoload.php';
+ try{$parsed=new \Rowbot\URL\URL($url);return $cache[$url]=in_array($parsed->protocol,['http:','https:'],true)&&$parsed->username===''&&$parsed->password==='';}
+ catch(\Rowbot\URL\Exception\TypeError $error){return $cache[$url]=false;}
 }
 function message_link_chunks(string $body): array {
  // Match messageContent's structural boundaries before applying inline token precedence.
