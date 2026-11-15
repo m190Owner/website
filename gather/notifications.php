@@ -143,6 +143,30 @@ function mention_text(string $body): string {
 function mention_names(string $body): array {
  preg_match_all('/(?<![a-z0-9_@.])@([a-z0-9_]{3,24})(?![a-z0-9_])/i',mention_text($body),$matches);return array_values(array_unique(array_map('strtolower',$matches[1])));
 }
+function search_web_link(string $url): bool {
+ if(preg_match_all('/./us',$url)+preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$url)>2048||!preg_match('~^https?://~i',$url)||preg_match('/[\x00-\x20\x7f<>"\'\\\\]/',$url))return false;
+ // shortcut: search accepts standard ASCII hosts and canonical IPs; use a shared WHATWG parser for IDNs and legacy numeric forms.
+ $parts=parse_url($url);if(isset($parts['host'])&&preg_match('/(?:^|\.)(?:[0-9]+|0x[0-9a-f]+)\.?$/i',$parts['host'])&&filter_var($parts['host'],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)===false)return false;return $parts!==false&&($parts['user']??'')===''&&($parts['pass']??'')===''&&isset($parts['host'])&&filter_var($parts['scheme'].'://'.$parts['host'].(isset($parts['port'])?':'.$parts['port']:''),FILTER_VALIDATE_URL)!==false;
+}
+function message_has_link(string $body,int $depth=0): bool {
+ if($depth>=8)return false;
+ // Keep token precedence and formatting depth aligned with messageContent; spoilers count even before reveal.
+ $token='%\\\\([\\\\`*_~|<>\[\]()#+.\-])|`([^`\n]+)`|\[([^\]\n]+)\]\(([^()\s]+(?:\([^()\s]*\)[^()\s]*)*)\)|(?<![a-z0-9_@/\\\\])(https?://(?:(?!~~)[^\s<>"\'`*|])+)|(?!(?<=[a-z0-9_])_)(\*\*\*|\*\*|__|~~|\|\||\*|_)(?=\S)([\s\S]*?\S)\6%i';
+ foreach(preg_split('/\r?\n/',preg_replace('/```[\s\S]*?```/',"\n",$body)) as $line){
+  $line=preg_replace('/^(?:#{1,3} +|> | {0,14}(?:[-*]|\d{1,9}\.) +)/','',$line);
+  preg_match_all($token,$line,$matches,PREG_SET_ORDER|PREG_UNMATCHED_AS_NULL);
+  foreach($matches as $m){
+   if($m[3]!==null){if(search_web_link($m[4]))return true;}
+   elseif($m[5]!==null){$raw=$m[5];do{$last=substr($raw,-1);$pairs=[')'=>'(',']'=>'[','}'=>'{'];$trim=str_contains('.,!?;:~',$last)||isset($pairs[$last])&&substr_count($raw,$last)>substr_count($raw,$pairs[$last]);if($trim)$raw=substr($raw,0,-1);}while($raw!==''&&$trim);if(search_web_link($raw))return true;}
+   elseif($m[6]!==null&&message_has_link($m[7],$depth+1))return true;
+  }
+ }
+ return false;
+}
+function register_link_search(): void {
+ global $db;$method=method_exists($db,'createFunction')?'createFunction':'sqliteCreateFunction';
+ if(!$db->$method('gather_has_link',fn($body)=>(int)message_has_link($body),1))throw new RuntimeException('Could not register link search.');
+}
 function register_mention_search(): void {
  global $db;$method=method_exists($db,'createFunction')?'createFunction':'sqliteCreateFunction';
  if(!$db->$method('gather_mentions',fn($body,$name)=>(int)in_array($name,mention_names($body),true),2))throw new RuntimeException('Could not register mention search.');
@@ -267,9 +291,10 @@ function notification_actions(string $action,array $in): array {
   $sid=text_field($in,'server_id',32,32);member($sid);
   return ['members'=>sql('SELECT u.id,u.name,u.username,m.nickname FROM members m JOIN users u ON u.id=m.user_id WHERE m.server_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=u.id) OR (b.target=? AND b.user_id=u.id)) ORDER BY u.name,u.id',[$sid,uid(),uid()])->fetchAll()];
  case 'conversation_search':case 'server_search':
-  $direct=$action==='conversation_search';$keys=['action','search','before','after','order','channel_id','after_date','before_date','file_type','author_id','mention_id'];if(!$direct)$keys[]='server_id';if(array_diff(array_keys($in),$keys))fail(400,'Invalid search request.');
+  $direct=$action==='conversation_search';$keys=['action','search','before','after','order','channel_id','after_date','before_date','file_type','author_id','mention_id','has_link'];if(!$direct)$keys[]='server_id';if(array_diff(array_keys($in),$keys))fail(400,'Invalid search request.');
   $ordering=array_key_exists('order',$in)?$in['order']:'newest';if(!in_array($ordering,['newest','oldest'],true))fail(400,'Choose newest or oldest order.');$oldest=$ordering==='oldest';$direction=$oldest?'ASC':'DESC';$cursorKey=$oldest?'after':'before';if(array_key_exists($oldest?'before':'after',$in))fail(400,'Cursor direction must match search order.');
   $sid=null;if($direct)$conversation=search_conversation(text_field($in,'channel_id',32,32));else{$sid=text_field($in,'server_id',32,32);member($sid);}$rawSearch=$in['search']??null;if(is_string($rawSearch)&&preg_match('/[\x00-\x08\x0B\x0C\x0E-\x1F]/',$rawSearch))fail(400,'Invalid search text.');$query=text_field($in,'search',0,100);$cursor=0;if(array_key_exists($cursorKey,$in)){$cursor=positive_id($in[$cursorKey]);if($cursor>9007199254740991)fail(400,'Invalid search cursor.');if($direct&&!one('SELECT 1 FROM messages WHERE id=? AND channel_id=?',[$cursor,$conversation['id']]))fail(400,'Search cursor must belong to this conversation.');}
+  $hasLink=$in['has_link']??false;if(array_key_exists('has_link',$in)&&!is_bool($in['has_link']))fail(400,'Invalid link filter.');if($hasLink)register_link_search();
   $dates=message_search_dates($in);$extensions=array_key_exists('file_type',$in)?attachment_type_extensions($in['file_type']):null;
   $author=null;if(array_key_exists('author_id',$in)){$author=message_search_author($in['author_id']);if($direct?!can_view_as($conversation['id'],$author):!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$sid,$author]))fail(403,'Choose a current author in this search.');}
   $mentioned=null;$mentionName=null;if(array_key_exists('mention_id',$in)){
@@ -277,7 +302,7 @@ function notification_actions(string $action,array $in): array {
    if(blocked($mentioned)||($direct?!can_view_as($conversation['id'],$mentioned):!one('SELECT 1 FROM members WHERE server_id=? AND user_id=?',[$sid,$mentioned])))fail(403,'Choose a current unblocked mentioned person in this search.');
    $mentionName=one('SELECT username FROM users WHERE id=?',[$mentioned])['username']??fail(403,'This mentioned person is no longer available.');register_mention_search();
   }
-  if($query===''&&$author===null&&$mentioned===null&&$extensions===null&&!$dates&&($direct||!array_key_exists('channel_id',$in)))fail(400,'Enter message text or choose at least one filter.');
+  if($query===''&&$author===null&&$mentioned===null&&$extensions===null&&!$hasLink&&!$dates&&($direct||!array_key_exists('channel_id',$in)))fail(400,'Enter message text or choose at least one filter.');
   if($direct)$visible=[$conversation['id']];
   elseif(array_key_exists('channel_id',$in)){$selected=channel(text_field($in,'channel_id',32,32));if($selected['server_id']!==$sid||$selected['kind']!=='text')fail(403,'Choose a readable text channel in this server.');if($author!==null&&!can_view_as($selected['id'],$author))fail(403,'This author is not available in this conversation.');if($mentioned!==null&&!can_view_as($selected['id'],$mentioned))fail(403,'This mentioned person is not available in this conversation.');$visible=[$selected['id']];}
   else{$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='text'",[$sid])->fetchAll() as $c)if(can_view_as($c['id'],uid())&&($author===null||can_view_as($c['id'],$author))&&($mentioned===null||can_view_as($c['id'],$mentioned)))$visible[]=$c['id'];}
@@ -288,6 +313,7 @@ function notification_actions(string $action,array $in): array {
    if($query!==''){$where.=' AND instr(lower(m.body),lower(?))>0';$args[]=$query;}
    if($phrase!==null){$where.=' AND m.id IN (SELECT rowid FROM message_search WHERE message_search MATCH ?)';$args[]=$phrase;}
    if($author!==null){$where.=' AND m.user_id=?';$args[]=$author;}
+   if($hasLink)$where.=' AND gather_has_link(m.body)=1';
    if($mentionName!==null){$where.=' AND gather_mentions(m.body,?)=1';$args[]=$mentionName;}
    if(isset($dates['after_date'])){$where.=' AND m.created>=?';$args[]=$dates['after_date'];}if(isset($dates['before_date'])){$where.=' AND m.created<?';$args[]=$dates['before_date'];}
    if($extensions!==null){$fileWhere='';if($extensions){$fileWhere=' AND ('.implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?')).')';foreach($extensions as $extension)$args[]='%.'.$extension;}$where.=' AND EXISTS(SELECT 1 FROM attachments a WHERE a.message_id=m.id AND a.channel_id=m.channel_id'.$fileWhere.')';}
