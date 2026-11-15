@@ -183,6 +183,7 @@ function message_search_author($value): int {
 }
 function message_search_filters(string $cid,array $in): array {
  $filters=message_search_dates($in);
+ if(array_key_exists('match_mode',$in)){if(!is_string($in['match_mode'])||!in_array($in['match_mode'],['literal','accents'],true))fail(400,'Choose a text matching mode.');if($in['match_mode']==='accents')$filters['match_mode']='accents';}
  if(array_key_exists('file_type',$in)){attachment_type_extensions($in['file_type']);$filters['file_type']=$in['file_type'];}
  if(array_key_exists('author_id',$in)){$id=message_search_author($in['author_id']);if(!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
  return $filters;
@@ -199,7 +200,7 @@ function messages_for(string $cid,int $before=0,string $search='',bool $pins=fal
  }
  if($filters){$where.=' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))';array_push($args,uid(),uid());}
 
- if($before){$where.=' AND m.id<?';$args[]=$before;}if($after){$where.=' AND m.id>?';$args[]=$after;}if($search!==''){register_casefold_search();$where.=' AND instr(gather_casefold(m.body),?)>0';$args[]=message_casefold($search);}if($pins)$where.=' AND m.pinned=1';
+ if($before){$where.=' AND m.id<?';$args[]=$before;}if($after){$where.=' AND m.id>?';$args[]=$after;}if($search!==''){$accents=($filters['match_mode']??'literal')==='accents';register_casefold_search($accents);$where.=' AND instr('.($accents?'gather_search_fold':'gather_casefold').'(m.body),?)>0';$args[]=$accents?message_search_fold($search):message_casefold($search);}if($pins)$where.=' AND m.pinned=1';
  $args[]=uid();
  // Put the user parameter before the WHERE parameters to match the reaction subquery.
  $userId=array_pop($args);array_unshift($args,$userId);
