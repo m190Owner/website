@@ -146,21 +146,63 @@ function mention_names(string $body): array {
 function search_web_link(string $url): bool {
  if(preg_match_all('/./us',$url)+preg_match_all('/[\x{10000}-\x{10FFFF}]/u',$url)>2048||!preg_match('~^https?://~i',$url)||preg_match('/[\x00-\x20\x7f<>"\'\\\\]/',$url))return false;
  // shortcut: search accepts standard ASCII hosts and canonical IPs; use a shared WHATWG parser for IDNs and legacy numeric forms.
- $parts=parse_url($url);if(isset($parts['host'])&&preg_match('/(?:^|\.)(?:[0-9]+|0x[0-9a-f]+)\.?$/i',$parts['host'])&&filter_var($parts['host'],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)===false)return false;return $parts!==false&&($parts['user']??'')===''&&($parts['pass']??'')===''&&isset($parts['host'])&&filter_var($parts['scheme'].'://'.$parts['host'].(isset($parts['port'])?':'.$parts['port']:''),FILTER_VALIDATE_URL)!==false;
+ // parse_url accepts numeric prefixes of malformed ports; check the original authority too.
+ $parts=parse_url($url);if($parts===false||!isset($parts['host'])||!preg_match('~^https?://([^/?#]*)~i',$url,$authority)||!preg_match('~^(?:@|:@)?'.preg_quote($parts['host'],'~').'(?::[0-9]*)?$~D',$authority[1]))return false;if(isset($parts['host'])&&preg_match('/(?:^|\.)(?:[0-9]+|0x[0-9a-f]+)\.?$/i',$parts['host'])&&filter_var($parts['host'],FILTER_VALIDATE_IP,FILTER_FLAG_IPV4)===false)return false;return $parts!==false&&($parts['user']??'')===''&&($parts['pass']??'')===''&&isset($parts['host'])&&filter_var($parts['scheme'].'://'.$parts['host'].(isset($parts['port'])?':'.$parts['port']:''),FILTER_VALIDATE_URL)!==false;
 }
-function message_has_link(string $body,int $depth=0): bool {
+function message_link_chunks(string $body): array {
+ // Match messageContent's structural boundaries before applying inline token precedence.
+ $item=static function($line){if(!is_string($line))return $line['entry']??null;if(!preg_match('/^( {0,14})([-*]|\d{1,9}\.)( +)(.+)$/',$line,$m)||strlen($m[1])%2)return null;return ['indent'=>strlen($m[1]),'contentIndent'=>strlen($m[1].$m[2].$m[3]),'tag'=>ctype_digit($m[2][0])?'ol':'ul','text'=>$m[4]];};
+ $blank=static fn($line)=>is_string($line)&&preg_match('/^[\s\x{FEFF}]*$/u',$line);
+ $aligned=static fn($line,$indent)=>is_string($line)?str_starts_with($line,str_repeat(' ',$indent)):!isset($line['entry'])&&$line['indent']>=$indent;
+ $lines=[];$tail='';$cursor=0;$afterCode=false;
+ $append=static function($text)use(&$lines,&$tail,&$afterCode){if($afterCode)$text=preg_replace('/^\r?\n/','',$text);$rows=explode("\n",$text);$tail.=array_shift($rows);foreach($rows as $row){$lines[]=$tail;$tail=$row;}$afterCode=false;};
+ preg_match_all('/```[\s\S]*?```/',$body,$fences,PREG_OFFSET_CAPTURE);
+ foreach($fences[0] as [$fence,$offset]){
+  $append(substr($body,$cursor,$offset-$cursor));$direct=preg_match('/^( {0,14})([-*]|\d{1,9}\.)( +)$/',$tail)?$item($tail.'x'):null;
+  if($direct){$direct['text']='';$lines[]=['entry'=>$direct];}
+  else{if(!$blank($tail))$lines[]=$tail;$lines[]=['indent'=>preg_match('/^ *$/',$tail)?strlen($tail):0];}
+  $tail='';$afterCode=true;$cursor=$offset+strlen($fence);
+ }
+ $append(substr($body,$cursor));$lines[]=$tail;$chunks=[];
+ $list=static function($start)use(&$list,&$chunks,$lines,$item,$blank,$aligned){
+  $first=$item($lines[$start]);$end=$start;$count=count($lines);
+  while($end<$count){
+   $entry=$item($lines[$end]);if(!$entry||$entry['indent']!==$first['indent']||$entry['tag']!==$first['tag'])break;
+   $text=$entry['text'];$end++;$flush=static function()use(&$chunks,&$text){if($text!=='')$chunks[]=$text;$text='';};
+   while($end<$count){
+    if($blank($lines[$end])){
+     $after=$end;while($after<$count&&$blank($lines[$after]))$after++;if($after===$count)break;$next=$item($lines[$after]);
+     if($next&&$next['indent']===$first['indent']&&$next['tag']===$first['tag']){$end=$after;break;}
+     if($next&&$next['indent']===$first['indent']+2||!$next&&$aligned($lines[$after],$entry['contentIndent'])){$flush();$end=$after;continue;}break;
+    }
+    $next=$item($lines[$end]);
+    if($next&&$next['indent']===$first['indent']+2){$flush();$end=$list($end);}
+    elseif(!$next&&$aligned($lines[$end],$entry['contentIndent'])){if(is_string($lines[$end]))$text.=($text!==''?"\n":'').substr($lines[$end],$entry['contentIndent']);else $flush();$end++;}
+    else break;
+   }
+   $flush();
+  }
+  return $end;
+ };
+ for($i=0;$i<count($lines);$i++){
+  if($item($lines[$i])){$i=$list($i)-1;continue;}if(!is_string($lines[$i]))continue;
+  $chunks[]=preg_match('/^(#{1,3}) +(.+)$/',$lines[$i],$heading)?$heading[2]:(str_starts_with($lines[$i],'> ')?substr($lines[$i],2):$lines[$i]);
+ }
+ return $chunks;
+}
+function message_has_link(string $body): bool {
+ foreach(message_link_chunks($body) as $chunk)if(message_inline_has_link($chunk))return true;return false;
+}
+function message_inline_has_link(string $body,int $depth=0): bool {
  if($depth>=8)return false;
  // Keep token precedence and formatting depth aligned with messageContent; spoilers count even before reveal.
  $token='%\\\\([\\\\`*_~|<>\[\]()#+.\-])|`([^`\n]+)`|\[([^\]\n]+)\]\(([^()\s]+(?:\([^()\s]*\)[^()\s]*)*)\)|(?<![a-z0-9_@/\\\\])(https?://(?:(?!~~)[^\s<>"\'`*|])+)|(?!(?<=[a-z0-9_])_)(\*\*\*|\*\*|__|~~|\|\||\*|_)(?=\S)([\s\S]*?\S)\6%i';
- foreach(preg_split('/\r?\n/',preg_replace('/```[\s\S]*?```/',"\n",$body)) as $line){
-  $line=preg_replace('/^(?:#{1,3} +|> | {0,14}(?:[-*]|\d{1,9}\.) +)/','',$line);
-  preg_match_all($token,$line,$matches,PREG_SET_ORDER|PREG_UNMATCHED_AS_NULL);
+ preg_match_all($token,$body,$matches,PREG_SET_ORDER|PREG_UNMATCHED_AS_NULL);
   foreach($matches as $m){
    if($m[3]!==null){if(search_web_link($m[4]))return true;}
    elseif($m[5]!==null){$raw=$m[5];do{$last=substr($raw,-1);$pairs=[')'=>'(',']'=>'[','}'=>'{'];$trim=str_contains('.,!?;:~',$last)||isset($pairs[$last])&&substr_count($raw,$last)>substr_count($raw,$pairs[$last]);if($trim)$raw=substr($raw,0,-1);}while($raw!==''&&$trim);if(search_web_link($raw))return true;}
-   elseif($m[6]!==null&&message_has_link($m[7],$depth+1))return true;
+   elseif($m[6]!==null&&message_inline_has_link($m[7],$depth+1))return true;
   }
- }
  return false;
 }
 function register_link_search(): void {
