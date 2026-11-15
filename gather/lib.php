@@ -149,11 +149,16 @@ function attachment_type_extensions($type): array {
 }
 function message_search_dates(array $in): array {
  $filters=[];
- foreach(['after_date','before_date'] as $key)if(array_key_exists($key,$in)){
+ foreach(['after_date','before_date','on_date'] as $key)if(array_key_exists($key,$in)){
   $value=$in[$key];if(!is_string($value)||!preg_match('/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/D',$value)||(int)substr($value,0,4)<1970)fail(400,'Use dates from 1970 in YYYY-MM-DD format.');
   $date=DateTimeImmutable::createFromFormat('!Y-m-d',$value,new DateTimeZone('UTC'));if(!$date||$date->format('Y-m-d')!==$value)fail(400,'Choose a valid calendar date.');$filters[$key]=$date->getTimestamp();
  }
- if(isset($filters['after_date'],$filters['before_date'])&&$filters['after_date']>=$filters['before_date'])fail(400,'The before date must follow the on-or-after date.');return $filters;
+ if(isset($filters['after_date'],$filters['before_date'])&&$filters['after_date']>=$filters['before_date'])fail(400,'The before date must follow the on-or-after date.');
+ if(isset($filters['on_date'])){
+  $day=$filters['on_date'];if(isset($filters['after_date'])&&$day<$filters['after_date']||isset($filters['before_date'])&&$day>=$filters['before_date'])fail(400,'The exact day must fall within the date range.');
+  $filters['after_date']=$day;$filters['before_date']=$day+86400;unset($filters['on_date']);
+ }
+ return $filters;
 }
 function message_search_author($value): int {
  $id=positive_id($value);if($id>9007199254740991)fail(400,'Invalid author.');if(blocked($id))fail(403,'This author is not available.');return $id;
