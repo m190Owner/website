@@ -183,6 +183,7 @@ function message_search_author($value): int {
 }
 function message_search_filters(string $cid,array $in): array {
  $filters=message_search_dates($in);
+ if(array_key_exists('has_link',$in)){if(!is_bool($in['has_link']))fail(400,'Invalid link filter.');if($in['has_link'])$filters['has_link']=true;}
  if(array_key_exists('match_mode',$in)){if(!is_string($in['match_mode'])||!in_array($in['match_mode'],['literal','accents'],true))fail(400,'Choose a text matching mode.');if($in['match_mode']==='accents')$filters['match_mode']='accents';}
  if(array_key_exists('file_type',$in)){attachment_type_extensions($in['file_type']);$filters['file_type']=$in['file_type'];}
  if(array_key_exists('author_id',$in)){$id=message_search_author($in['author_id']);if(!can_view_as($cid,$id))fail(403,'This author is not available in this conversation.');$filters['author_id']=$id;}
@@ -191,6 +192,7 @@ function message_search_filters(string $cid,array $in): array {
 
 function messages_for(string $cid,int $before=0,string $search='',bool $pins=false,int $after=0,array $filters=[]): array {
  $where='m.channel_id=? AND m.deleted=0';$args=[$cid];
+ if(!empty($filters['has_link'])){register_link_search();$where.=' AND gather_has_link(m.body)=1';}
  if(isset($filters['author_id'])){$where.=' AND m.user_id=?';$args[]=$filters['author_id'];}
  if(isset($filters['after_date'])){$where.=' AND m.created>=?';$args[]=$filters['after_date'];}
  if(isset($filters['before_date'])){$where.=' AND m.created<?';$args[]=$filters['before_date'];}
