@@ -498,6 +498,10 @@ function migrate_event_voice(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=62)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=62)return;$db->exec("ALTER TABLE scheduled_events ADD COLUMN channel_id TEXT REFERENCES channels(id) ON DELETE CASCADE;CREATE INDEX events_channel ON scheduled_events(channel_id);PRAGMA user_version=62;");});
 }
+function migrate_event_browse(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=63)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=63)return;$db->exec('CREATE INDEX events_server_schedule ON scheduled_events(server_id,starts,id);PRAGMA user_version=63;');});
+}
 function event_channel_access(?string $cid,int $who): bool {
  if($cid===null)return true;
  global $user;$saved=$user;$user=['id'=>$who];try{$c=channel($cid);return $c['kind']==='voice'&&channel_capabilities($c)['connect'];}catch(ApiError $error){if(in_array($error->status,[403,404],true))return false;throw $error;}finally{$user=$saved;}
@@ -519,7 +523,19 @@ function event_result(array $e): array {
 function event_action(string $action,array $in): array {
  if($action==='event_list'){
   $sid=text_field($in,'server_id',32,32);member($sid);$before=$in['before']??0;$history=$in['history']??false;if(!is_int($before)||$before<0||$before>9007199254740991||!is_bool($history))fail(400,'Choose a valid event page.');
-  $rows=sql("SELECT * FROM scheduled_events e WHERE server_id=?".($before?" AND id<?":"")." AND ".($history?"(status IN ('completed','cancelled') OR ends<=?)":"(status IN ('scheduled','active') AND ends>?)")." AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=e.creator_id) OR (b.target=? AND b.user_id=e.creator_id)) ORDER BY id DESC LIMIT 21",[$sid,...($before?[$before]:[]),time(),uid(),uid()])->fetchAll();$more=count($rows)>20;$rows=array_slice($rows,0,20);return ['events'=>array_map(fn($r)=>event_result(event_access((int)$r['id'])),array_values(array_filter($rows,fn($r)=>event_channel_access($r['channel_id'],uid())))),'next'=>$more?(int)end($rows)['id']:null,'can_create'=>in_array('create_events',permissions_for($sid),true)];
+  $modern=array_key_exists('order',$in);$order=$modern?$in['order']:'newest';$query=$modern?text_field($in+['query'=>''],'query',0,100):'';$cursor=$in['cursor']??null;
+  if(!in_array($order,['schedule','newest'],true)||($modern&&$before)||(!$modern&&(array_key_exists('query',$in)||array_key_exists('cursor',$in))))fail(400,'Invalid event browsing options.');
+  $context=['server_id'=>$sid,'history'=>$history,'order'=>$order,'query'=>$query];
+  if($cursor!==null){if(!$modern||!is_array($cursor)||count($cursor)!==6||array_diff(array_keys($cursor),['server_id','history','order','query','id','starts']))fail(400,'Invalid event cursor.');foreach($context as $key=>$value)if(($cursor[$key]??null)!==$value)fail(400,'Event cursor belongs to another view.');foreach(['id','starts'] as $key)if(!is_int($cursor[$key]??null)||$cursor[$key]<($key==='id'?1:0)||$cursor[$key]>9007199254740991)fail(400,'Invalid event cursor.');}
+  $where="e.server_id=? AND ".($history?"(e.status IN ('completed','cancelled') OR e.ends<=?)":"(e.status IN ('scheduled','active') AND e.ends>?)")." AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=e.creator_id) OR (b.target=? AND b.user_id=e.creator_id))";$args=[$sid,time(),uid(),uid()];
+  // Filter rooms before paging so a schedule cursor never discloses a hidden event's start time.
+  if($modern){$visible=[];foreach(sql("SELECT id FROM channels WHERE server_id=? AND kind='voice'",[$sid])->fetchAll() as $c)if(event_channel_access($c['id'],uid()))$visible[]=$c['id'];$where.=' AND (e.channel_id IS NULL'.($visible?' OR e.channel_id IN ('.implode(',',array_fill(0,count($visible),'?')).')':'').')';array_push($args,...$visible);}
+  if($query!==''){register_casefold_search();$where.=' AND instr(gather_casefold(e.title),?)>0';$args[]=message_casefold($query);}
+  $schedule=$modern&&$order==='schedule';$direction=$history?'DESC':'ASC';$op=$history?'<':'>';
+  if($cursor){if($schedule){$where.=" AND (e.starts$op? OR (e.starts=? AND e.id$op?))";array_push($args,$cursor['starts'],$cursor['starts'],$cursor['id']);}else{$where.=' AND e.id<?';$args[]=$cursor['id'];}}
+  elseif($before){$where.=' AND e.id<?';$args[]=$before;}
+  $rows=sql('SELECT e.* FROM scheduled_events e WHERE '.$where.' ORDER BY '.($schedule?"e.starts $direction,e.id $direction":'e.id DESC').' LIMIT 21',$args)->fetchAll();$more=count($rows)>20;$rows=array_slice($rows,0,20);$last=end($rows);
+  return ['events'=>array_map(fn($r)=>event_result(event_access((int)$r['id'])),array_values(array_filter($rows,fn($r)=>event_channel_access($r['channel_id'],uid())))),'next'=>$more?($modern?[...$context,'id'=>(int)$last['id'],'starts'=>(int)$last['starts']]:(int)$last['id']):null,'can_create'=>in_array('create_events',permissions_for($sid),true)];
  }
  if($action==='event_create'){
   $sid=text_field($in,'server_id',32,32);$client=text_field($in,'client_id',16,64);rate('event-write:'.uid(),30,60);
