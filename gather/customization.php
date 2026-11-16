@@ -92,6 +92,7 @@ function customization(string $action,array $in): array {
   $sid=text_field($in,'server_id',32,32);member($sid);return ['emoji'=>sql("SELECT id,substr(slot,7) AS name FROM media WHERE server_id=? AND slot LIKE 'emoji:%' ORDER BY slot",[$sid])->fetchAll()];
  case 'media':
   $id=text_field($in,'id',32,32);$asset=one('SELECT * FROM media WHERE id=?',[$id]);if(!$asset)fail(404,'Image no longer available.');
+  if(str_starts_with($asset['slot'],'event-cover:'))return transaction(function()use($id){$asset=one('SELECT * FROM media WHERE id=?',[$id]);if(!$asset)fail(404,'Image no longer available.');$e=event_access((int)substr($asset['slot'],12));if($e['server_id']!==$asset['server_id'])fail(403,'This image is private.');return ['data'=>$asset['data']];});
   if($asset['server_id'])member($asset['server_id']);
   elseif((int)$asset['user_id']!==uid()&&!friends((int)$asset['user_id'])&&!one('SELECT 1 FROM members a JOIN members b ON a.server_id=b.server_id WHERE a.user_id=? AND b.user_id=?',[uid(),$asset['user_id']])&&!one('SELECT 1 FROM channel_members a JOIN channel_members b ON a.channel_id=b.channel_id JOIN channels c ON c.id=a.channel_id WHERE c.server_id IS NULL AND a.user_id=? AND b.user_id=?',[uid(),$asset['user_id']]))fail(403,'This image is private.');
   return ['data'=>$asset['data']];

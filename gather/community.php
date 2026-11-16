@@ -502,6 +502,16 @@ function migrate_event_browse(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=63)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=63)return;$db->exec('CREATE INDEX events_server_schedule ON scheduled_events(server_id,starts,id);PRAGMA user_version=63;');});
 }
+function migrate_event_covers(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=64)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=64)return;$db->exec("CREATE TRIGGER event_cover_cleanup AFTER DELETE ON scheduled_events BEGIN DELETE FROM media WHERE server_id=OLD.server_id AND slot='event-cover:'||OLD.id; END;PRAGMA user_version=64;");});
+}
+function event_cover(array $e,array $in): array {
+ $slot='event-cover:'.$e['id'];$old=one('SELECT id,data FROM media WHERE server_id=? AND slot=?',[$e['server_id'],$slot]);$before=$old['id']??'';
+ if(!array_key_exists('cover_data',$in))return [$before,$before];
+ $data=$in['cover_data'];validate_image($data);if(($old['data']??'')===$data)return [$before,$before];rate('image-upload:'.uid(),60,3600);
+ if($old)sql('DELETE FROM media WHERE id=?',[$before]);$id=$data!==''?random_id():'';if($id)sql('INSERT INTO media VALUES(?,NULL,?,?,?)',[$id,$e['server_id'],$slot,$data]);return [$before,$id];
+}
 function event_channel_access(?string $cid,int $who): bool {
  if($cid===null)return true;
  global $user;$saved=$user;$user=['id'=>$who];try{$c=channel($cid);return $c['kind']==='voice'&&channel_capabilities($c)['connect'];}catch(ApiError $error){if(in_array($error->status,[403,404],true))return false;throw $error;}finally{$user=$saved;}
@@ -518,7 +528,7 @@ function event_can_manage(array $e): bool {$p=permissions_for($e['server_id']);r
 function event_people_where(): string {return 'i.event_id=? AND u.disabled_at=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=i.user_id) OR (b.target=? AND b.user_id=i.user_id))';}
 function event_result(array $e): array {
  $e['status']=event_status($e);$e['can_manage']=event_can_manage($e);$e['creator_name']=$e['creator_id']?(one('SELECT name FROM users WHERE id=?',[$e['creator_id']])['name']??'Former member'):'Former member';$e['interested']=!!one('SELECT 1 FROM event_interests WHERE event_id=? AND user_id=?',[$e['id'],uid()]);
- $e['interested_count']=$e['channel_id']?count(event_people($e)):(int)sql('SELECT count(*) FROM event_interests i JOIN users u ON u.id=i.user_id JOIN members m ON m.user_id=i.user_id AND m.server_id=? WHERE '.event_people_where(),[$e['server_id'],$e['id'],uid(),uid()])->fetchColumn();unset($e['client_id']);return $e;
+ $e['interested_count']=$e['channel_id']?count(event_people($e)):(int)sql('SELECT count(*) FROM event_interests i JOIN users u ON u.id=i.user_id JOIN members m ON m.user_id=i.user_id AND m.server_id=? WHERE '.event_people_where(),[$e['server_id'],$e['id'],uid(),uid()])->fetchColumn();$e['cover']=one('SELECT id FROM media WHERE server_id=? AND slot=?',[$e['server_id'],'event-cover:'.$e['id']])['id']??'';unset($e['client_id']);return $e;
 }
 function event_action(string $action,array $in): array {
  if($action==='event_list'){
@@ -540,7 +550,7 @@ function event_action(string $action,array $in): array {
  if($action==='event_create'){
   $sid=text_field($in,'server_id',32,32);$client=text_field($in,'client_id',16,64);rate('event-write:'.uid(),30,60);
   $id=transaction(function()use($sid,$client,$in){$m=member($sid);require_permission($sid,'create_events');if($m['muted_until']>time())fail(403,'You cannot change events while timed out.');$old=one('SELECT id,server_id FROM scheduled_events WHERE creator_id=? AND client_id=?',[uid(),$client]);if($old){if($old['server_id']!==$sid)fail(409,'This event retry belongs to another server.');return (int)$old['id'];}
-   if(sql("SELECT count(*) FROM scheduled_events WHERE server_id=? AND status IN ('scheduled','active') AND ends>?",[$sid,time()])->fetchColumn()>=100)fail(409,'This server already has 100 upcoming events.');$v=event_fields($in,$sid);sql('INSERT INTO scheduled_events(server_id,creator_id,client_id,title,description,location,starts,ends,channel_id) VALUES(?,?,?,?,?,?,?,?,?)',[$sid,uid(),$client,...array_values($v)]);global $db;$id=(int)$db->lastInsertId();event_audit('event-create',['id'=>$id,'server_id'=>$sid],[],[...$v,'status'=>'scheduled']);return $id;});return event_result(event_access($id));
+   if(sql("SELECT count(*) FROM scheduled_events WHERE server_id=? AND status IN ('scheduled','active') AND ends>?",[$sid,time()])->fetchColumn()>=100)fail(409,'This server already has 100 upcoming events.');$v=event_fields($in,$sid);sql('INSERT INTO scheduled_events(server_id,creator_id,client_id,title,description,location,starts,ends,channel_id) VALUES(?,?,?,?,?,?,?,?,?)',[$sid,uid(),$client,...array_values($v)]);global $db;$id=(int)$db->lastInsertId();$event=['id'=>$id,'server_id'=>$sid];[, $cover]=event_cover($event,$in);event_audit('event-create',$event,[],[...$v,'status'=>'scheduled','cover'=>$cover]);return $id;});return event_result(event_access($id));
  }
  $id=positive_id($in['id']??null);$e=event_access($id);
  if($action==='event_get')return event_result($e);
@@ -549,7 +559,7 @@ function event_action(string $action,array $in): array {
  transaction(function()use($action,$id,$in){$e=event_access($id,true);$status=event_status($e);
   if($action==='event_interest'){$selected=$in['selected']??null;if(!is_bool($selected))fail(400,'Choose whether you are interested.');if($selected){if(!in_array($status,['scheduled','active'],true))fail(409,'This event has ended.');if($e['channel_id']&&!one('SELECT 1 FROM event_interests WHERE event_id=? AND user_id=?',[$id,uid()])&&sql('SELECT count(*) FROM event_interests WHERE event_id=?',[$id])->fetchColumn()>=200)fail(409,'Voice events support up to 200 interested members.');sql('INSERT OR IGNORE INTO event_interests VALUES(?,?)',[$id,uid()]);}else sql('DELETE FROM event_interests WHERE event_id=? AND user_id=?',[$id,uid()]);return;}
   if(!event_can_manage($e))fail(403,'You do not have permission to manage this event.');if(!is_int($in['revision']??null)||$in['revision']!==(int)$e['revision'])fail(409,'This event changed. Refresh it before saving.');
-  if($action==='event_edit'){if($status!=='scheduled')fail(409,'Only upcoming events can be edited.');if($e['channel_id']&&($in['destination_version']??0)!==1)fail(409,'Update Gather before editing a voice event.');$v=event_fields($in,$e['server_id']);if($v['channel_id']&&sql('SELECT count(*) FROM event_interests WHERE event_id=?',[$id])->fetchColumn()>200)fail(409,'Voice events support up to 200 interested members.');if($e['channel_id'])$e['location']='Voice channel';if(!event_audit('event-edit',$e,$e,$v))return;sql('UPDATE scheduled_events SET title=?,description=?,location=?,starts=?,ends=?,channel_id=?,revision=revision+1 WHERE id=?',[...array_values($v),$id]);return;}
+  if($action==='event_edit'){if($status!=='scheduled')fail(409,'Only upcoming events can be edited.');if($e['channel_id']&&($in['destination_version']??0)!==1)fail(409,'Update Gather before editing a voice event.');$v=event_fields($in,$e['server_id']);if($v['channel_id']&&sql('SELECT count(*) FROM event_interests WHERE event_id=?',[$id])->fetchColumn()>200)fail(409,'Voice events support up to 200 interested members.');if($e['channel_id'])$e['location']='Voice channel';[$beforeCover,$cover]=event_cover($e,$in);if(!event_audit('event-edit',$e,[...$e,'cover'=>$beforeCover],[...$v,'cover'=>$cover]))return;sql('UPDATE scheduled_events SET title=?,description=?,location=?,starts=?,ends=?,channel_id=?,revision=revision+1 WHERE id=?',[...array_values($v),$id]);return;}
   $next=['event_start'=>'active','event_complete'=>'completed','event_cancel'=>'cancelled'][$action]??null;if(!$next)fail(404,'Unknown event action.');if(($next==='completed'&&$status!=='active')||($next!=='completed'&&$status!=='scheduled'))fail(409,'This event can no longer make that change.');event_audit(str_replace('_','-',$action),$e,['status'=>$e['status']],['status'=>$next]);if($next==='active')notify_event_start($e);sql('UPDATE scheduled_events SET status=?,revision=revision+1 WHERE id=?',[$next,$id]);
  });return event_result(event_access($id));
 }
@@ -560,7 +570,7 @@ function event_fields(array $in,string $sid): array {
  $starts=$in['starts']??null;$ends=$in['ends']??null;if(!is_int($starts)||!is_int($ends)||$starts<=time()||$starts>time()+366*86400||$ends<=$starts||$ends>$starts+7*86400)fail(400,'Choose a future start within a year and an end within seven days after it.');return ['title'=>text_field($in,'title',1,100),'description'=>text_field($in+['description'=>''],'description',0,1000),'location'=>$cid?'Voice channel':text_field($in,'location',1,200),'starts'=>$starts,'ends'=>$ends,'channel_id'=>$cid];
 }
 function event_audit(string $action,array $e,array $before,array $after): bool {
- $fields=array_intersect_key(['title'=>'Title','description'=>'Description','location'=>'Location','channel_id'=>'Voice channel ID','starts'=>'Start (UTC seconds)','ends'=>'End (UTC seconds)','status'=>'Status'],$after);
+ $fields=array_intersect_key(['title'=>'Title','description'=>'Description','location'=>'Location','channel_id'=>'Voice channel ID','starts'=>'Start (UTC seconds)','ends'=>'End (UTC seconds)','status'=>'Status','cover'=>'Cover image ID'],$after);
  // Server audit readers may lack access to the voice room; retain changed field names without private values.
  if(($e['channel_id']??null)||($before['channel_id']??null)||($after['channel_id']??null)){$changed=[];foreach($fields as $key=>$name)if(($before[$key]??null)!==($after[$key]??null))$changed[]=$name;if(!$changed)return false;hierarchy_audit($e['server_id'],$action,0,'Event ['.$e['id'].']'."\nVoice event fields changed: ".implode(', ',$changed));return true;}
  return audit_changes($e['server_id'],$action,'Event ['.$e['id'].']',$before,$after,$fields);
