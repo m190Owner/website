@@ -1,5 +1,9 @@
 <?php
 declare(strict_types=1);
+function migrate_forum_channels(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=66)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=66)return;$db->exec('ALTER TABLE channels ADD COLUMN forum INTEGER NOT NULL DEFAULT 0 CHECK(forum IN (0,1)); PRAGMA user_version=66;');});
+}
 function migrate_thread_starters(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=65)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=65)return;$db->exec('ALTER TABLE channels ADD COLUMN thread_client_id TEXT; CREATE UNIQUE INDEX thread_creation_retry ON channels(thread_creator_id,thread_client_id) WHERE thread_client_id IS NOT NULL; PRAGMA user_version=65;');});
@@ -102,7 +106,7 @@ function migrate_conversations(): void {
 function channel_capabilities(array $c,bool $forThread=false): array {
  if($c['parent_id']){$p=channel_capabilities(one('SELECT * FROM channels WHERE id=?',[$c['parent_id']]),true);$p['send']=$p['send_in_threads'];if(!empty($c['thread_private'])&&!$p['manage_threads']&&!one('SELECT 1 FROM thread_members WHERE channel_id=? AND user_id=?',[$c['id'],uid()]))$p['view']=false;return $p;}
  if(!$c['server_id'])return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>false,'create_private_threads'=>false,'create_public_threads'=>false,'send_in_threads'=>true,'add_reactions'=>true,'create_polls'=>true];
- $m=member($c['server_id']);if($m['role']==='owner')return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>true,'create_private_threads'=>true,'create_public_threads'=>true,'send_in_threads'=>true,'add_reactions'=>true,'create_polls'=>true];
+ $m=member($c['server_id']);if($m['role']==='owner')return ['view'=>true,'send'=>empty($c['forum'])||$forThread,'connect'=>empty($c['forum'])||$forThread,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>true,'create_private_threads'=>empty($c['forum']),'create_public_threads'=>true,'send_in_threads'=>true,'add_reactions'=>true,'create_polls'=>true];
  $roles=array_column(sql('SELECT role_id FROM member_roles WHERE server_id=? AND user_id=?',[$c['server_id'],uid()])->fetchAll(),'role_id');
  $visible=!$c['private']||one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$c['id'],uid()])||one('SELECT 1 FROM channel_roles cr JOIN member_roles mr ON mr.role_id=cr.role_id WHERE cr.channel_id=? AND mr.user_id=?',[$c['id'],uid()]);
  $permissions=permissions_for($c['server_id']);$defaults=thread_defaults($c['server_id']);
@@ -112,7 +116,7 @@ function channel_capabilities(array $c,bool $forThread=false): array {
  foreach(['everyone','role','member'] as $kind){$values=[];foreach($rows as $r){if($r['kind']!==$kind||($kind==='role'&&!in_array($r['subject'],$roles,true))||($kind==='member'&&$r['subject']!==(string)uid()))continue;$key=$r['permission'];$values[$key]=max($values[$key]??-1,(int)$r['value']);}foreach($values as $key=>$v)$p[$key]=$v===1;}
  $p['send_in_threads']??=$p['send'];
  // Preserve legacy creation restrictions unless a role or override explicitly sets Add Reactions.
- $p['create_polls']??=$forThread?$p['send_in_threads']:$p['send'];$p['add_reactions']??=$forThread?$p['send_in_threads']:$p['send'];return $p;
+ $p['create_polls']??=$forThread?$p['send_in_threads']:$p['send'];$p['add_reactions']??=$forThread?$p['send_in_threads']:$p['send'];if(!empty($c['forum'])){$p['create_private_threads']=false;if(!$forThread){$p['send']=false;$p['connect']=false;}}return $p;
 }
 function migrate_category_overrides(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=27)return;
