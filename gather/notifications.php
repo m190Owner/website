@@ -398,3 +398,26 @@ function notification_actions(string $action,array $in): array {
   $id=positive_id($in['message_id']??null);$m=one('SELECT channel_id FROM messages WHERE id=? AND deleted=0',[$id]);if(!$m)fail(404,'Message no longer available.');$c=channel($m['channel_id']);$after=sql('SELECT id FROM messages WHERE channel_id=? AND deleted=0 AND id>=? ORDER BY id LIMIT 30',[$c['id'],$id])->fetchAll();$last=end($after);return ['channel'=>$c,'messages'=>messages_for($c['id'],(int)$last['id']+1)];
  }fail(404,'Unknown notification action.');
 }
+
+
+function migrate_event_notices(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=61)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=61)return;$db->exec("CREATE TABLE event_notices(id INTEGER PRIMARY KEY AUTOINCREMENT,event_id INTEGER NOT NULL REFERENCES scheduled_events(id) ON DELETE CASCADE,user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,created INTEGER NOT NULL,seen INTEGER NOT NULL DEFAULT 0,silent INTEGER NOT NULL DEFAULT 0,UNIQUE(event_id,user_id));CREATE INDEX event_notices_person ON event_notices(user_id,id);CREATE TRIGGER member_event_notices_cleanup AFTER DELETE ON members BEGIN DELETE FROM event_notices WHERE user_id=OLD.user_id AND event_id IN (SELECT id FROM scheduled_events WHERE server_id=OLD.server_id);END;PRAGMA user_version=61;");});
+}
+function notify_event_start(array $e): void {
+ $rows=sql("SELECT i.user_id,CASE WHEN COALESCE(p.mode,'all')='muted' OR COALESCE(m.muted_until,0)>CAST(? AS INTEGER) OR u.status='dnd' THEN 1 ELSE 0 END AS silent FROM event_interests i JOIN users u ON u.id=i.user_id JOIN members mb ON mb.user_id=i.user_id AND mb.server_id=? LEFT JOIN server_notification_preferences p ON p.user_id=i.user_id AND p.server_id=mb.server_id LEFT JOIN server_notification_mutes m ON m.user_id=i.user_id AND m.server_id=mb.server_id WHERE i.event_id=? AND i.user_id<>? AND u.disabled_at=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=i.user_id AND b.target IN (?,?)) OR (b.target=i.user_id AND b.user_id IN (?,?))) LIMIT 201",[time(),$e['server_id'],$e['id'],uid(),uid(),$e['creator_id'],uid(),$e['creator_id']])->fetchAll();
+ // shortcut: atomic fanout is capped for shared hosting; add queued delivery before supporting larger audiences.
+ if(count($rows)>200)fail(409,'This event has more than 200 eligible interested members. Larger event delivery is not supported yet.');
+ foreach($rows as $r){sql('INSERT OR IGNORE INTO event_notices(event_id,user_id,actor_id,created,silent) VALUES(?,?,?,?,?)',[$e['id'],$r['user_id'],uid(),time(),$r['silent']]);sql('DELETE FROM event_notices WHERE user_id=? AND id NOT IN (SELECT id FROM event_notices WHERE user_id=? ORDER BY id DESC LIMIT 500)',[$r['user_id'],$r['user_id']]);}
+}
+function event_notice_rows(): array {
+ return sql("SELECT n.id,n.event_id,n.created,n.seen,e.title,e.server_id,s.name AS server_name,CASE WHEN n.silent=0 AND COALESCE(p.mode,'all')<>'muted' AND n.created>=COALESCE(m.muted_until,0) THEN 1 ELSE 0 END AS alert FROM event_notices n JOIN scheduled_events e ON e.id=n.event_id JOIN servers s ON s.id=e.server_id JOIN members mb ON mb.server_id=e.server_id AND mb.user_id=n.user_id LEFT JOIN server_notification_preferences p ON p.server_id=e.server_id AND p.user_id=n.user_id LEFT JOIN server_notification_mutes m ON m.server_id=e.server_id AND m.user_id=n.user_id WHERE n.user_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=n.user_id AND b.target IN (n.actor_id,e.creator_id)) OR (b.target=n.user_id AND b.user_id IN (n.actor_id,e.creator_id))) ORDER BY n.id DESC LIMIT 500",[uid()])->fetchAll();
+}
+function event_notice_summary(): array {
+ global $db;$db->beginTransaction();try{$rows=event_notice_rows();$unread=array_filter($rows,fn($r)=>!$r['seen']);$result=['event_unread'=>count($unread),'event_latest_id'=>(int)sql('SELECT COALESCE(max(id),0) FROM event_notices WHERE user_id=?',[uid()])->fetchColumn(),'event_alert_id'=>max([0,...array_map(fn($r)=>$r['alert']?(int)$r['id']:0,$unread)])];$db->commit();return $result;}catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
+}
+function event_notices_action(string $action,array $in): array {
+ if($action==='event_notices'){if(array_diff(array_keys($in),['action','before']))fail(400,'Invalid event inbox request.');$before=$in['before']??0;if(!is_int($before)||$before<0||$before>9007199254740991)fail(400,'Invalid event inbox page.');$rows=array_values(array_filter(event_notice_rows(),fn($r)=>!$before||$r['id']<$before));$more=count($rows)>50;$rows=array_slice($rows,0,50);foreach($rows as &$r)unset($r['alert']);unset($r);return ['items'=>$rows,'next'=>$more?(int)end($rows)['id']:null];}
+ if(array_diff(array_keys($in),['action','id','all'])||isset($in['all'])&&!is_bool($in['all'])||isset($in['all'],$in['id']))fail(400,'Invalid event inbox read request.');
+ if(($in['all']??false)===true)sql('UPDATE event_notices SET seen=1 WHERE user_id=?',[uid()]);else sql('UPDATE event_notices SET seen=1 WHERE user_id=? AND id=?',[uid(),positive_id($in['id']??null)]);return ['ok'=>true];
+}
