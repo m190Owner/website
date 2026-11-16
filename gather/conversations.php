@@ -1,5 +1,9 @@
 <?php
 declare(strict_types=1);
+function migrate_thread_starters(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=65)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=65)return;$db->exec('ALTER TABLE channels ADD COLUMN thread_client_id TEXT; CREATE UNIQUE INDEX thread_creation_retry ON channels(thread_creator_id,thread_client_id) WHERE thread_client_id IS NOT NULL; PRAGMA user_version=65;');});
+}
 function migrate_attachment_descriptions(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=53)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=53)return;$db->exec("ALTER TABLE attachments ADD COLUMN description TEXT NOT NULL DEFAULT ''; PRAGMA user_version=53;");});
@@ -257,6 +261,20 @@ function conversation_actions(string $action,array $in): array {
    foreach($ids as $who)if(blocked($who)||!can_view_as($cid,$who))fail(403,'A selected member cannot access this channel.');
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
    if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$cid])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();$now=time();sql('INSERT INTO channels(id,server_id,name,kind,private,thread_private,created,parent_id,slowmode,thread_activity,auto_archive_minutes,thread_creator_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',1,1,$now,$cid,$parent['default_thread_slowmode'],$now,$parent['default_thread_auto_archive_minutes'],uid()]);foreach(array_unique(array_merge([uid()],$ids)) as $who)sql('INSERT INTO thread_members VALUES(?,?,?,?)',[$id,$parent['server_id'],$who,$now]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
+ case 'thread_start':
+  $cid=text_field($in,'channel_id',32,32);$name=text_field($in,'name',1,32);$body=text_field($in,'body',1,4000);$client=text_field($in,'client_id',16,64);
+  if(!preg_match('/^[a-zA-Z0-9_-]{16,64}$/D',$client))fail(400,'Invalid discussion retry key.');
+  foreach(['attachments','reply_to','system_type','system_target','notify_everyone','notify_here'] as $field)if(array_key_exists($field,$in))fail(400,'Start a discussion with a title and text only. Add files and notifications after opening it.');
+  return transaction(function()use($cid,$name,$body,$client){
+   $parent=channel($cid,true,'create_public_threads');if(!$parent['server_id']||$parent['kind']!=='text'||$parent['parent_id'])fail(400,'Start a discussion in a server text channel.');channel($cid,true,'send_in_threads');
+   $old=one('SELECT * FROM channels WHERE thread_creator_id=? AND thread_client_id=?',[uid(),$client]);if($old){if($old['parent_id']!==$cid)fail(409,'This retry belongs to another channel.');channel($old['id']);return ['channel_id'=>$old['id']];}
+   $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();
+   if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
+   if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$cid])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');
+   $id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,slowmode,thread_activity,auto_archive_minutes,thread_creator_id,thread_client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$cid,$parent['default_thread_slowmode'],$now,$parent['default_thread_auto_archive_minutes'],uid(),$client]);
+   send_message(['channel_id'=>$id,'body'=>$body,'client_id'=>'thread-start:'.$id]);
+   sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];
+  });
  case 'thread_create':
   $cid=text_field($in,'channel_id',32,32);$root=positive_id($in['message_id']??null);$name=text_field($in,'name',1,32);
   return transaction(function()use($cid,$root,$name){$parent=channel($cid);if(!$parent['server_id']||$parent['kind']!=='text'||$parent['parent_id'])fail(400,'Start a thread in a server text channel.');if(!one('SELECT 1 FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$root,$parent['id']]))fail(404,'Message not found.');$old=one('SELECT id FROM channels WHERE root_message=?',[$root]);if($old)return ['channel_id'=>$old['id']];channel($cid,true,'create_public_threads');
@@ -340,14 +358,15 @@ function send_message(array $in,?array $poll=null): array {
  if(array_key_exists('notify_here',$in)&&!is_bool($in['notify_here']))fail(400,'Invalid here mention choice.');
  if(!empty($in['notify_here'])&&!empty($in['notify_everyone']))fail(400,'Choose one notification audience.');
  $broadcast=!empty($in['notify_everyone'])?'everyone':(!empty($in['notify_here'])?'here':null);
- return transaction(function()use($cid,$in,$ids,$body,$client,$reply,$broadcast,$poll){$c=send_channel($cid,$in);if($poll)send_channel($cid,$in,'create_polls');$old=one('SELECT id,channel_id FROM messages WHERE user_id=? AND client_id=?',[uid(),$client]);if($old){if($poll&&!one('SELECT 1 FROM polls WHERE message_id=?',[$old['id']]))fail(409,'This retry belongs to a different message.');if($old['channel_id']!==$cid)fail(409,'Message retry belongs to another channel.');return ['id'=>(int)$old['id']];}
+ $save=function()use($cid,$in,$ids,$body,$client,$reply,$broadcast,$poll){$c=send_channel($cid,$in);if($poll)send_channel($cid,$in,'create_polls');$old=one('SELECT id,channel_id FROM messages WHERE user_id=? AND client_id=?',[uid(),$client]);if($old){if($poll&&!one('SELECT 1 FROM polls WHERE message_id=?',[$old['id']]))fail(409,'This retry belongs to a different message.');if($old['channel_id']!==$cid)fail(409,'Message retry belongs to another channel.');return ['id'=>(int)$old['id']];}
   if($poll){$body='Poll: '.$poll['question'];foreach($poll['answer_emoji'] as $i=>$emoji){if($emoji!==null){$media=$c['server_id']?one("SELECT id,slot FROM media WHERE id=? AND server_id=? AND slot LIKE 'emoji:%'",[$emoji,$c['server_id']]):null;if(!$media)fail(400,'Choose an emoji from this server.');$poll['answer_emoji'][$i]=['id'=>$media['id'],'name'=>substr($media['slot'],6)];}$body.="\n".($i+1).'. '.($emoji!==null?':'.$poll['answer_emoji'][$i]['name'].': ':'').$poll['answers'][$i];}}
   if($reply&&!one('SELECT 1 FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$reply,$cid]))fail(400,'Reply must reference a message in this conversation.');
   if($c['server_id']&&$c['slowmode']>0&&!in_array('manage_messages',permissions_for($c['server_id']),true)&&!channel_capabilities($c)['bypass_slowmode']&&one("SELECT 1 FROM messages WHERE channel_id=? AND user_id=? AND system_type='' AND created>?",[$cid,uid(),time()-$c['slowmode']]))fail(429,'Slow mode is active. Please wait before sending another message.');
   if($ids)send_channel($cid,$in,'attach');foreach($ids as $id)if(!one('SELECT 1 FROM attachments WHERE id=? AND user_id=? AND channel_id=? AND message_id IS NULL',[$id,uid(),$cid]))fail(403,'Choose your own unsent attachment from this conversation.');
   $reopened=(bool)($c['parent_id']&&$c['archived']);if($reopened){sql('UPDATE channels SET archived=0,thread_revision=thread_revision+1 WHERE id=?',[$cid]);audit_changes($c['server_id'],'thread-reopen',thread_audit_label($c),['archived'=>true],['archived'=>false],['archived'=>'Archived']);}
   sql('INSERT INTO messages(channel_id,user_id,body,created,client_id,reply_to) VALUES(?,?,?,?,?,?)',[$cid,uid(),$body,time(),$client,$reply]);global $db;$id=(int)$db->lastInsertId();if($poll)sql('INSERT INTO polls(message_id,question,answers,multiple,expires,answer_emoji) VALUES(?,?,?,?,?,?)',[$id,$poll['question'],json_encode($poll['answers']),$poll['multiple']?1:0,time()+$poll['duration'],json_encode($poll['answer_emoji'])]);if($c['parent_id']){join_thread($c);sql('UPDATE channels SET thread_activity=? WHERE id=?',[time(),$cid]);}foreach($ids as $a)sql('UPDATE attachments SET message_id=? WHERE id=?',[$id,$a]);sql('DELETE FROM typing WHERE user_id=? AND channel_id=?',[uid(),$cid]);notify_message($id,$c,$body,$reply,$broadcast);return ['id'=>$id,'thread_reopened'=>$reopened];
- });
+ };
+ global $writeTransaction;return !empty($writeTransaction)?$save():transaction($save);
 }
 function migrate_polls(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=56)return;
