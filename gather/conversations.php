@@ -355,10 +355,16 @@ function migrate_polls(): void {
 function poll_access(int $id,bool $write=false): array {
  $m=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);$p=one('SELECT * FROM polls WHERE message_id=?',[$id]);if(!$m||!$p)fail(404,'Poll not found.');$c=channel($m['channel_id'],$write,'view');if(blocked((int)$m['user_id']))fail(403,'This poll is unavailable.');if($write)require_thread_message_write($c);return [$m,$p];
 }
+function message_polls(array $messages): array {
+ // Batch poll rows and votes for already-authorized message pages.
+ $authors=[];foreach($messages as $m)if($m['has_poll']&&!blocked((int)$m['user_id']))$authors[(int)$m['id']]=(int)$m['user_id'];if(!$authors)return [];
+ $ids=array_keys($authors);$slots=implode(',',array_fill(0,count($ids),'?'));$polls=[];
+ foreach(sql("SELECT * FROM polls WHERE message_id IN ($slots)",$ids)->fetchAll() as $p){$id=(int)$p['message_id'];$answers=json_decode($p['answers'],true);$polls[$id]=['id'=>$id,'question'=>$p['question'],'answers'=>$answers,'counts'=>array_fill(0,count($answers),0),'multiple'=>(bool)$p['multiple'],'expires'=>(int)$p['expires'],'closed'=>(bool)$p['closed']||time()>=(int)$p['expires'],'creator'=>$authors[$id]===uid(),'choices'=>[]];}
+ foreach(sql("SELECT v.message_id,v.choice,count(*) AS n FROM poll_votes v WHERE v.message_id IN ($slots) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=v.user_id) OR (b.target=? AND b.user_id=v.user_id)) GROUP BY v.message_id,v.choice",[...$ids,uid(),uid()])->fetchAll() as $v)if(isset($polls[$v['message_id']]))$polls[$v['message_id']]['counts'][(int)$v['choice']]=(int)$v['n'];
+ foreach(sql("SELECT message_id,choice FROM poll_votes WHERE message_id IN ($slots) AND user_id=? ORDER BY message_id,choice",[...$ids,uid()])->fetchAll() as $v)if(isset($polls[$v['message_id']]))$polls[$v['message_id']]['choices'][]=(int)$v['choice'];return $polls;
+}
 function poll_result(int $id): array {
- [$m,$p]=poll_access($id);$answers=json_decode($p['answers'],true);$counts=array_fill(0,count($answers),0);
- foreach(sql('SELECT v.choice,count(*) AS n FROM poll_votes v WHERE v.message_id=? AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=v.user_id) OR (b.target=? AND b.user_id=v.user_id)) GROUP BY v.choice',[$id,uid(),uid()])->fetchAll() as $r)$counts[(int)$r['choice']]=(int)$r['n'];
- return ['id'=>$id,'question'=>$p['question'],'answers'=>$answers,'counts'=>$counts,'multiple'=>(bool)$p['multiple'],'expires'=>(int)$p['expires'],'closed'=>(bool)$p['closed']||time()>=(int)$p['expires'],'creator'=>(int)$m['user_id']===uid(),'choices'=>array_map('intval',array_column(sql('SELECT choice FROM poll_votes WHERE message_id=? AND user_id=? ORDER BY choice',[$id,uid()])->fetchAll(),'choice'))];
+ [$m]=poll_access($id);return message_polls([['id'=>$id,'user_id'=>$m['user_id'],'has_poll'=>true]])[$id]??throw new ApiError(404,'Poll not found.');
 }
 function poll_action(string $action,array $in): array {
  if($action==='poll_create'){
