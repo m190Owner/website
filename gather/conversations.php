@@ -1,5 +1,24 @@
 <?php
 declare(strict_types=1);
+function migrate_forum_tags(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=67)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=67)return;$db->exec('ALTER TABLE channels ADD COLUMN forum_tag_revision INTEGER NOT NULL DEFAULT 0;
+ CREATE TABLE forum_tags(id TEXT PRIMARY KEY,channel_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,name TEXT NOT NULL,position INTEGER NOT NULL);
+ CREATE INDEX forum_tags_channel ON forum_tags(channel_id,position);
+ CREATE TABLE forum_post_tags(post_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,tag_id TEXT NOT NULL REFERENCES forum_tags(id) ON DELETE CASCADE,PRIMARY KEY(post_id,tag_id));
+ CREATE INDEX forum_post_tags_tag ON forum_post_tags(tag_id); PRAGMA user_version=67;');});
+}
+function forum_tags(string $cid): array {return sql('SELECT id,name FROM forum_tags WHERE channel_id=? ORDER BY position,id',[$cid])->fetchAll();}
+function forum_post_tag_ids(string $cid): array {return array_column(sql('SELECT tag_id FROM forum_post_tags WHERE post_id=? ORDER BY tag_id',[$cid])->fetchAll(),'tag_id');}
+function forum_tag_revision(array $c,array $in,string $key='expected_revision'): void {
+ if(!is_int($in[$key]??null)||$in[$key]<0)fail(400,'Invalid tag revision.');if($in[$key]!==$c['forum_tag_revision'])fail(409,'Tags changed. Refresh and reopen this form.');
+}
+function validated_forum_post_tags(array $parent,array $in): array {
+ if(empty($parent['forum']))fail(400,'Choose a forum.');forum_tag_revision($parent,$in,'tag_revision');$ids=$in['tags']??null;
+ if(!is_array($ids)||!array_is_list($ids)||count($ids)>5)fail(400,'Choose up to five forum tags.');$allowed=array_column(forum_tags($parent['id']),'id');$seen=[];
+ foreach($ids as $id){if(!is_string($id)||!in_array($id,$allowed,true)||in_array($id,$seen,true))fail(400,'Choose distinct tags from this forum.');$seen[]=$id;}sort($seen);return $seen;
+}
+function can_edit_forum_post_tags(array $c): bool {return (bool)($c['parent_id']&&!$c['archived']&&empty($c['thread_private'])&&member($c['server_id'])['muted_until']<=time()&&(channel_capabilities($c)['manage_threads']||thread_creator_controls($c)));}
 function migrate_forum_channels(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=66)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=66)return;$db->exec('ALTER TABLE channels ADD COLUMN forum INTEGER NOT NULL DEFAULT 0 CHECK(forum IN (0,1)); PRAGMA user_version=66;');});
@@ -265,18 +284,30 @@ function conversation_actions(string $action,array $in): array {
    foreach($ids as $who)if(blocked($who)||!can_view_as($cid,$who))fail(403,'A selected member cannot access this channel.');
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
    if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$cid])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();$now=time();sql('INSERT INTO channels(id,server_id,name,kind,private,thread_private,created,parent_id,slowmode,thread_activity,auto_archive_minutes,thread_creator_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',1,1,$now,$cid,$parent['default_thread_slowmode'],$now,$parent['default_thread_auto_archive_minutes'],uid()]);foreach(array_unique(array_merge([uid()],$ids)) as $who)sql('INSERT INTO thread_members VALUES(?,?,?,?)',[$id,$parent['server_id'],$who,$now]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
+ case 'forum_tags_save':
+  $cid=text_field($in,'channel_id',32,32);return transaction(function()use($cid,$in){
+   $c=channel($cid);if(empty($c['forum'])||$c['parent_id'])fail(400,'Choose a forum.');require_permission($c['server_id'],'manage_channels');if(member($c['server_id'])['muted_until']>time())fail(403,'You cannot change tags while timed out.');forum_tag_revision($c,$in);
+   $tags=$in['tags']??null;if(!is_array($tags)||!array_is_list($tags)||count($tags)>20)fail(400,'Use up to twenty forum tags.');$next=[];$ids=[];$names=[];
+   foreach($tags as $tag){if(!is_array($tag)||array_diff(array_keys($tag),['id','name']))fail(400,'Invalid tag.');$id=text_field($tag,'id',32,32);$name=text_field($tag,'name',1,20);if(!preg_match('/^[a-f0-9]{32}$/D',$id)||preg_match('/[\x00-\x1F\x7F]/u',$name))fail(400,'Invalid tag name or ID.');$fold=message_casefold($name);if(in_array($id,$ids,true)||in_array($fold,$names,true))fail(400,'Tag names and IDs must be distinct.');$old=one('SELECT channel_id FROM forum_tags WHERE id=?',[$id]);if($old&&$old['channel_id']!==$cid)fail(400,'This tag belongs to another forum.');$ids[]=$id;$names[]=$fold;$next[]=['id'=>$id,'name'=>$name];}
+   $before=forum_tags($cid);if($before===$next)return ['ok'=>true];foreach($before as $tag)if(!in_array($tag['id'],$ids,true))sql('DELETE FROM forum_tags WHERE id=?',[$tag['id']]);foreach($next as $position=>$tag)sql('INSERT INTO forum_tags(id,channel_id,name,position) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name,position=excluded.position',[$tag['id'],$cid,$tag['name'],$position]);sql('UPDATE channels SET forum_tag_revision=forum_tag_revision+1 WHERE id=?',[$cid]);hierarchy_audit($c['server_id'],'channel-edit',0,channel_audit_label($c)."\nForum tags: ".implode(', ',array_column($before,'name')).' → '.implode(', ',array_column($next,'name')));return ['ok'=>true];
+  });
+ case 'forum_post_tags_save':
+  $cid=text_field($in,'channel_id',32,32);return transaction(function()use($cid,$in){
+   $c=channel($cid);$parent=$c['parent_id']?channel($c['parent_id']):null;if(!$parent||empty($parent['forum']))fail(400,'Choose a forum post.');if(!can_edit_forum_post_tags($c))fail(403,'Only the creator or a thread manager can tag an open post.');forum_tag_revision($c,$in);$ids=validated_forum_post_tags($parent,$in);$old=forum_post_tag_ids($cid);if($old===$ids)return ['ok'=>true];sql('DELETE FROM forum_post_tags WHERE post_id=?',[$cid]);foreach($ids as $id)sql('INSERT INTO forum_post_tags VALUES(?,?)',[$cid,$id]);sql('UPDATE channels SET forum_tag_revision=forum_tag_revision+1 WHERE id=?',[$cid]);$names=array_column(forum_tags($parent['id']),'name','id');hierarchy_audit($c['server_id'],'thread-edit',0,thread_audit_label($c)."\nTags: ".implode(', ',array_intersect_key($names,array_flip($old))).' → '.implode(', ',array_intersect_key($names,array_flip($ids))));return ['ok'=>true];
+  });
  case 'thread_start':
   $cid=text_field($in,'channel_id',32,32);$name=text_field($in,'name',1,32);$body=text_field($in,'body',1,4000);$client=text_field($in,'client_id',16,64);
   if(!preg_match('/^[a-zA-Z0-9_-]{16,64}$/D',$client))fail(400,'Invalid discussion retry key.');
   foreach(['attachments','reply_to','system_type','system_target','notify_everyone','notify_here'] as $field)if(array_key_exists($field,$in))fail(400,'Start a discussion with a title and text only. Add files and notifications after opening it.');
-  return transaction(function()use($cid,$name,$body,$client){
+  return transaction(function()use($cid,$name,$body,$client,$in){
    $parent=channel($cid,true,'create_public_threads');if(!$parent['server_id']||$parent['kind']!=='text'||$parent['parent_id'])fail(400,'Start a discussion in a server text channel.');channel($cid,true,'send_in_threads');
    $old=one('SELECT * FROM channels WHERE thread_creator_id=? AND thread_client_id=?',[uid(),$client]);if($old){if($old['parent_id']!==$cid)fail(409,'This retry belongs to another channel.');channel($old['id']);return ['channel_id'=>$old['id']];}
+   $tags=array_key_exists('tags',$in)?validated_forum_post_tags($parent,$in):[];
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();
    if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
    if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$cid])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');
    $id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,slowmode,thread_activity,auto_archive_minutes,thread_creator_id,thread_client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$cid,$parent['default_thread_slowmode'],$now,$parent['default_thread_auto_archive_minutes'],uid(),$client]);
-   send_message(['channel_id'=>$id,'body'=>$body,'client_id'=>'thread-start:'.$id]);
+   send_message(['channel_id'=>$id,'body'=>$body,'client_id'=>'thread-start:'.$id]);foreach($tags as $tag)sql('INSERT INTO forum_post_tags VALUES(?,?)',[$id,$tag]);
    sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];
   });
  case 'thread_create':
