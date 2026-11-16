@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+function unicode_emoji_choices(): array {return ['😀','😃','😂','😊','😍','🤔','😢','😴','😮','👋','👋🏻','👋🏼','👋🏽','👋🏾','👋🏿','👍','👍🏻','👍🏼','👍🏽','👍🏾','👍🏿','👎','👎🏻','👎🏼','👎🏽','👎🏾','👎🏿','👏','👏🏻','👏🏼','👏🏽','👏🏾','👏🏿','🙌','🙌🏻','🙌🏼','🙌🏽','🙌🏾','🙌🏿','🙏','🙏🏻','🙏🏼','🙏🏽','🙏🏾','🙏🏿','💪','💪🏻','💪🏼','💪🏽','💪🏾','💪🏿','🤝','🤝🏻','🤝🏼','🤝🏽','🤝🏾','🤝🏿','👀','🐶','🐱','🐼','🦊','🌸','🌳','☀️','🌈','🍎','🍕','🍔','🍟','🍜','🍰','☕','🧋','⚽','🏀','🎮','🎲','🎨','🎸','🎬','🏆','💻','📱','💡','📚','🔑','🎁','🚀','📷','❤️','💜','✅','❌','⚠️','⭐','🔥','🎉'];}
 function migrate_message_search(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=55)return;
  transaction(function()use($db){
@@ -278,7 +279,7 @@ function react_message(int $id,array $c,array $in): void {
   $c=reaction_channel($id);
   $exists=!!one('SELECT 1 FROM reactions WHERE message_id=? AND user_id=? AND emoji=?',[$id,uid(),$emoji]);$add=$in['selected']??!$exists;if(!$add){sql('DELETE FROM reactions WHERE message_id=? AND user_id=? AND emoji=?',[$id,uid(),$emoji]);return;}if($exists)return;
   if(!one('SELECT 1 FROM reactions WHERE message_id=? AND emoji=?',[$id,$emoji])&&!channel_capabilities($c)['add_reactions'])fail(403,'You need Add Reactions to start a new emoji reaction.');
-  if(!in_array($emoji,['😀','😃','😂','😊','😍','🤔','😢','😴','😮','👋','👋🏻','👋🏼','👋🏽','👋🏾','👋🏿','👍','👍🏻','👍🏼','👍🏽','👍🏾','👍🏿','👎','👎🏻','👎🏼','👎🏽','👎🏾','👎🏿','👏','👏🏻','👏🏼','👏🏽','👏🏾','👏🏿','🙌','🙌🏻','🙌🏼','🙌🏽','🙌🏾','🙌🏿','🙏','🙏🏻','🙏🏼','🙏🏽','🙏🏾','🙏🏿','💪','💪🏻','💪🏼','💪🏽','💪🏾','💪🏿','🤝','🤝🏻','🤝🏼','🤝🏽','🤝🏾','🤝🏿','👀','🐶','🐱','🐼','🦊','🌸','🌳','☀️','🌈','🍎','🍕','🍔','🍟','🍜','🍰','☕','🧋','⚽','🏀','🎮','🎲','🎨','🎸','🎬','🏆','💻','📱','💡','📚','🔑','🎁','🚀','📷','❤️','💜','✅','❌','⚠️','⭐','🔥','🎉'],true)){
+  if(!in_array($emoji,unicode_emoji_choices(),true)){
    if(!preg_match('/^custom:([a-f0-9]{32})$/',$emoji,$match)||!$c['server_id']||!one("SELECT 1 FROM media WHERE id=? AND server_id=? AND slot LIKE 'emoji:%'",[$match[1],$c['server_id']]))fail(400,'Choose a reaction from this server.');
   }
   if(sql('SELECT count(*) FROM reactions WHERE message_id=? AND user_id=?',[$id,uid()])->fetchColumn()>=10)fail(409,'Use up to 10 reactions per message.');if(!one('SELECT 1 FROM reactions WHERE message_id=? AND emoji=?',[$id,$emoji])&&sql('SELECT count(DISTINCT emoji) FROM reactions WHERE message_id=?',[$id])->fetchColumn()>=20)fail(409,'This message already has 20 different reactions.');
