@@ -45,7 +45,8 @@ function forum_state_fields(array $channels,bool $includeSummaries=true): array 
  return $result;
 }
 function forum_catalog(array $in): array {
- if(array_diff(array_keys($in),['action','channel_id','catalog_version','query','status','sort','tags','tag_match','cursor'])||($in['catalog_version']??null)!==1)fail(400,'Unsupported forum catalog request.');
+ if(array_diff(array_keys($in),['action','channel_id','catalog_version','fields_version','query','status','sort','tags','tag_match','cursor'])||($in['catalog_version']??null)!==1)fail(400,'Unsupported forum catalog request.');
+ $fields=($in['fields_version']??null)===1;if(array_key_exists('fields_version',$in)&&!$fields)fail(400,'Unsupported forum catalog fields version.');
  $in+=['query'=>'','status'=>'all','sort'=>'default','tag_match'=>'any','tags'=>[]];
  $cid=text_field($in,'channel_id',32,32);$query=message_casefold(text_field($in,'query',0,100));
  $status=$in['status'];$sort=$in['sort'];$match=$in['tag_match'];
@@ -73,7 +74,9 @@ function forum_catalog(array $in): array {
   });
   $ids=array_column($posts,'id');$signature=hash_hmac('sha256',json_encode([1,uid(),$parent['server_id'],$cid,$query,$status,$sort,$tags,$match,$ids],JSON_THROW_ON_ERROR),$tokenHash);
   if($cursor!==null&&(!hash_equals('10.'.$signature,$cursor)||count($ids)<=10))fail(409,'The forum results changed. Restart from the first page.');
-  $offset=$cursor===null?0:10;return ['post_ids'=>array_slice($ids,$offset,10),'next_cursor'=>$offset===0&&count($ids)>10?'10.'.$signature:null,'available'=>$available,'total'=>count($ids),'sort'=>$sort];
+  $offset=$cursor===null?0:10;$result=['post_ids'=>array_slice($ids,$offset,10),'next_cursor'=>$offset===0&&count($ids)>10?'10.'.$signature:null,'available'=>$available,'total'=>count($ids),'sort'=>$sort];
+  if($fields)$result['posts']=array_map(fn($post)=>['id'=>$post['id'],'name'=>$post['name'],'archived'=>(bool)$post['archived'],'locked'=>(bool)$post['locked'],'thread_joined'=>in_array($post['id'],$joined,true),'forum_tag_ids'=>$assignments[$post['id']]??[]],array_slice($posts,$offset,10));
+  return $result;
  }finally{$db->exec('ROLLBACK');}
 }
 function forum_post_details(array $in): array {
