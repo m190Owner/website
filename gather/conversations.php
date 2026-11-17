@@ -1,5 +1,12 @@
 <?php
 declare(strict_types=1);
+// Call only after checking current access to each post and its forum parent.
+function forum_images(array $ids): array {
+ $extensions=attachment_type_extensions('image');$images=implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?'));$result=[];
+ foreach(array_chunk($ids,500) as $batch){$placeholders=implode(',',array_fill(0,count($batch),'?'));
+  $rows=sql("SELECT c.id,(SELECT a.id FROM attachments a WHERE a.channel_id=c.id AND a.message_id=m.id AND a.spoiler=0 AND a.size BETWEEN 1 AND 4194304 AND ($images) ORDER BY a.created,a.id LIMIT 1) AS image_id FROM channels c JOIN channels p ON p.id=c.parent_id AND p.server_id=c.server_id JOIN messages m ON m.channel_id=c.id AND m.user_id=c.thread_creator_id AND m.client_id='thread-start:'||c.id WHERE c.id IN ($placeholders) AND c.kind='text' AND c.thread_private=0 AND c.root_message IS NULL AND c.thread_client_id IS NOT NULL AND p.forum=1 AND p.parent_id IS NULL AND p.kind='text' AND m.deleted=0 AND m.system_type='' AND instr(m.body,'||')=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))",array_merge(array_map(fn($ext)=>'%.'.$ext,$extensions),$batch,[uid(),uid()]))->fetchAll();foreach($rows as $row)if($row['image_id']!==null)$result[$row['id']]=$row['image_id'];
+ }return $result;
+}
 function forum_post_summaries(array $channels): array {
  $parents=array_column(array_filter($channels,fn($c)=>!empty($c['forum'])&&!$c['parent_id']&&$c['kind']==='text'),'server_id','id');
  $ids=array_column(array_filter($channels,fn($c)=>$c['parent_id']&&empty($c['thread_private'])&&$c['kind']==='text'&&isset($parents[$c['parent_id']])&&$parents[$c['parent_id']]===$c['server_id']),'id');$result=[];$roles=[];
@@ -12,7 +19,7 @@ function forum_post_summaries(array $channels): array {
    $sid=$row['server_id'];if(!isset($roles[$sid]))$roles[$sid]=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');$body=trim(preg_replace('/\s+/u',' ',role_preview($body,$roles[$sid])));if($body==='')continue;
    preg_match('/^.{0,240}/us',$body,$match);$result[$row['id']]['preview']=$match[0].(strlen($match[0])<strlen($body)?'…':'');
   }
- }return $result;
+ }foreach(forum_images($ids) as $id=>$image)$result[$id]['image_id']=$image;return $result;
 }
 function migrate_forum_tag_emoji(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=70)return;
@@ -412,12 +419,15 @@ function conversation_actions(string $action,array $in): array {
    sql('UPDATE attachments SET name=?,description=?,spoiler=? WHERE id=?',[$name,$nextDescription,$nextSpoiler,$id]);return ['id'=>$id,'name'=>$name,'description'=>$nextDescription,'spoiler'=>$nextSpoiler];
   });
  case 'attachment_get':case 'attachment_preview':case 'attachment_discard':
-  if($action==='attachment_preview'&&(array_diff(array_keys($in),['action','id','check_only','draft'])||(array_key_exists('check_only',$in)&&!is_bool($in['check_only']))||(array_key_exists('draft',$in)&&!is_bool($in['draft']))))fail(400,'Invalid preview request.');
+  if($action==='attachment_preview'&&(array_diff(array_keys($in),['action','id','check_only','draft','forum_post_id'])||(array_key_exists('check_only',$in)&&!is_bool($in['check_only']))||(array_key_exists('draft',$in)&&!is_bool($in['draft']))))fail(400,'Invalid preview request.');
   if($action==='attachment_get'&&array_key_exists('draft',$in)&&!is_bool($in['draft']))fail(400,'Invalid attachment request.');
   $id=text_field($in,'id',32,32);$a=one('SELECT * FROM attachments WHERE id=?',[$id]);if(!$a)fail(404,'Attachment not found.');$c=channel($a['channel_id']);if($action!=='attachment_discard'&&!empty($in['draft'])&&$a['message_id'])fail(404,'This attachment is no longer in your draft.');if($a['message_id']){$message=one('SELECT user_id FROM messages WHERE id=? AND channel_id=? AND deleted=0',[$a['message_id'],$a['channel_id']]);if(!$message)fail(404,'Attachment no longer available.');if($action!=='attachment_discard'&&blocked((int)$message['user_id']))fail(403,'This attachment is not available.');}elseif((int)$a['user_id']!==uid())fail(403,'This attachment has not been shared.');
   if($action==='attachment_discard'){if((int)$a['user_id']!==uid()||$a['message_id'])fail(403,'Only your unsent attachments can be discarded.');sql('DELETE FROM attachments WHERE id=?',[$id]);return ['ok'=>true];}
   if(!$a['message_id']){if((int)$a['created']<time()-86400)fail(404,'This draft attachment has expired.');$scope=['reopen_thread'=>(bool)$c['parent_id']];send_channel($a['channel_id'],$scope,'attach');send_channel($a['channel_id'],$scope);}
   if($action==='attachment_preview'){
+   if(array_key_exists('forum_post_id',$in)){
+    $post=text_field($in,'forum_post_id',32,32);if(!empty($in['draft'])||$post!==$c['id']||!$c['parent_id'])fail(404,'Opening image no longer available.');channel($c['parent_id']);if((forum_images([$post])[$post]??null)!==$id)fail(404,'Opening image no longer available.');
+   }
    if(!empty($in['check_only']))return ['ok'=>true];
    if(!preg_match('/\.(png|jpe?g|webp|gif)$/iD',$a['name'])||$a['size']<1||$a['size']>4194304)fail(400,'This attachment cannot be previewed. Download it instead.');
    $bytes=base64_decode($a['data'],true);$info=$bytes===false?false:@getimagesizefromstring($bytes);
