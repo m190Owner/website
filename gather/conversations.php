@@ -1,5 +1,11 @@
 <?php
 declare(strict_types=1);
+function migrate_forum_pins(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=71)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=71)return;$db->exec('CREATE TABLE forum_pins(channel_id TEXT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,post_id TEXT UNIQUE REFERENCES channels(id) ON DELETE SET NULL,revision INTEGER NOT NULL DEFAULT 0 CHECK(revision>=0)); CREATE TRIGGER forum_pinned_post_deleted BEFORE DELETE ON channels BEGIN UPDATE forum_pins SET post_id=NULL,revision=revision+1 WHERE post_id=OLD.id; END; PRAGMA user_version=71;');});
+}
+function forum_pin(string $parent): array {return one('SELECT post_id,revision FROM forum_pins WHERE channel_id=?',[$parent])?:['post_id'=>null,'revision'=>0];}
+function can_pin_forum_post(array $c): bool {return (bool)($c['parent_id']&&$c['kind']==='text'&&empty($c['thread_private'])&&!$c['archived']&&member($c['server_id'])['muted_until']<=time()&&channel_capabilities($c)['manage_threads']);}
 // Call only after checking current access to each post and its forum parent.
 function forum_images(array $ids): array {
  $extensions=attachment_type_extensions('image');$images=implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?'));$result=[];
@@ -335,6 +341,13 @@ function conversation_actions(string $action,array $in): array {
    foreach($ids as $who)if(blocked($who)||!can_view_as($cid,$who))fail(403,'A selected member cannot access this channel.');
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
    if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$cid])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');$id=random_id();$now=time();sql('INSERT INTO channels(id,server_id,name,kind,private,thread_private,created,parent_id,slowmode,thread_activity,auto_archive_minutes,thread_creator_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',1,1,$now,$cid,$parent['default_thread_slowmode'],$now,$parent['default_thread_auto_archive_minutes'],uid()]);foreach(array_unique(array_merge([uid()],$ids)) as $who)sql('INSERT INTO thread_members VALUES(?,?,?,?)',[$id,$parent['server_id'],$who,$now]);sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];});
+ case 'forum_post_pin':
+  $cid=text_field($in,'channel_id',32,32);if(array_diff(array_keys($in),['action','channel_id','pinned','expected_revision'])||!is_bool($in['pinned']??null)||!is_int($in['expected_revision']??null)||$in['expected_revision']<0)fail(400,'Invalid forum pin request.');
+  return transaction(function()use($cid,$in){
+   $c=channel($cid);$parent=$c['parent_id']?channel($c['parent_id']):null;if(!$parent||empty($parent['forum'])||$parent['parent_id']||$parent['kind']!=='text'||$c['server_id']!==$parent['server_id']||$c['kind']!=='text'||!empty($c['thread_private']))fail(400,'Choose a public forum post.');
+   if(!can_pin_forum_post($c))fail(403,'Only thread managers can change pins on open forum posts.');$old=forum_pin($parent['id']);if($in['expected_revision']!==$old['revision'])fail(409,'The forum pin changed. Refresh and reopen this form.');$next=$in['pinned']?$cid:($old['post_id']===$cid?null:$old['post_id']);if($next===$old['post_id'])return ['ok'=>true];
+   sql('INSERT INTO forum_pins(channel_id,post_id,revision) VALUES(?,?,1) ON CONFLICT(channel_id) DO UPDATE SET post_id=excluded.post_id,revision=forum_pins.revision+1',[$parent['id'],$next]);hierarchy_audit($c['server_id'],'thread-edit',0,thread_audit_label($c)."\nForum pinned post: ".($old['post_id']??'None').' → '.($next??'None'));return ['ok'=>true];
+  });
  case 'forum_tags_save':
   $cid=text_field($in,'channel_id',32,32);return transaction(function()use($cid,$in){
    $c=channel($cid);if(empty($c['forum'])||$c['parent_id'])fail(400,'Choose a forum.');require_permission($c['server_id'],'manage_channels');if(member($c['server_id'])['muted_until']>time())fail(403,'You cannot change tags while timed out.');forum_tag_revision($c,$in);
