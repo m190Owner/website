@@ -1,5 +1,17 @@
 <?php
 declare(strict_types=1);
+function forum_post_previews(array $channels): array {
+ $parents=array_column(array_filter($channels,fn($c)=>!empty($c['forum'])&&!$c['parent_id']&&$c['kind']==='text'),'server_id','id');
+ $ids=array_column(array_filter($channels,fn($c)=>$c['parent_id']&&empty($c['thread_private'])&&$c['kind']==='text'&&isset($parents[$c['parent_id']])&&$parents[$c['parent_id']]===$c['server_id']),'id');$result=[];$roles=[];
+ // Use the original standalone starter identity, never a later reply when it is unavailable.
+ foreach(array_chunk($ids,500) as $batch){$placeholders=implode(',',array_fill(0,count($batch),'?'));
+  $rows=sql("SELECT c.id,c.server_id,m.body FROM channels c JOIN messages m ON m.channel_id=c.id AND m.user_id=c.thread_creator_id AND m.client_id='thread-start:'||c.id WHERE c.id IN ($placeholders) AND m.deleted=0 AND m.system_type='' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))",array_merge($batch,[uid(),uid()]))->fetchAll();
+  foreach($rows as $row){$body=$row['body'];if(str_contains($body,'||')){$result[$row['id']]='Contains a spoiler. Open the post to read.';continue;}
+   $sid=$row['server_id'];if(!isset($roles[$sid]))$roles[$sid]=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');$body=trim(preg_replace('/\s+/u',' ',role_preview($body,$roles[$sid])));if($body==='')continue;
+   preg_match('/^.{0,240}/us',$body,$match);$result[$row['id']]=$match[0].(strlen($match[0])<strlen($body)?'…':'');
+  }
+ }return $result;
+}
 function migrate_forum_tag_emoji(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=70)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=70)return;$db->exec("ALTER TABLE forum_tags ADD COLUMN emoji TEXT; PRAGMA user_version=70;");});
