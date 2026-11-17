@@ -67,7 +67,7 @@ function forum_catalog(array $in): array {
    if($status==='joined'&&!in_array($post['id'],$joined,true)||$status==='active'&&$post['archived']||$status==='archived'&&!$post['archived'])return false;
    $hits=count(array_intersect($tags,$assignments[$post['id']]??[]));return !$tags||($match==='all'?$hits===count($tags):$hits>0);
   }));
-  $pin=forum_pin($cid)['post_id'];usort($posts,function($a,$b)use($sort,$pin){
+  $pinState=forum_pin($cid);$pin=$pinState['post_id'];usort($posts,function($a,$b)use($sort,$pin){
    $pinned=(int)($b['id']===$pin)-(int)($a['id']===$pin);if($pinned)return $pinned;
    if($sort==='activity')return ((int)(bool)$a['archived']<=>(int)(bool)$b['archived'])?:(((int)$b['thread_activity']?:(int)$b['created'])<=>((int)$a['thread_activity']?:(int)$a['created']))?:strcmp($a['id'],$b['id']);
    return (($sort==='newest'?-1:1)*((int)$a['created']<=>(int)$b['created']))?:strcmp($a['id'],$b['id']);
@@ -76,6 +76,7 @@ function forum_catalog(array $in): array {
   if($cursor!==null&&(!hash_equals('10.'.$signature,$cursor)||count($ids)<=10))fail(409,'The forum results changed. Restart from the first page.');
   $offset=$cursor===null?0:10;$result=['post_ids'=>array_slice($ids,$offset,10),'next_cursor'=>$offset===0&&count($ids)>10?'10.'.$signature:null,'available'=>$available,'total'=>count($ids),'sort'=>$sort];
   if($fields)$result['posts']=array_map(fn($post)=>['id'=>$post['id'],'name'=>$post['name'],'archived'=>(bool)$post['archived'],'locked'=>(bool)$post['locked'],'thread_joined'=>in_array($post['id'],$joined,true),'forum_tag_ids'=>$assignments[$post['id']]??[]],array_slice($posts,$offset,10));
+  if($fields)$result['pin']=['post_id'=>in_array($pin,$result['post_ids'],true)?$pin:null,'revision'=>(int)$pinState['revision']];
   return $result;
  }finally{$db->exec('ROLLBACK');}
 }
