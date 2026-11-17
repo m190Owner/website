@@ -73,6 +73,12 @@ function migrate_attachment_spoilers(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=54)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=54)return;$db->exec("ALTER TABLE attachments ADD COLUMN spoiler INTEGER NOT NULL DEFAULT 0; PRAGMA user_version=54;");});
 }
+function attachment_payload(array $in): array {
+ $name=attachment_name($in);$encoded=$in['data']??null;if(!is_string($encoded)||strlen($encoded)>5592408)fail(413,'Files must be at most 4 MB.');$bytes=base64_decode($encoded,true);if($bytes===false||base64_encode($bytes)!==$encoded||strlen($bytes)<1||strlen($bytes)>4194304)fail(400,'Invalid file or size.');return [$name,$bytes,$encoded];
+}
+function store_attachment(string $cid,array $in,string $name,string $bytes,string $encoded): array {
+ send_channel($cid,$in,'attach');send_channel($cid,$in);sql('DELETE FROM attachments WHERE message_id IS NULL AND created<?',[time()-86400]);$size=strlen($bytes);if((int)sql('SELECT COALESCE(sum(size),0) FROM attachments WHERE user_id=?',[uid()])->fetchColumn()+$size>104857600||(int)sql('SELECT COALESCE(sum(size),0) FROM attachments')->fetchColumn()+$size>536870912)fail(409,'Attachment storage is full. Delete old attachments to free space.');$id=random_id();$hash=hash('sha256',$bytes);sql('INSERT INTO attachments(id,channel_id,user_id,message_id,name,size,sha256,data,created) VALUES(?,?,?,?,?,?,?,?,?)',[$id,$cid,uid(),null,$name,$size,$hash,$encoded,time()]);return ['id'=>$id,'name'=>$name,'size'=>$size,'sha256'=>$hash];
+}
 function attachment_name(array $in): string {
  $name=text_field($in,'name',1,120);
  if(preg_match('/[\\\\\/:*?"<>|\x00-\x1F]/',$name)||str_ends_with($name,'.')||str_ends_with($name,' ')||!preg_match('/\.(png|jpe?g|webp|gif|pdf|txt|csv|md|json|zip|docx|xlsx|pptx|mp3|wav|ogg|mp4|webm)$/i',$name))fail(400,'Unsupported file name or type. Use images, documents, ZIP, audio or video.');
@@ -340,12 +346,18 @@ function conversation_actions(string $action,array $in): array {
   return transaction(function()use($cid,$name,$body,$client,$in){
    $parent=channel($cid,true,'create_public_threads');if(!$parent['server_id']||$parent['kind']!=='text'||$parent['parent_id'])fail(400,'Start a discussion in a server text channel.');channel($cid,true,'send_in_threads');
    $old=one('SELECT * FROM channels WHERE thread_creator_id=? AND thread_client_id=?',[uid(),$client]);if($old){if($old['parent_id']!==$cid)fail(409,'This retry belongs to another channel.');channel($old['id']);return ['channel_id'=>$old['id']];}
+   $opening=$in['opening_attachment']??null;$file=null;
+   if(array_key_exists('opening_attachment',$in)){
+    if(empty($parent['forum'])||!is_array($opening)||array_diff(array_keys($opening),['name','data','description','spoiler']))fail(400,'Choose one opening file for a forum post.');
+    [$filename,$bytes,$encoded]=attachment_payload($opening);$description=text_field($opening,'description',0,1000);$spoiler=array_key_exists('spoiler',$opening)?$opening['spoiler']:false;if(!is_bool($spoiler))fail(400,'Invalid attachment spoiler choice.');$file=[$filename,$bytes,$encoded,$description,$spoiler];
+   }
    $tags=array_key_exists('tags',$in)?validated_forum_post_tags($parent,$in):[];check_required_forum_tags($parent,$tags);
    $key=hash('sha256','thread-create:'.$cid.':'.uid());$now=time();
    if($parent['slowmode']>0&&!in_array('manage_messages',permissions_for($parent['server_id']),true)&&!channel_capabilities($parent)['bypass_slowmode']&&one('SELECT 1 FROM limits WHERE key=? AND window>?',[$key,$now-$parent['slowmode']]))fail(429,'Slow mode is active. Please wait before creating another thread in this channel.');
    if(sql('SELECT count(*) FROM channels WHERE parent_id=?',[$cid])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');
    $id=random_id();sql('INSERT INTO channels(id,server_id,name,kind,created,parent_id,slowmode,thread_activity,auto_archive_minutes,thread_creator_id,thread_client_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',[$id,$parent['server_id'],$name,'text',$now,$cid,$parent['default_thread_slowmode'],$now,$parent['default_thread_auto_archive_minutes'],uid(),$client]);
-   send_message(['channel_id'=>$id,'body'=>$body,'client_id'=>'thread-start:'.$id]);foreach($tags as $tag)sql('INSERT INTO forum_post_tags VALUES(?,?)',[$id,$tag]);
+   $attachments=[];if($file){rate('attachment:'.uid(),20,3600);$uploaded=store_attachment($id,[], $file[0],$file[1],$file[2]);$attachments[]=$uploaded['id'];sql('UPDATE attachments SET description=?,spoiler=? WHERE id=?',[$file[3],(int)$file[4],$uploaded['id']]);}
+   send_message(['channel_id'=>$id,'body'=>$body,'client_id'=>'thread-start:'.$id,'attachments'=>$attachments]);foreach($tags as $tag)sql('INSERT INTO forum_post_tags VALUES(?,?)',[$id,$tag]);
    sql('INSERT INTO limits(key,window,hits) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window=excluded.window,hits=1',[$key,$now]);hierarchy_audit($parent['server_id'],'thread-create',0,thread_audit_label(one('SELECT * FROM channels WHERE id=?',[$id])));return ['channel_id'=>$id];
   });
  case 'thread_create':
@@ -384,9 +396,8 @@ function conversation_actions(string $action,array $in): array {
   foreach($rows as &$row)$row['attachments']=sql('SELECT a.id,a.name,a.size,a.description,a.spoiler FROM attachments a WHERE a.message_id=? AND a.channel_id=?'.$filter.' ORDER BY a.created,a.id LIMIT 3',array_merge([$row['id'],$cid],$filterArgs))->fetchAll();unset($row);$last=end($rows);
   return ['messages'=>$rows,'next'=>$more?(int)$last['id']:null];
  case 'attachment_upload':
-  $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');send_channel($cid,$in);rate('attachment:'.uid(),20,3600);$name=attachment_name($in);
-  $encoded=$in['data']??null;if(!is_string($encoded)||strlen($encoded)>5592408)fail(413,'Files must be at most 4 MB.');$bytes=base64_decode($encoded,true);if($bytes===false||base64_encode($bytes)!==$encoded||strlen($bytes)<1||strlen($bytes)>4194304)fail(400,'Invalid file or size.');
-  return transaction(function()use($cid,$in,$name,$bytes,$encoded){send_channel($cid,$in,'attach');send_channel($cid,$in);sql('DELETE FROM attachments WHERE message_id IS NULL AND created<?',[time()-86400]);$size=strlen($bytes);if((int)sql('SELECT COALESCE(sum(size),0) FROM attachments WHERE user_id=?',[uid()])->fetchColumn()+$size>104857600||(int)sql('SELECT COALESCE(sum(size),0) FROM attachments')->fetchColumn()+$size>536870912)fail(409,'Attachment storage is full. Delete old attachments to free space.');$id=random_id();$hash=hash('sha256',$bytes);sql('INSERT INTO attachments(id,channel_id,user_id,message_id,name,size,sha256,data,created) VALUES(?,?,?,?,?,?,?,?,?)',[$id,$cid,uid(),null,$name,$size,$hash,$encoded,time()]);return ['id'=>$id,'name'=>$name,'size'=>$size,'sha256'=>$hash];});
+  $cid=text_field($in,'channel_id',32,32);$c=send_channel($cid,$in,'attach');if($c['kind']!=='text')fail(400,'Choose a text channel.');send_channel($cid,$in);rate('attachment:'.uid(),20,3600);[$name,$bytes,$encoded]=attachment_payload($in);
+  return transaction(fn()=>store_attachment($cid,$in,$name,$bytes,$encoded));
  case 'attachment_rename':
   if(array_diff(array_keys($in),['action','id','name','expected_name','description','expected_description','spoiler','expected_spoiler']))fail(400,'Invalid rename request.');
   $id=text_field($in,'id',32,32);$name=attachment_name($in);$expected=text_field($in,'expected_name',1,120);$describing=array_key_exists('description',$in);if($describing!==array_key_exists('expected_description',$in))fail(400,'Include the current description.');$description=$describing?text_field($in,'description',0,1000):null;$expectedDescription=$describing?text_field($in,'expected_description',0,1000):null;
