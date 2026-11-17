@@ -44,6 +44,38 @@ function forum_state_fields(array $channels,bool $includeSummaries=true): array 
  }
  return $result;
 }
+function forum_catalog(array $in): array {
+ if(array_diff(array_keys($in),['action','channel_id','catalog_version','query','status','sort','tags','tag_match','cursor'])||($in['catalog_version']??null)!==1)fail(400,'Unsupported forum catalog request.');
+ $in+=['query'=>'','status'=>'all','sort'=>'default','tag_match'=>'any','tags'=>[]];
+ $cid=text_field($in,'channel_id',32,32);$query=message_casefold(text_field($in,'query',0,100));
+ $status=$in['status'];$sort=$in['sort'];$match=$in['tag_match'];
+ if(!in_array($status,['all','active','archived','joined'],true)||!in_array($sort,['default','activity','newest','oldest'],true)||!in_array($match,['any','all'],true))fail(400,'Choose supported forum filters.');
+ $tags=$in['tags'];if(!is_array($tags)||!array_is_list($tags)||count($tags)>20)fail(400,'Choose up to twenty distinct tags.');$seen=[];foreach($tags as $id){if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/D',$id)||isset($seen[$id]))fail(400,'Choose distinct tag identifiers.');$seen[$id]=true;}sort($tags,SORT_STRING);
+ $cursor=$in['cursor']??null;if(array_key_exists('cursor',$in)&&(!is_string($cursor)||!preg_match('/^10\.[a-f0-9]{64}$/D',$cursor)))fail(400,'Invalid forum cursor.');
+ global $db,$tokenHash;$db->exec('BEGIN');
+ try{
+  $parent=channel($cid);if(empty($parent['forum'])||$parent['parent_id']||$parent['kind']!=='text')fail(400,'Choose a forum.');
+  if($sort==='default')$sort=$parent['forum_default_sort']==='newest'?'newest':'activity';
+  // shortcut: reject catalogs above the current cap; replace this bounded snapshot with indexed keysets before raising capacity.
+  $candidates=sql('SELECT * FROM channels WHERE parent_id=? ORDER BY created DESC,id LIMIT 21',[$cid])->fetchAll();if(count($candidates)>20)fail(409,'This forum exceeds the current catalog limit.');
+  $posts=[];foreach($candidates as $post)if($post['server_id']===$parent['server_id']&&$post['kind']==='text'&&empty($post['thread_private'])&&can_view_as($post['id'],uid()))$posts[]=$post;
+  $available=count($posts);$ids=array_column($posts,'id');$assignments=[];$joined=[];
+  if($ids){$placeholders=implode(',',array_fill(0,count($ids),'?'));foreach(sql('SELECT p.post_id,p.tag_id FROM forum_post_tags p JOIN forum_tags t ON t.id=p.tag_id AND t.channel_id=? WHERE p.post_id IN ('.$placeholders.')',array_merge([$cid],$ids))->fetchAll() as $row)$assignments[$row['post_id']][]=$row['tag_id'];$joined=array_column(sql('SELECT channel_id FROM thread_members WHERE user_id=? AND channel_id IN ('.$placeholders.')',array_merge([uid()],$ids))->fetchAll(),'channel_id');}
+  $posts=array_values(array_filter($posts,function($post)use($query,$status,$tags,$match,$assignments,$joined){
+   if(!str_contains(message_casefold($post['name']),$query))return false;
+   if($status==='joined'&&!in_array($post['id'],$joined,true)||$status==='active'&&$post['archived']||$status==='archived'&&!$post['archived'])return false;
+   $hits=count(array_intersect($tags,$assignments[$post['id']]??[]));return !$tags||($match==='all'?$hits===count($tags):$hits>0);
+  }));
+  $pin=forum_pin($cid)['post_id'];usort($posts,function($a,$b)use($sort,$pin){
+   $pinned=(int)($b['id']===$pin)-(int)($a['id']===$pin);if($pinned)return $pinned;
+   if($sort==='activity')return ((int)(bool)$a['archived']<=>(int)(bool)$b['archived'])?:(((int)$b['thread_activity']?:(int)$b['created'])<=>((int)$a['thread_activity']?:(int)$a['created']))?:strcmp($a['id'],$b['id']);
+   return (($sort==='newest'?-1:1)*((int)$a['created']<=>(int)$b['created']))?:strcmp($a['id'],$b['id']);
+  });
+  $ids=array_column($posts,'id');$signature=hash_hmac('sha256',json_encode([1,uid(),$parent['server_id'],$cid,$query,$status,$sort,$tags,$match,$ids],JSON_THROW_ON_ERROR),$tokenHash);
+  if($cursor!==null&&(!hash_equals('10.'.$signature,$cursor)||count($ids)<=10))fail(409,'The forum results changed. Restart from the first page.');
+  $offset=$cursor===null?0:10;return ['post_ids'=>array_slice($ids,$offset,10),'next_cursor'=>$offset===0&&count($ids)>10?'10.'.$signature:null,'available'=>$available,'total'=>count($ids),'sort'=>$sort];
+ }finally{$db->exec('ROLLBACK');}
+}
 function forum_post_details(array $in): array {
  if(array_diff(array_keys($in),['action','channel_id','post_ids']))fail(400,'Unsupported post preview field.');
  $parent=channel(text_field($in,'channel_id',32,32));if(empty($parent['forum'])||$parent['parent_id']||$parent['kind']!=='text')fail(400,'Choose a forum.');
