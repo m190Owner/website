@@ -76,6 +76,10 @@ function forum_catalog(array $in): array {
   if($cursor!==null&&(!hash_equals('10.'.$signature,$cursor)||count($ids)<=10))fail(409,'The forum results changed. Restart from the first page.');
   $offset=$cursor===null?0:10;$result=['post_ids'=>array_slice($ids,$offset,10),'next_cursor'=>$offset===0&&count($ids)>10?'10.'.$signature:null,'available'=>$available,'total'=>count($ids),'sort'=>$sort];
   if($fields)$result['posts']=array_map(fn($post)=>['id'=>$post['id'],'name'=>$post['name'],'archived'=>(bool)$post['archived'],'locked'=>(bool)$post['locked'],'thread_joined'=>in_array($post['id'],$joined,true),'forum_tag_ids'=>$assignments[$post['id']]??[]],array_slice($posts,$offset,10));
+  if($fields){
+   $creators=[];if($result['post_ids']){$placeholders=implode(',',array_fill(0,count($result['post_ids']),'?'));foreach(sql('SELECT c.id AS post_id,u.id,u.username,u.name,m.nickname FROM channels c JOIN members m ON m.server_id=c.server_id AND m.user_id=c.thread_creator_id JOIN users u ON u.id=m.user_id WHERE c.id IN ('.$placeholders.')',$result['post_ids'])->fetchAll() as $creator)$creators[$creator['post_id']]=array_intersect_key($creator,array_flip(['id','username','name','nickname']));}
+   $result['creators']=array_map(fn($id)=>['post_id'=>$id,'creator'=>$creators[$id]??null],$result['post_ids']);
+  }
   if($fields)$result['pin']=['post_id'=>in_array($pin,$result['post_ids'],true)?$pin:null,'revision'=>(int)$pinState['revision']];
   return $result;
  }finally{$db->exec('ROLLBACK');}
