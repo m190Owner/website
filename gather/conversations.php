@@ -18,6 +18,23 @@ function migrate_forum_pins(): void {
 }
 function forum_pin(string $parent): array {return one('SELECT post_id,revision FROM forum_pins WHERE channel_id=?',[$parent])?:['post_id'=>null,'revision'=>0];}
 function can_pin_forum_post(array $c): bool {return (bool)($c['parent_id']&&$c['kind']==='text'&&empty($c['thread_private'])&&!$c['archived']&&member($c['server_id'])['muted_until']<=time()&&channel_capabilities($c)['manage_threads']);}
+// Input must contain only channels whose current access has already been checked, including forum parents.
+function forum_state_fields(array $channels): array {
+ $parents=array_column(array_filter($channels,fn($c)=>!empty($c['forum'])&&!$c['parent_id']&&$c['kind']==='text'),null,'id');
+ $posts=array_filter($channels,fn($c)=>$c['parent_id']&&isset($parents[$c['parent_id']])&&$parents[$c['parent_id']]['server_id']===$c['server_id']);
+ $summaries=forum_post_summaries($channels);$pins=[];$tags=[];$result=[];
+ foreach(array_chunk(array_keys($parents),500) as $ids){$placeholders=implode(',',array_fill(0,count($ids),'?'));foreach(sql('SELECT channel_id,post_id,revision FROM forum_pins WHERE channel_id IN ('.$placeholders.')',$ids)->fetchAll() as $pin)$pins[$pin['channel_id']]=$pin;}
+ foreach(array_chunk(array_column($posts,'id'),500) as $ids){$placeholders=implode(',',array_fill(0,count($ids),'?'));foreach(sql('SELECT post_id,tag_id FROM forum_post_tags WHERE post_id IN ('.$placeholders.') ORDER BY post_id,tag_id',$ids)->fetchAll() as $tag)$tags[$tag['post_id']][]=$tag['tag_id'];}
+ foreach($parents as $c){
+  $manage=in_array('manage_channels',permissions_for($c['server_id']),true)&&member($c['server_id'])['muted_until']<=time();
+  $result[$c['id']]=['forum_pin_revision'=>$pins[$c['id']]['revision']??0,'forum_tags'=>forum_tags($c['id'],$c['server_id']),'forum_tag_emoji'=>true,'forum_opening_attachment'=>true,'can_apply_moderated_forum_tags'=>channel_capabilities($c)['manage_threads']&&member($c['server_id'])['muted_until']<=time(),'can_manage_forum_tags'=>$manage,'can_manage_forum_sort'=>$manage,'can_manage_forum_layout'=>$manage,'can_manage_forum_guidelines'=>$manage];
+ }
+ foreach($posts as $c){
+  $summary=$summaries[$c['id']]??[];
+  $result[$c['id']]=['forum_pinned'=>empty($c['thread_private'])&&($pins[$c['parent_id']]['post_id']??null)===$c['id'],'can_pin_forum_post'=>can_pin_forum_post($c),'forum_preview'=>$summary['preview']??null,'forum_image_id'=>$summary['image_id']??null,'forum_reply_count'=>$summary['reply_count']??null,'forum_reply_count_limited'=>$summary['reply_count_limited']??false,'forum_tag_ids'=>$tags[$c['id']]??[],'can_edit_forum_tags'=>can_edit_forum_post_tags($c)];
+ }
+ return $result;
+}
 // Call only after checking current access to each post and its forum parent.
 function forum_images(array $ids): array {
  $extensions=attachment_type_extensions('image');$images=implode(' OR ',array_fill(0,count($extensions),'lower(a.name) LIKE ?'));$result=[];
