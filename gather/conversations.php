@@ -19,10 +19,10 @@ function migrate_forum_pins(): void {
 function forum_pin(string $parent): array {return one('SELECT post_id,revision FROM forum_pins WHERE channel_id=?',[$parent])?:['post_id'=>null,'revision'=>0];}
 function can_pin_forum_post(array $c): bool {return (bool)($c['parent_id']&&$c['kind']==='text'&&empty($c['thread_private'])&&!$c['archived']&&member($c['server_id'])['muted_until']<=time()&&channel_capabilities($c)['manage_threads']);}
 // Input must contain only channels whose current access has already been checked, including forum parents.
-function forum_state_fields(array $channels): array {
+function forum_state_fields(array $channels,bool $includeSummaries=true): array {
  $parents=array_column(array_filter($channels,fn($c)=>!empty($c['forum'])&&!$c['parent_id']&&$c['kind']==='text'),null,'id');
  $posts=array_filter($channels,fn($c)=>$c['parent_id']&&isset($parents[$c['parent_id']])&&$parents[$c['parent_id']]['server_id']===$c['server_id']);
- $summaries=forum_post_summaries($channels);$pins=[];$tags=[];$result=[];
+ $summaries=$includeSummaries?forum_post_summaries($channels):[];$pins=[];$tags=[];$result=[];
  foreach(array_chunk(array_keys($parents),500) as $ids){$placeholders=implode(',',array_fill(0,count($ids),'?'));foreach(sql('SELECT channel_id,post_id,revision FROM forum_pins WHERE channel_id IN ('.$placeholders.')',$ids)->fetchAll() as $pin)$pins[$pin['channel_id']]=$pin;}
  foreach(array_chunk(array_column($posts,'id'),500) as $ids){$placeholders=implode(',',array_fill(0,count($ids),'?'));foreach(sql('SELECT post_id,tag_id FROM forum_post_tags WHERE post_id IN ('.$placeholders.') ORDER BY post_id,tag_id',$ids)->fetchAll() as $tag)$tags[$tag['post_id']][]=$tag['tag_id'];}
  foreach($parents as $c){
@@ -32,8 +32,16 @@ function forum_state_fields(array $channels): array {
  foreach($posts as $c){
   $summary=$summaries[$c['id']]??[];
   $result[$c['id']]=['forum_pinned'=>empty($c['thread_private'])&&($pins[$c['parent_id']]['post_id']??null)===$c['id'],'can_pin_forum_post'=>can_pin_forum_post($c),'forum_preview'=>$summary['preview']??null,'forum_image_id'=>$summary['image_id']??null,'forum_reply_count'=>$summary['reply_count']??null,'forum_reply_count_limited'=>$summary['reply_count_limited']??false,'forum_tag_ids'=>$tags[$c['id']]??[],'can_edit_forum_tags'=>can_edit_forum_post_tags($c)];
+  if(!$includeSummaries)foreach(['forum_preview','forum_image_id','forum_reply_count','forum_reply_count_limited'] as $key)unset($result[$c['id']][$key]);
  }
  return $result;
+}
+function forum_post_details(array $in): array {
+ if(array_diff(array_keys($in),['action','channel_id','post_ids']))fail(400,'Unsupported post preview field.');
+ $parent=channel(text_field($in,'channel_id',32,32));if(empty($parent['forum'])||$parent['parent_id']||$parent['kind']!=='text')fail(400,'Choose a forum.');
+ $ids=$in['post_ids']??null;if(!is_array($ids)||!array_is_list($ids)||count($ids)<1||count($ids)>10)fail(400,'Choose one to ten posts.');$channels=[$parent];$seen=[];
+ foreach($ids as $id){if(!is_string($id)||!preg_match('/^[a-f0-9]{32}$/',$id)||isset($seen[$id]))fail(400,'Choose distinct post identifiers.');$seen[$id]=true;$post=channel($id);if($post['parent_id']!==$parent['id']||$post['server_id']!==$parent['server_id']||$post['kind']!=='text'||!empty($post['thread_private']))fail(403,'This post is not available in this forum.');$channels[]=$post;}
+ $fields=forum_state_fields($channels);$posts=[];foreach($ids as $id)$posts[]=['id'=>$id]+array_intersect_key($fields[$id],array_flip(['forum_preview','forum_image_id','forum_reply_count','forum_reply_count_limited']));return ['posts'=>$posts];
 }
 // Call only after checking current access to each post and its forum parent.
 function forum_images(array $ids): array {
