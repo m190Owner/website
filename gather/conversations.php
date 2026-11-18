@@ -84,6 +84,7 @@ function forum_catalog(array $in): array {
    $creators=[];if($result['post_ids']){$placeholders=implode(',',array_fill(0,count($result['post_ids']),'?'));foreach(sql('SELECT c.id AS post_id,u.id,u.username,u.name,m.nickname FROM channels c JOIN members m ON m.server_id=c.server_id AND m.user_id=c.thread_creator_id JOIN users u ON u.id=m.user_id WHERE c.id IN ('.$placeholders.')',$result['post_ids'])->fetchAll() as $creator)$creators[$creator['post_id']]=array_intersect_key($creator,array_flip(['id','username','name','nickname']));}
    $result['creators']=array_map(fn($id)=>['post_id'=>$id,'creator'=>$creators[$id]??null],$result['post_ids']);
   }
+  if($fields)$result['controls']=array_map(fn($post)=>['post_id'=>$post['id'],'can_pin'=>can_pin_forum_post($post)],array_slice($posts,$offset,10));
   if($fields)$result['tags']=forum_tags($cid,$parent['server_id']);
   if($fields)$result['pin']=['post_id'=>in_array($pin,$result['post_ids'],true)?$pin:null,'revision'=>(int)$pinState['revision']];
   return $result;
