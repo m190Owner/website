@@ -396,7 +396,7 @@ function notification_actions(string $action,array $in): array {
   $more=count($rows)>50;$rows=array_slice($rows,0,50);$last=end($rows);$people=[];foreach($rows as $row)if(can_view_as($c['id'],(int)$row['id'])){$row['id']=(int)$row['id'];$people[]=$row;}
   return ['members'=>$people,'next'=>$more?(int)$last['id']:null];
  case 'message_context':
-  $id=positive_id($in['message_id']??null);$m=one('SELECT channel_id FROM messages WHERE id=? AND deleted=0',[$id]);if(!$m)fail(404,'Message no longer available.');$c=channel($m['channel_id']);$after=sql('SELECT id FROM messages WHERE channel_id=? AND deleted=0 AND id>=? ORDER BY id LIMIT 30',[$c['id'],$id])->fetchAll();$last=end($after);return ['channel'=>$c,'messages'=>messages_for($c['id'],(int)$last['id']+1)];
+  $id=positive_id($in['message_id']??null);$m=one('SELECT channel_id FROM messages WHERE id=? AND deleted=0',[$id]);if(!$m)fail(404,'Message no longer available.');$c=channel($m['channel_id']);$after=sql('SELECT id FROM messages WHERE channel_id=? AND deleted=0 AND id>=? ORDER BY id LIMIT 30',[$c['id'],$id])->fetchAll();$last=end($after);return ['channel'=>array_intersect_key($c,array_flip(['id','server_id','parent_id'])),'messages'=>messages_for($c['id'],(int)$last['id']+1)];
  }fail(404,'Unknown notification action.');
 }
 
