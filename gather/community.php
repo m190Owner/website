@@ -216,10 +216,11 @@ function migrate_private_thread_permission(): void {
 function thread_defaults(string $sid): array {return one('SELECT thread_create_default,thread_send_default,thread_private_create_default,thread_defaults_revision FROM servers WHERE id=?',[$sid]);}
 function permission_names(): array {return ['create_events','manage_events','create_polls','add_reactions','create_private_threads','create_public_threads','send_in_threads','manage_threads','bypass_slowmode','pin_messages','disconnect_members','manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log','mention_roles','mention_everyone'];}
 function permissions_for(string $sid): array {
- $m=member($sid);if($m['role']==='owner')return legacy_moderation(permission_names());
+ global $statePermissions;
+ $m=member($sid);if(isset($statePermissions[uid()][$sid]))return $statePermissions[uid()][$sid];if($m['role']==='owner')return legacy_moderation(permission_names());
  $result=$m['role']==='moderator'?['create_private_threads','manage_threads','pin_messages','manage_channels','manage_messages','invite','manage_server','timeout_members','kick_members','ban_members','view_audit_log']:[];
  $defaults=thread_defaults($sid);if($defaults['thread_private_create_default'])$result[]='create_private_threads';if($defaults['thread_create_default'])$result[]='create_public_threads';if($defaults['thread_send_default']===1)$result[]='send_in_threads';
- foreach(sql('SELECT r.permissions FROM roles r JOIN member_roles m ON m.role_id=r.id WHERE m.server_id=? AND m.user_id=?',[$sid,uid()])->fetchAll() as $r)$result=array_merge($result,json_decode($r['permissions'],true));return legacy_moderation(array_values(array_unique($result)));
+ foreach(sql('SELECT r.permissions FROM roles r JOIN member_roles m ON m.role_id=r.id WHERE m.server_id=? AND m.user_id=?',[$sid,uid()])->fetchAll() as $r)$result=array_merge($result,json_decode($r['permissions'],true));$result=legacy_moderation(array_values(array_unique($result)));if(isset($statePermissions))$statePermissions[uid()][$sid]=$result;return $result;
 }
 function require_permission(string $sid,string $permission): void {if(!in_array($permission,permissions_for($sid),true))fail(403,'You do not have permission for this action.');}
 function role_rank(string $sid,int $who): int {
