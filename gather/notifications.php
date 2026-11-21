@@ -423,7 +423,8 @@ function event_notice_rows(): array {
  foreach($rows as &$r)if($r['channel_id']&&event_channel_silent($r['channel_id'],uid(),(int)$r['created']))$r['alert']=0;unset($r);return array_values(array_filter($rows,fn($r)=>event_channel_access($r['channel_id'],uid())));
 }
 function event_notice_summary(): array {
- global $db;$db->beginTransaction();try{$rows=event_notice_rows();$unread=array_filter($rows,fn($r)=>!$r['seen']);$result=['event_unread'=>count($unread),'event_latest_id'=>(int)sql('SELECT COALESCE(max(id),0) FROM event_notices WHERE user_id=?',[uid()])->fetchColumn(),'event_alert_id'=>max([0,...array_map(fn($r)=>$r['alert']?(int)$r['id']:0,$unread)])];$db->commit();return $result;}catch(Throwable $e){if($db->inTransaction())$db->rollBack();throw $e;}
+ // Account state owns the read snapshot shared by all of its summaries.
+ $rows=event_notice_rows();$unread=array_filter($rows,fn($r)=>!$r['seen']);$result=['event_unread'=>count($unread),'event_latest_id'=>(int)sql('SELECT COALESCE(max(id),0) FROM event_notices WHERE user_id=?',[uid()])->fetchColumn(),'event_alert_id'=>max([0,...array_map(fn($r)=>$r['alert']?(int)$r['id']:0,$unread)])];return $result;
 }
 function event_notices_action(string $action,array $in): array {
  if($action==='event_notices'){if(array_diff(array_keys($in),['action','before']))fail(400,'Invalid event inbox request.');$before=$in['before']??0;if(!is_int($before)||$before<0||$before>9007199254740991)fail(400,'Invalid event inbox page.');$rows=array_values(array_filter(event_notice_rows(),fn($r)=>!$before||$r['id']<$before));$more=count($rows)>50;$rows=array_slice($rows,0,50);foreach($rows as &$r)unset($r['alert']);unset($r);return ['items'=>$rows,'next'=>$more?(int)end($rows)['id']:null];}
