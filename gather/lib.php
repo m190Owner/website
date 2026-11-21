@@ -52,7 +52,10 @@ function disable_account(array $in): array {
  });
 }
 function member(string $server,bool $moderate=false): array {
- $m=one('SELECT m.*,s.owner_id FROM members m JOIN servers s ON s.id=m.server_id WHERE m.server_id=? AND m.user_id=?',[$server,uid()]);
+ global $stateMembers;
+ // Reuse only inside the account read snapshot, separately for each actor and server.
+ $m=$stateMembers[uid()][$server]??one('SELECT m.*,s.owner_id FROM members m JOIN servers s ON s.id=m.server_id WHERE m.server_id=? AND m.user_id=?',[$server,uid()]);
+ if(isset($stateMembers)&&$m)$stateMembers[uid()][$server]=$m;
  if(!$m)fail(403,'You do not belong to this server.');if($moderate&&!in_array($m['role'],['owner','moderator'],true))fail(403,'Moderator permission required.');return $m;
 }
 function channel(string $id,bool $write=false,string $permission='send'): array {
