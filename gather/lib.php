@@ -59,7 +59,10 @@ function member(string $server,bool $moderate=false): array {
  if(!$m)fail(403,'You do not belong to this server.');if($moderate&&!in_array($m['role'],['owner','moderator'],true))fail(403,'Moderator permission required.');return $m;
 }
 function channel(string $id,bool $write=false,string $permission='send'): array {
- $c=one('SELECT * FROM channels WHERE id=?',[$id]);if(!$c)fail(404,'Channel not found.');
+ global $stateChannels;
+ $c=$stateChannels[$id]??one('SELECT * FROM channels WHERE id=?',[$id]);if(!$c)fail(404,'Channel not found.');
+ // Store only the raw row; access and inherited thread fields are evaluated on every call.
+ if(isset($stateChannels))$stateChannels[$id]=$c;
  if($c['parent_id']){$parent=channel($c['parent_id'],$write,$write?'send_in_threads':$permission);if(!empty($c['thread_private'])&&!channel_capabilities($c)['view'])fail(403,'This thread is private.');if($write&&$permission!=='send')channel($c['parent_id'],true,$permission);$c['category']=$parent['category'];if($write&&($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time())))fail(403,'This thread is archived.');return $c;}
  if($c['server_id']){$m=member($c['server_id']);if($write&&$m['muted_until']>time())fail(403,'You are timed out in this server until '.gmdate('Y-m-d H:i:s',(int)$m['muted_until']).' UTC.');$p=channel_capabilities($c);if(!$p['view']||($write&&!$p[$permission]))fail(403,'You do not have permission in this channel.');
  }else{if(!one('SELECT 1 FROM channel_members WHERE channel_id=? AND user_id=?',[$id,uid()]))fail(403,'This conversation is private.');if($write&&$c['pair_key']){$other=(int)sql('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$id,uid()])->fetchColumn();if(blocked($other))fail(403,'This conversation is unavailable.');}}return $c;
