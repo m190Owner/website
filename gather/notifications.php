@@ -441,6 +441,9 @@ function event_notices_action(string $action,array $in): array {
   $next=null;$rows=event_notice_rows($before,$in['unread']??false,$next);foreach($rows as &$r)unset($r['alert']);unset($r);return ['version'=>1,'items'=>$rows,'next'=>$next];
  }
  if($action==='event_notices'){if(array_diff(array_keys($in),['action','before']))fail(400,'Invalid event inbox request.');$before=$in['before']??0;if(!is_int($before)||$before<0||$before>9007199254740991)fail(400,'Invalid event inbox page.');$rows=array_values(array_filter(event_notice_rows(),fn($r)=>!$before||$r['id']<$before));$more=count($rows)>50;$rows=array_slice($rows,0,50);foreach($rows as &$r)unset($r['alert']);unset($r);return ['items'=>$rows,'next'=>$more?(int)end($rows)['id']:null];}
- if(array_diff(array_keys($in),['action','id','all'])||isset($in['all'])&&!is_bool($in['all'])||isset($in['all'],$in['id']))fail(400,'Invalid event inbox read request.');
- if(($in['all']??false)===true)sql('UPDATE event_notices SET seen=1 WHERE user_id=?',[uid()]);else sql('UPDATE event_notices SET seen=1 WHERE user_id=? AND id=?',[uid(),positive_id($in['id']??null)]);return ['ok'=>true];
+ if(array_diff(array_keys($in),['action','id','all','version'])||array_key_exists('version',$in)&&$in['version']!==1||isset($in['all'])&&!is_bool($in['all'])||isset($in['all'],$in['id']))fail(400,'Invalid event inbox read request.');
+ $read=function()use($in){if(($in['all']??false)===true)sql('UPDATE event_notices SET seen=1 WHERE user_id=?',[uid()]);else sql('UPDATE event_notices SET seen=1 WHERE user_id=? AND id=?',[uid(),positive_id($in['id']??null)]);
+  return isset($in['version'])?['ok'=>true,'version'=>1,'event_unread'=>count(array_filter(event_notice_rows(),fn($r)=>!$r['seen']))]:['ok'=>true];};
+ // Keep the acknowledgment and current visible count under the same write lock.
+ return isset($in['version'])?transaction($read):$read();
 }
