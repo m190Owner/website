@@ -213,7 +213,11 @@ function migrate_private_thread_permission(): void {
   $db->exec('PRAGMA user_version=44;');
  });
 }
-function thread_defaults(string $sid): array {return one('SELECT thread_create_default,thread_send_default,thread_private_create_default,thread_defaults_revision FROM servers WHERE id=?',[$sid]);}
+function thread_defaults(string $sid): array {
+ global $stateThreadDefaults;
+ $defaults=$stateThreadDefaults[$sid]??one('SELECT thread_create_default,thread_send_default,thread_private_create_default,thread_defaults_revision FROM servers WHERE id=?',[$sid]);
+ if(isset($stateThreadDefaults))$stateThreadDefaults[$sid]=$defaults;return $defaults;
+}
 function permission_names(): array {return ['create_events','manage_events','create_polls','add_reactions','create_private_threads','create_public_threads','send_in_threads','manage_threads','bypass_slowmode','pin_messages','disconnect_members','manage_channels','manage_messages','invite','manage_server','manage_roles','timeout_members','kick_members','ban_members','view_audit_log','mention_roles','mention_everyone'];}
 function permissions_for(string $sid): array {
  global $statePermissions;
