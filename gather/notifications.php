@@ -259,8 +259,9 @@ function notify_message(int $id,array $channel,string $body,?int $reply,?string 
   sql('DELETE FROM notifications WHERE user_id=? AND message_id NOT IN (SELECT message_id FROM notifications WHERE user_id=? ORDER BY message_id DESC LIMIT 500)',[$who,$who]);
  }
 }
-function inbox_rows(bool $unread=false): array {
- $rows=sql('SELECT n.message_id,n.kind,n.seen,m.channel_id,m.body,m.created,m.user_id,u.name,u.username,u.avatar,c.name AS channel_name,c.server_id,s.name AS server_name FROM notifications n JOIN messages m ON m.id=n.message_id JOIN users u ON u.id=m.user_id JOIN channels c ON c.id=m.channel_id LEFT JOIN servers s ON s.id=c.server_id WHERE n.user_id=? AND m.deleted=0'.($unread?' AND n.seen=0':'').' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY n.message_id DESC LIMIT 500',[uid(),uid(),uid()])->fetchAll();
+function inbox_rows(bool $unread=false,?int $before=null,?int &$next=null): array {
+ $rows=sql('SELECT n.message_id,n.kind,n.seen,m.channel_id,m.body,m.created,m.user_id,u.name,u.username,u.avatar,c.name AS channel_name,c.server_id,s.name AS server_name FROM notifications n JOIN messages m ON m.id=n.message_id JOIN users u ON u.id=m.user_id JOIN channels c ON c.id=m.channel_id LEFT JOIN servers s ON s.id=c.server_id WHERE n.user_id=? AND m.deleted=0'.($unread?' AND n.seen=0':'').' AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id))'.($before?' AND n.message_id<?':'').' ORDER BY n.message_id DESC LIMIT '.($before===null?'500':'51'),array_merge([uid(),uid(),uid()],$before?[$before]:[]))->fetchAll();
+ $next=null;if($before!==null&&count($rows)>50){array_pop($rows);$next=(int)end($rows)['message_id'];}
  $visible=[];$result=[];$roleNames=[];foreach($rows as $row){$cid=$row['channel_id'];if(!array_key_exists($cid,$visible))$visible[$cid]=can_view_as($cid,uid());if(!$visible[$cid])continue;$sid=$row['server_id'];if($sid&&!isset($roleNames[$sid]))$roleNames[$sid]=array_column(sql('SELECT id,name FROM roles WHERE server_id=?',[$sid])->fetchAll(),'name','id');$row['preview']=role_preview($row['body'],$roleNames[$sid]??[]);if(in_array($row['kind'],['role','everyone','role_everyone'],true))$row['kind']='mention';if(!$row['server_id']&&one('SELECT 1 FROM channels WHERE id=? AND pair_key IS NOT NULL',[$cid]))$row['channel_name']=$row['name'];$result[]=$row;}return $result;
 }
 function inbox_summary(array $channels): array {
@@ -315,7 +316,13 @@ function notification_actions(string $action,array $in): array {
   return transaction(function()use($id,$mode,$in){$c=channel($id);if(in_array($mode,['inherit','category'],true)&&!$c['server_id'])fail(400,'Direct messages have independent notification settings.');$mute=save_notification_mute($id,$in);
    sql('INSERT INTO notification_preferences(user_id,channel_id,mode) VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET mode=excluded.mode',[uid(),$id,$mode]);return ['ok'=>true,'mode'=>$mode]+notification_mute_fields($mute);
   });
- case 'inbox':$rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
+ case 'inbox':
+  if(array_key_exists('page_version',$in)){
+   if($in['page_version']!==1||array_diff(array_keys($in),['action','page_version','before','unread'])||array_key_exists('unread',$in)&&!is_bool($in['unread']))fail(400,'Invalid inbox page request.');
+   $before=$in['before']??0;if(!is_int($before)||$before<0||$before>9007199254740991||array_key_exists('before',$in)&&$in['before']===null)fail(400,'Invalid inbox cursor.');
+   $next=null;$rows=inbox_rows($in['unread']??false,$before,$next);return ['version'=>1,'items'=>$rows,'next'=>$next];
+  }
+  $rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
  case 'inbox_read':
   if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return ['ok'=>true];
  case 'mention_members':
