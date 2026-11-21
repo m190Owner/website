@@ -1,4 +1,4 @@
 <?php
 header('X-Robots-Tag: noindex, nofollow');
 header('Cache-Control: no-cache');
-header('Location: https://github.com/m190Owner/website/releases/download/gather-v0.314.0/Gather-Setup-0.314.0.exe',true,302);
+header('Location: https://github.com/m190Owner/website/releases/download/gather-v0.315.0/Gather-Setup-0.315.0.exe',true,302);
