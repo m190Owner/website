@@ -8,6 +8,10 @@ function migrate_server_directory_index(): void {
  global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=76)return;
  transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=76)return;$db->exec("CREATE INDEX IF NOT EXISTS channels_server_roots ON channels(server_id,id) WHERE parent_id IS NULL AND kind='text'; PRAGMA user_version=76;");});
 }
+function migrate_server_voice_index(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=77)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=77)return;$db->exec("CREATE INDEX IF NOT EXISTS channels_server_voice ON channels(server_id,id) WHERE parent_id IS NULL AND kind='voice'; PRAGMA user_version=77;");});
+}
 function require_thread_capacity(string $parent): void {
  if((int)sql('SELECT count(*) FROM (SELECT 1 FROM channels WHERE parent_id=? LIMIT 20)',[$parent])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');
 }
@@ -464,6 +468,13 @@ function conversation_actions(string $action,array $in): array {
   if(array_diff(array_keys($in),['action','parent_id','server_id','open_version'])||!in_array($in['open_version']??null,[1,2],true))fail(400,'Unsupported parent navigation request.');$pid=text_field($in,'parent_id',32,32);$sid=text_field($in,'server_id',32,32);global $db;$db->exec('BEGIN');
   try{$c=channel($pid);if($c['server_id']!==$sid||$c['kind']!=='text'||$c['parent_id'])fail(400,'Choose a parent text channel.');if($c['forum']&&$in['open_version']===1)return ['version'=>1,'parent'=>null];
    $parent=array_intersect_key(channel_state_controls($c),array_flip(['id','server_id','parent_id','kind','name','topic','private','readonly','category','position','created','slowmode','default_thread_slowmode','default_thread_auto_archive_minutes','capabilities','can_start_thread','can_create_private_thread','can_manage_thread_members','can_reopen','can_reopen_send','private_thread_create_version','thread_browser_version']));$parent+=['forum'=>0,'thread_open_version'=>1,'category_position'=>(int)(one('SELECT position FROM category_order WHERE server_id=? AND name=?',[$sid,$c['category']])['position']??2147483647)];if($c['forum']){unset($parent['thread_open_version']);$parent['forum']=1;$parent+=array_intersect_key($c,array_flip(['forum_require_tag','forum_tag_revision','forum_default_sort','forum_sort_revision','forum_default_layout','forum_layout_revision','forum_guidelines','forum_guidelines_revision']));$parent+=forum_state_fields([$c],false)[$pid];$parent+=['forum_post_open_version'=>2,'forum_post_tag_context_version'=>1,'forum_tag_context_version'=>1,'forum_post_create_context_version'=>1,'forum_details_version'=>1,'forum_catalog_version'=>1,'forum_catalog_fields_version'=>1];}return ['version'=>$in['open_version'],'parent'=>$parent];
+  }finally{$db->exec('ROLLBACK');}
+ case 'server_voice':
+  if(array_diff(array_keys($in),['action','server_id','voice_version'])||($in['voice_version']??null)!==1)fail(400,'Unsupported voice directory request.');$sid=text_field($in,'server_id',32,32);global $db;$db->exec('BEGIN');
+  try{member($sid);$rows=sql("SELECT * FROM channels WHERE server_id=? AND parent_id IS NULL AND kind='voice' ORDER BY id LIMIT 51",[$sid])->fetchAll();if(count($rows)>50)fail(409,'This server exceeds the current voice directory limit.');$channels=[];
+   foreach($rows as $c){if(!can_view_as($c['id'],uid()))continue;$voice=array_intersect_key(channel_state_controls($c),array_flip(['id','server_id','parent_id','kind','name','topic','private','readonly','category','position','created','slowmode','capabilities']));$voice['category_position']=(int)(one('SELECT position FROM category_order WHERE server_id=? AND name=?',[$sid,$c['category']])['position']??2147483647);
+    $voice['participants']=sql("SELECT c.user_id,u.name,COALESCE(NULLIF(m.server_avatar,''),u.avatar) AS avatar FROM calls c JOIN users u ON u.id=c.user_id LEFT JOIN members m ON m.user_id=u.id AND m.server_id=? WHERE c.channel_id=? AND c.seen>? LIMIT 7",[$sid,$c['id'],time()-45])->fetchAll();if(count($voice['participants'])>6)fail(409,'This voice channel exceeds the current participant limit.');$channels[]=$voice;
+   }return ['version'=>1,'server_id'=>$sid,'channels'=>$channels];
   }finally{$db->exec('ROLLBACK');}
  case 'server_directory':
   if(array_diff(array_keys($in),['action','server_id','directory_version'])||($in['directory_version']??null)!==1)fail(400,'Unsupported server directory request.');$sid=text_field($in,'server_id',32,32);global $db;$db->exec('BEGIN');
