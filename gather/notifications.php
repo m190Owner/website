@@ -268,6 +268,13 @@ function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
  foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN (CASE n.kind WHEN \'role\' THEN COALESCE(np.suppress_roles,0)=0 WHEN \'everyone\' THEN COALESCE(np.suppress_everyone,0)=0 WHEN \'role_everyone\' THEN (COALESCE(np.suppress_roles,0)=0 OR COALESCE(np.suppress_everyone,0)=0) ELSE 1 END) AND m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0),COALESCE(cm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0),COALESCE(cm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN channels mp ON mp.id=mc.parent_id LEFT JOIN category_notification_mutes cm ON cm.user_id=n.user_id AND cm.server_id=mc.server_id AND cm.category=COALESCE(mp.category,mc.category) LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id LEFT JOIN server_notification_preferences np ON np.user_id=n.user_id AND np.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
 }
+function inbox_read_summary(): array {
+ $rows=sql('SELECT m.channel_id FROM notifications n JOIN messages m ON m.id=n.message_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 LIMIT 501',[uid()])->fetchAll();
+ if(count($rows)>500)fail(409,'This inbox exceeds the current summary limit.');
+ $channels=[];foreach(array_unique(array_column($rows,'channel_id')) as $id)if(can_view_as($id,uid()))$channels[]=['id'=>$id];
+ $summary=inbox_summary($channels);$result=[];foreach($summary as $id=>$row)$result[]=['channel_id'=>$id,'total'=>$row['total'],'first_id'=>$row['first_id'],'last_id'=>$row['last_id']];
+ return ['ok'=>true,'version'=>1,'inbox_unread'=>array_sum(array_column($result,'total')),'channels'=>$result];
+}
 function reaction_channel(int $id): array {
  $msg=one('SELECT * FROM messages WHERE id=? AND deleted=0',[$id]);if(!$msg)fail(404,'Message not found.');$c=channel($msg['channel_id']);
   if($c['server_id']){if(member($c['server_id'])['muted_until']>time())fail(403,'You cannot change reactions while timed out.');if($c['parent_id']&&($c['archived']||($c['auto_archive_minutes']>0&&$c['thread_activity']+$c['auto_archive_minutes']*60<=time())))fail(403,'Reopen this thread before changing reactions.');}else channel($c['id'],true);
@@ -324,7 +331,9 @@ function notification_actions(string $action,array $in): array {
   }
   $rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
  case 'inbox_read':
-  if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return ['ok'=>true];
+  if(array_key_exists('version',$in)&&($in['version']!==1||array_diff(array_keys($in),['action','message_id','all','version'])||array_key_exists('all',$in)&&!is_bool($in['all'])||array_key_exists('all',$in)&&array_key_exists('message_id',$in)))fail(400,'Invalid inbox read request.');
+  $read=function()use($in){if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return isset($in['version'])?inbox_read_summary():['ok'=>true];};
+  return isset($in['version'])?transaction($read):$read();
  case 'mention_members':
   $c=channel(text_field($in,'channel_id',32,32));$people=$c['server_id']?sql('SELECT u.* FROM users u JOIN members m ON m.user_id=u.id WHERE m.server_id=? ORDER BY u.name',[$c['server_id']])->fetchAll():sql('SELECT u.* FROM users u JOIN channel_members m ON m.user_id=u.id WHERE m.channel_id=? ORDER BY u.name',[$c['id']])->fetchAll();
   $permissions=$c['server_id']?permissions_for($c['server_id']):[];
