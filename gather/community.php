@@ -275,6 +275,7 @@ function relationship_state(): array {
  $result=[];foreach(sql('SELECT u.*,f.sender,f.accepted FROM friendships f JOIN users u ON u.id=CASE WHEN f.a=? THEN f.b ELSE f.a END WHERE f.a=? OR f.b=?',[uid(),uid(),uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>$u['accepted']?'friend':((int)$u['sender']===uid()?'outgoing':'incoming'),'online'=>presence($u)!=='offline'];
  foreach(sql('SELECT u.* FROM blocks b JOIN users u ON u.id=b.target WHERE b.user_id=?',[uid()])->fetchAll() as $u)$result[]=public_user($u)+['relationship'=>'blocked','online'=>false];return $result;
 }
+function record_read_position(string $cid,int $id): void {sql('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=max(last_id,excluded.last_id)',[uid(),$cid,$id]);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id IN(SELECT id FROM messages WHERE channel_id=? AND id<=?)',[uid(),$cid,$id]);}
 function community(string $action,array $in): array {
  switch($action){
  case 'call_disconnect_preview':case 'call_disconnect':
@@ -415,8 +416,15 @@ function community(string $action,array $in): array {
   transaction(function()use($other,$op){$args=[min(uid(),$other),max(uid(),$other)];if($op==='accept'){if(blocked($other)||!one('SELECT 1 FROM friendships WHERE a=? AND b=? AND sender<>?',[...$args,uid()]))fail(403,'No incoming request.');sql('UPDATE friendships SET accepted=1 WHERE a=? AND b=?',$args);}
    elseif(in_array($op,['remove','block'],true)){sql('DELETE FROM friendships WHERE a=? AND b=?',$args);if($op==='block'){sql('INSERT OR IGNORE INTO blocks VALUES(?,?)',[uid(),$other]);sql('DELETE FROM calls WHERE channel_id IN (SELECT id FROM channels WHERE pair_key=?)',[implode(':',$args)]);}}
    elseif($op==='unblock')sql('DELETE FROM blocks WHERE user_id=? AND target=?',[uid(),$other]);else fail(400,'Invalid relationship action.');});break;
+ case 'server_mark_read':
+  // shortcut: current 50-root/20-thread caps bound this transaction; add paged acknowledgments before lifting them.
+  if(array_diff(array_keys($in),['action','server_id','read_version'])||($in['read_version']??null)!==1)fail(400,'Unsupported server read request.');$sid=text_field($in,'server_id',32,32);
+  return transaction(function()use($sid){member($sid);$roots=sql("SELECT id FROM channels WHERE server_id=? AND parent_id IS NULL AND kind='text' ORDER BY id LIMIT 51",[$sid])->fetchAll();if(count($roots)>50)fail(409,'This server exceeds the current read limit.');$targets=[];
+   foreach($roots as $root){if(!can_view_as($root['id'],uid()))continue;$targets[]=$root['id'];$threads=sql('SELECT id,server_id,kind FROM channels WHERE parent_id=? ORDER BY created DESC,id LIMIT 21',[$root['id']])->fetchAll();if(count($threads)>20)fail(409,'A channel exceeds the current thread read limit.');foreach($threads as $thread)if($thread['server_id']===$sid&&$thread['kind']==='text'&&can_view_as($thread['id'],uid()))$targets[]=$thread['id'];}
+   $marks=[];foreach($targets as $cid){$id=(int)sql('SELECT COALESCE(max(id),0) FROM messages WHERE channel_id=?',[$cid])->fetchColumn();if($id){record_read_position($cid,$id);$marks[]=['channel_id'=>$cid,'last_id'=>$id];}}return ['version'=>1,'server_id'=>$sid,'marks'=>$marks];
+  });
  case 'read':
-  $cid=text_field($in,'channel_id',32,32);channel($cid);$id=$in['last_id']??null;if(!is_int($id)||$id<0)fail(400,'Invalid read position.');if($id&&!one('SELECT 1 FROM messages WHERE channel_id=? AND id=?',[$cid,$id]))fail(400,'Read position must belong to this channel.');sql('INSERT INTO read_states VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET last_id=max(last_id,excluded.last_id)',[uid(),$cid,$id]);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id IN(SELECT id FROM messages WHERE channel_id=? AND id<=?)',[uid(),$cid,$id]);break;
+  $cid=text_field($in,'channel_id',32,32);channel($cid);$id=$in['last_id']??null;if(!is_int($id)||$id<0)fail(400,'Invalid read position.');if($id&&!one('SELECT 1 FROM messages WHERE channel_id=? AND id=?',[$cid,$id]))fail(400,'Read position must belong to this channel.');record_read_position($cid,$id);break;
  case 'typing':
   $cid=text_field($in,'channel_id',32,32);$c=channel($cid,true);require_thread_message_write($c);if($c['kind']!=='text')fail(400,'Choose a text channel.');rate('typing:'.uid(),30,60);sql('INSERT INTO typing VALUES(?,?,?) ON CONFLICT(user_id,channel_id) DO UPDATE SET seen=excluded.seen',[uid(),$cid,time()]);break;
  case 'call_decline':
