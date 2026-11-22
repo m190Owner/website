@@ -268,6 +268,28 @@ function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
  foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN (CASE n.kind WHEN \'role\' THEN COALESCE(np.suppress_roles,0)=0 WHEN \'everyone\' THEN COALESCE(np.suppress_everyone,0)=0 WHEN \'role_everyone\' THEN (COALESCE(np.suppress_roles,0)=0 OR COALESCE(np.suppress_everyone,0)=0) ELSE 1 END) AND m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0),COALESCE(cm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0),COALESCE(cm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN channels mp ON mp.id=mc.parent_id LEFT JOIN category_notification_mutes cm ON cm.user_id=n.user_id AND cm.server_id=mc.server_id AND cm.category=COALESCE(mp.category,mc.category) LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id LEFT JOIN server_notification_preferences np ON np.user_id=n.user_id AND np.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
 }
+function attention_navigation(): array {
+ global $db,$tokenHash,$stateMembers,$statePermissions,$stateThreadDefaults,$stateRoleIds,$stateChannelOverrides,$stateChannels;
+ $db->beginTransaction();
+ try{
+  if(!one('SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.user_id=? AND s.expires>? AND u.disabled_at=0',[$tokenHash,uid(),time()]))fail(401,'Session expired. Please sign in.');
+  $servers=sql('SELECT s.id FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ORDER BY s.created LIMIT 31',[uid()])->fetchAll();if(count($servers)>30)fail(409,'This account exceeds the current navigation limit.');
+  $rows=sql("SELECT c.*,COALESCE((SELECT position FROM category_order o WHERE o.server_id=c.server_id AND o.name=c.category),2147483647) AS category_position,p.mode AS notification_mode,sp.mode AS server_notification_mode,cp.mode AS category_notification_mode,COALESCE(nm.muted_until,0) AS channel_mute,COALESCE(sm.muted_until,0) AS server_mute,COALESCE(cm.muted_until,0) AS category_mute FROM channels c LEFT JOIN channels parent ON parent.id=c.parent_id LEFT JOIN notification_preferences p ON p.channel_id=c.id AND p.user_id=? LEFT JOIN server_notification_preferences sp ON sp.server_id=c.server_id AND sp.user_id=? LEFT JOIN category_notification_preferences cp ON cp.server_id=c.server_id AND cp.category=COALESCE(parent.category,c.category) AND cp.user_id=? LEFT JOIN notification_mutes nm ON nm.channel_id=c.id AND nm.user_id=? LEFT JOIN server_notification_mutes sm ON sm.server_id=c.server_id AND sm.user_id=? LEFT JOIN category_notification_mutes cm ON cm.server_id=c.server_id AND cm.category=COALESCE(parent.category,c.category) AND cm.user_id=? WHERE c.server_id IN (SELECT server_id FROM members WHERE user_id=?) OR (c.server_id IS NULL AND c.id IN (SELECT channel_id FROM channel_members WHERE user_id=?)) ORDER BY c.position,c.created,c.id LIMIT 1201",array_fill(0,8,uid()))->fetchAll();
+  if(count($rows)>1200)fail(409,'This account exceeds the current navigation limit.');
+  if(count(sql('SELECT message_id FROM notifications WHERE user_id=? AND seen=0 LIMIT 501',[uid()])->fetchAll())>500)fail(409,'This inbox exceeds the current navigation limit.');
+  $stateMembers=[];$statePermissions=[];$stateThreadDefaults=[];$stateRoleIds=[];$stateChannelOverrides=[];$stateChannels=[];
+  $channels=[];$now=time();
+  foreach($rows as $row){try{$c=channel($row['id']);}catch(ApiError $e){if($e->status===403)continue;throw $e;}
+   $item=array_intersect_key($row,array_flip(['id','server_id','parent_id','kind','position','created','category_position','notification_mode','server_notification_mode','category_notification_mode']));$item['category']=$c['category'];
+   $item['blocked']=false;if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$c['id'],uid()]);$item['blocked']=$peer?blocked((int)$peer['user_id']):false;}
+   $item['notification_muted']=$row['channel_mute']>$now;$item['server_notification_muted']=$row['server_mute']>$now;$item['category_notification_muted']=$row['category_mute']>$now;
+   $first=$c['kind']==='text'&&!$item['blocked']?one('SELECT m.id FROM messages m WHERE m.channel_id=? AND m.deleted=0 AND m.user_id<>? AND m.id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY m.id LIMIT 1',[$c['id'],uid(),uid(),$c['id'],uid(),uid()]):null;
+   $item['first_unread_id']=$first?(int)$first['id']:null;$item['unread']=$first?1:0;$channels[]=$item;
+  }
+  $summary=inbox_summary($channels);foreach($channels as &$c){$c['first_mention_id']=$summary[$c['id']]['first_id']??null;$c['mention_count']=$c['first_mention_id']?1:0;}unset($c);
+  return ['version'=>1,'user'=>['id'=>uid()],'servers'=>$servers,'channels'=>$channels]+server_layout_state();
+ }finally{$stateMembers=null;$statePermissions=null;$stateThreadDefaults=null;$stateRoleIds=null;$stateChannelOverrides=null;$stateChannels=null;$db->rollBack();}
+}
 function inbox_read_summary(): array {
  $rows=sql('SELECT m.channel_id FROM notifications n JOIN messages m ON m.id=n.message_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 LIMIT 501',[uid()])->fetchAll();
  if(count($rows)>500)fail(409,'This inbox exceeds the current summary limit.');
@@ -330,6 +352,8 @@ function notification_actions(string $action,array $in): array {
    $next=null;$rows=inbox_rows($in['unread']??false,$before,$next);return ['version'=>1,'items'=>$rows,'next'=>$next];
   }
   $rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
+ case 'attention_navigation':
+  if(($in['version']??null)!==1||array_diff(array_keys($in),['action','version']))fail(400,'Invalid attention navigation request.');return attention_navigation();
  case 'notification_summary':
   if(($in['version']??null)!==1||array_diff(array_keys($in),['action','version']))fail(400,'Invalid notification summary request.');
   global $db,$tokenHash;$db->beginTransaction();
