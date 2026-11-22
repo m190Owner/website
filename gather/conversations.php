@@ -19,6 +19,13 @@ function migrate_private_retry_tombstones(): void {
  CREATE TRIGGER IF NOT EXISTS private_thread_retry_delete AFTER DELETE ON channels WHEN OLD.thread_private=1 AND OLD.thread_creator_id IS NOT NULL AND OLD.thread_client_id IS NOT NULL AND EXISTS(SELECT 1 FROM channels WHERE id=OLD.parent_id) BEGIN INSERT OR IGNORE INTO deleted_private_thread_retries(user_id,client_id,parent_id) VALUES(OLD.thread_creator_id,OLD.thread_client_id,OLD.parent_id); END;
  PRAGMA user_version=78;");});
 }
+function migrate_public_retry_tombstones(): void {
+ global $db;if((int)$db->query('PRAGMA user_version')->fetchColumn()>=79)return;
+ transaction(function()use($db){if((int)$db->query('PRAGMA user_version')->fetchColumn()>=79)return;$db->exec("CREATE TABLE IF NOT EXISTS deleted_public_thread_retries(user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,client_id TEXT NOT NULL,parent_id TEXT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,PRIMARY KEY(user_id,client_id));
+ CREATE INDEX IF NOT EXISTS deleted_public_thread_retries_parent ON deleted_public_thread_retries(parent_id);
+ CREATE TRIGGER IF NOT EXISTS public_thread_retry_delete AFTER DELETE ON channels WHEN OLD.thread_private=0 AND OLD.thread_creator_id IS NOT NULL AND OLD.thread_client_id IS NOT NULL AND EXISTS(SELECT 1 FROM channels WHERE id=OLD.parent_id) BEGIN INSERT OR IGNORE INTO deleted_public_thread_retries(user_id,client_id,parent_id) VALUES(OLD.thread_creator_id,OLD.thread_client_id,OLD.parent_id); END;
+ PRAGMA user_version=79;");});
+}
 function require_thread_capacity(string $parent): void {
  if((int)sql('SELECT count(*) FROM (SELECT 1 FROM channels WHERE parent_id=? LIMIT 20)',[$parent])->fetchColumn()>=20)fail(409,'This channel has reached its 20-thread limit.');
 }
@@ -537,6 +544,7 @@ function conversation_actions(string $action,array $in): array {
   return transaction(function()use($cid,$name,$body,$client,$in){
    $parent=channel($cid,true,'create_public_threads');if(!$parent['server_id']||$parent['kind']!=='text'||$parent['parent_id'])fail(400,'Start a discussion in a server text channel.');channel($cid,true,'send_in_threads');
    $old=one('SELECT * FROM channels WHERE thread_creator_id=? AND thread_client_id=?',[uid(),$client]);if($old){if($old['parent_id']!==$cid)fail(409,'This retry belongs to another channel.');channel($old['id']);return ['channel_id'=>$old['id']];}
+   if(one('SELECT 1 FROM deleted_public_thread_retries WHERE user_id=? AND client_id=?',[uid(),$client]))fail(409,'This discussion was deleted. Close this dialog and start a new discussion.');
    $opening=$in['opening_attachment']??null;$file=null;
    if(array_key_exists('opening_attachment',$in)){
     if(empty($parent['forum'])||!is_array($opening)||array_diff(array_keys($opening),['name','data','description','spoiler']))fail(400,'Choose one opening file for a forum post.');
