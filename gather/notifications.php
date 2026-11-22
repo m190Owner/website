@@ -278,6 +278,14 @@ function attention_navigation(): array {
   if(count($rows)>1200)fail(409,'This account exceeds the current navigation limit.');
   if(count(sql('SELECT message_id FROM notifications WHERE user_id=? AND seen=0 LIMIT 501',[uid()])->fetchAll())>500)fail(409,'This inbox exceeds the current navigation limit.');
   $stateMembers=[];$statePermissions=[];$stateThreadDefaults=[];$stateRoleIds=[];$stateChannelOverrides=[];$stateChannels=[];
+  // Reuse raw rows; channel() still authorizes each candidate and its parent.
+  $stateChannels=array_column(array_map(fn($row)=>array_diff_key($row,array_flip(['category_position','notification_mode','server_notification_mode','category_notification_mode','channel_mute','server_mute','category_mute'])),$rows),null,'id');
+  $overrideIds=array_column(array_filter($rows,fn($row)=>$row['server_id']&&!$row['parent_id']),'id');
+  foreach(array_chunk($overrideIds,500) as $ids){
+   foreach($ids as $id)$stateChannelOverrides[$id]=[];
+   $placeholders=implode(',',array_fill(0,count($ids),'?'));
+   foreach(sql('SELECT * FROM channel_overrides WHERE channel_id IN ('.$placeholders.')',$ids)->fetchAll() as $row)$stateChannelOverrides[$row['channel_id']][]=$row;
+  }
   $channels=[];$now=time();
   foreach($rows as $row){try{$c=channel($row['id']);}catch(ApiError $e){if($e->status===403)continue;throw $e;}
    $item=array_intersect_key($row,array_flip(['id','server_id','parent_id','kind','position','created','category_position','notification_mode','server_notification_mode','category_notification_mode']));$item['category']=$c['category'];
