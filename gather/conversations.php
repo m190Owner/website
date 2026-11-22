@@ -279,7 +279,7 @@ function migrate_conversations(): void {
  });
 }
 function channel_capabilities(array $c,bool $forThread=false): array {
- if($c['parent_id']){$p=channel_capabilities(one('SELECT * FROM channels WHERE id=?',[$c['parent_id']]),true);$p['send']=$p['send_in_threads'];if(!empty($c['thread_private'])&&!$p['manage_threads']&&!one('SELECT 1 FROM thread_members WHERE channel_id=? AND user_id=?',[$c['id'],uid()]))$p['view']=false;return $p;}
+ if($c['parent_id']){$p=channel_capabilities(channel_row($c['parent_id']),true);$p['send']=$p['send_in_threads'];if(!empty($c['thread_private'])&&!$p['manage_threads']&&!one('SELECT 1 FROM thread_members WHERE channel_id=? AND user_id=?',[$c['id'],uid()]))$p['view']=false;return $p;}
  if(!$c['server_id'])return ['view'=>true,'send'=>true,'connect'=>true,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>false,'create_private_threads'=>false,'create_public_threads'=>false,'send_in_threads'=>true,'add_reactions'=>true,'create_polls'=>true];
  $m=member($c['server_id']);if($m['role']==='owner')return ['view'=>true,'send'=>empty($c['forum'])||$forThread,'connect'=>empty($c['forum'])||$forThread,'attach'=>true,'pin_messages'=>true,'bypass_slowmode'=>true,'manage_threads'=>true,'create_private_threads'=>empty($c['forum']),'create_public_threads'=>true,'send_in_threads'=>true,'add_reactions'=>true,'create_polls'=>true];
  global $stateRoleIds,$stateChannelOverrides;
