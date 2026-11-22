@@ -270,7 +270,7 @@ function inbox_summary(array $channels): array {
 }
 function attention_navigation(): array {
  global $db,$tokenHash,$stateMembers,$statePermissions,$stateThreadDefaults,$stateRoleIds,$stateChannelOverrides,$stateChannels;
- $db->beginTransaction();
+ $db->beginTransaction();$firstUnreadQuery=null;
  try{
   if(!one('SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.user_id=? AND s.expires>? AND u.disabled_at=0',[$tokenHash,uid(),time()]))fail(401,'Session expired. Please sign in.');
   $servers=sql('SELECT s.id FROM servers s JOIN members m ON m.server_id=s.id WHERE m.user_id=? ORDER BY s.created LIMIT 31',[uid()])->fetchAll();if(count($servers)>30)fail(409,'This account exceeds the current navigation limit.');
@@ -291,12 +291,15 @@ function attention_navigation(): array {
    $item=array_intersect_key($row,array_flip(['id','server_id','parent_id','kind','position','created','category_position','notification_mode','server_notification_mode','category_notification_mode']));$item['category']=$c['category'];
    $item['blocked']=false;if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$c['id'],uid()]);$item['blocked']=$peer?blocked((int)$peer['user_id']):false;}
    $item['notification_muted']=$row['channel_mute']>$now;$item['server_notification_muted']=$row['server_mute']>$now;$item['category_notification_muted']=$row['category_mute']>$now;
-   $first=$c['kind']==='text'&&!$item['blocked']?one('SELECT m.id FROM messages m WHERE m.channel_id=? AND m.deleted=0 AND m.user_id<>? AND m.id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY m.id LIMIT 1',[$c['id'],uid(),uid(),$c['id'],uid(),uid()]):null;
+   $first=null;if($c['kind']==='text'&&!$item['blocked']){
+    $firstUnreadQuery??=$db->prepare('SELECT m.id FROM messages m WHERE m.channel_id=? AND m.deleted=0 AND m.user_id<>? AND m.id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY m.id LIMIT 1');
+    $firstUnreadQuery->execute([$c['id'],uid(),uid(),$c['id'],uid(),uid()]);$first=$firstUnreadQuery->fetch();$firstUnreadQuery->closeCursor();
+   }
    $item['first_unread_id']=$first?(int)$first['id']:null;$item['unread']=$first?1:0;$channels[]=$item;
   }
   $summary=inbox_summary($channels);foreach($channels as &$c){$c['first_mention_id']=$summary[$c['id']]['first_id']??null;$c['mention_count']=$c['first_mention_id']?1:0;}unset($c);
   return ['version'=>1,'user'=>['id'=>uid()],'servers'=>$servers,'channels'=>$channels]+server_layout_state();
- }finally{$stateMembers=null;$statePermissions=null;$stateThreadDefaults=null;$stateRoleIds=null;$stateChannelOverrides=null;$stateChannels=null;$db->rollBack();}
+ }finally{$stateMembers=null;$statePermissions=null;$stateThreadDefaults=null;$stateRoleIds=null;$stateChannelOverrides=null;$stateChannels=null;$firstUnreadQuery=null;$db->rollBack();}
 }
 function inbox_read_summary(): array {
  $rows=sql('SELECT m.channel_id FROM notifications n JOIN messages m ON m.id=n.message_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 LIMIT 501',[uid()])->fetchAll();
