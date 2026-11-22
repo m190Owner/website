@@ -330,6 +330,12 @@ function notification_actions(string $action,array $in): array {
    $next=null;$rows=inbox_rows($in['unread']??false,$before,$next);return ['version'=>1,'items'=>$rows,'next'=>$next];
   }
   $rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
+ case 'notification_summary':
+  if(($in['version']??null)!==1||array_diff(array_keys($in),['action','version']))fail(400,'Invalid notification summary request.');
+  global $db,$tokenHash;$db->beginTransaction();
+  try{if(!one('SELECT 1 FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.hash=? AND s.user_id=? AND s.expires>? AND u.disabled_at=0',[$tokenHash,uid(),time()]))fail(401,'Session expired. Please sign in.');
+   return inbox_read_summary()+['event_unread'=>count(array_filter(event_notice_rows(),fn($r)=>!$r['seen']))];
+  }finally{$db->rollBack();}
  case 'inbox_read':
   if(array_key_exists('version',$in)&&($in['version']!==1||array_diff(array_keys($in),['action','message_id','all','version'])||array_key_exists('all',$in)&&!is_bool($in['all'])||array_key_exists('all',$in)&&array_key_exists('message_id',$in)))fail(400,'Invalid inbox read request.');
   $read=function()use($in){if(($in['all']??false)===true)sql('UPDATE notifications SET seen=1 WHERE user_id=?',[uid()]);else{$id=positive_id($in['message_id']??null);sql('UPDATE notifications SET seen=1 WHERE user_id=? AND message_id=?',[uid(),$id]);}return isset($in['version'])?inbox_read_summary():['ok'=>true];};
