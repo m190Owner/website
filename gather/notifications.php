@@ -268,7 +268,7 @@ function inbox_summary(array $channels): array {
  $visible=array_fill_keys(array_column($channels,'id'),true);$result=[];
  foreach(sql('SELECT m.channel_id,count(*) AS total,min(m.id) AS first_id,max(m.id) AS last_id,max(CASE WHEN (CASE n.kind WHEN \'role\' THEN COALESCE(np.suppress_roles,0)=0 WHEN \'everyone\' THEN COALESCE(np.suppress_everyone,0)=0 WHEN \'role_everyone\' THEN (COALESCE(np.suppress_roles,0)=0 OR COALESCE(np.suppress_everyone,0)=0) ELSE 1 END) AND m.created>=max(COALESCE(nm.muted_until,0),COALESCE(sm.muted_until,0),COALESCE(cm.muted_until,0)) AND m.id>max(COALESCE(nm.silent_through,0),COALESCE(sm.silent_through,0),COALESCE(cm.silent_through,0)) THEN m.id END) AS alert_id FROM notifications n JOIN messages m ON m.id=n.message_id LEFT JOIN notification_mutes nm ON nm.user_id=n.user_id AND nm.channel_id=m.channel_id LEFT JOIN channels mc ON mc.id=m.channel_id LEFT JOIN channels mp ON mp.id=mc.parent_id LEFT JOIN category_notification_mutes cm ON cm.user_id=n.user_id AND cm.server_id=mc.server_id AND cm.category=COALESCE(mp.category,mc.category) LEFT JOIN server_notification_mutes sm ON sm.user_id=n.user_id AND sm.server_id=mc.server_id LEFT JOIN server_notification_preferences np ON np.user_id=n.user_id AND np.server_id=mc.server_id WHERE n.user_id=? AND n.seen=0 AND m.deleted=0 AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) GROUP BY m.channel_id',[uid(),uid(),uid()])->fetchAll() as $r)if(isset($visible[$r['channel_id']]))$result[$r['channel_id']]=['total'=>(int)$r['total'],'first_id'=>(int)$r['first_id'],'last_id'=>(int)$r['last_id'],'alert_id'=>(int)($r['alert_id']??0)];return $result;
 }
-function attention_navigation(): array {
+function attention_navigation(bool $mentionsOnly=false): array {
  global $db,$tokenHash,$stateMembers,$statePermissions,$stateThreadDefaults,$stateRoleIds,$stateChannelOverrides,$stateChannels;
  $db->beginTransaction();$firstUnreadQuery=null;
  try{
@@ -291,7 +291,7 @@ function attention_navigation(): array {
    $item=array_intersect_key($row,array_flip(['id','server_id','parent_id','kind','position','created','category_position','notification_mode','server_notification_mode','category_notification_mode']));$item['category']=$c['category'];
    $item['blocked']=false;if(!$c['server_id']&&!$c['group_owner']){$peer=one('SELECT user_id FROM channel_members WHERE channel_id=? AND user_id<>?',[$c['id'],uid()]);$item['blocked']=$peer?blocked((int)$peer['user_id']):false;}
    $item['notification_muted']=$row['channel_mute']>$now;$item['server_notification_muted']=$row['server_mute']>$now;$item['category_notification_muted']=$row['category_mute']>$now;
-   $first=null;if($c['kind']==='text'&&!$item['blocked']){
+   $first=null;if(!$mentionsOnly&&$c['kind']==='text'&&!$item['blocked']){
     $firstUnreadQuery??=$db->prepare('SELECT m.id FROM messages m WHERE m.channel_id=? AND m.deleted=0 AND m.user_id<>? AND m.id>COALESCE((SELECT last_id FROM read_states WHERE user_id=? AND channel_id=?),0) AND NOT EXISTS(SELECT 1 FROM blocks b WHERE (b.user_id=? AND b.target=m.user_id) OR (b.target=? AND b.user_id=m.user_id)) ORDER BY m.id LIMIT 1');
     $firstUnreadQuery->execute([$c['id'],uid(),uid(),$c['id'],uid(),uid()]);$first=$firstUnreadQuery->fetch();$firstUnreadQuery->closeCursor();
    }
@@ -363,8 +363,9 @@ function notification_actions(string $action,array $in): array {
    $next=null;$rows=inbox_rows($in['unread']??false,$before,$next);return ['version'=>1,'items'=>$rows,'next'=>$next];
   }
   $rows=inbox_rows(($in['unread']??false)===true);return ['items'=>array_slice($rows,0,100),'unread'=>count(array_filter($rows,fn($r)=>!$r['seen'])),'limited'=>count($rows)>100];
+ case 'mention_navigation':
  case 'attention_navigation':
-  if(($in['version']??null)!==1||array_diff(array_keys($in),['action','version']))fail(400,'Invalid attention navigation request.');return attention_navigation();
+  if(($in['version']??null)!==1||array_diff(array_keys($in),['action','version']))fail(400,'Invalid attention navigation request.');return attention_navigation($action==='mention_navigation');
  case 'notification_summary':
   if(($in['version']??null)!==1||array_diff(array_keys($in),['action','version']))fail(400,'Invalid notification summary request.');
   global $db,$tokenHash;$db->beginTransaction();
